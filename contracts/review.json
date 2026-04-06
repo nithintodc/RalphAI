@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PerformanceReviewAgent",
+  "description": "Evaluates campaign performance after a window (e.g. 7 days) and recommends actions.",
+  "type": "object",
+  "properties": {
+    "input": {
+      "type": "object",
+      "required": ["operator_id", "campaign_performance"],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "campaign_performance": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["actions"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["action"],
+            "properties": {
+              "campaign_id": {
+                "oneOf": [{ "type": "string" }, { "type": "null" }]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["update", "delete", "keep", "new"]
+              },
+              "reason": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

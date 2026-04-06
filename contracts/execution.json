@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CampaignExecutionAgent",
+  "description": "Executes campaign plan via browser automation (or APIs where available).",
+  "type": "object",
+  "properties": {
+    "input": {
+      "type": "object",
+      "required": ["operator_id", "campaign_plan"],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "campaign_plan": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["status", "campaign_ids"],
+      "properties": {
+        "status": { "type": "string", "enum": ["success", "partial", "failed"] },
+        "campaign_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

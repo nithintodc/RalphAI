@@ -1,0 +1,12 @@
+[server]
+# Allow large CSV uploads (DoorDash/UberEats financial + marketing). Default is 200MB.
+# Set to 1GB to match UI and avoid 413. If behind Nginx, set client_max_body_size 1024M there too.
+maxUploadSize = 1024
+
+[theme]
+# TODC brand theme – warm orange accent, clean white background
+base = "light"
+primaryColor = "#E8792B"
+backgroundColor = "#FAFAFA"
+secondaryBackgroundColor = "#F3F0EB"
+textColor = "#1E1E1E"

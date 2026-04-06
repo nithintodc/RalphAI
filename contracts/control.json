@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ControlLayer",
+  "description": "Decision gating before execution: human approval, confidence, budget.",
+  "type": "object",
+  "required": ["operator_id"],
+  "properties": {
+    "operator_id": { "type": "string" },
+    "require_human_approval": { "type": "boolean", "default": false },
+    "min_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Block execution below this score"
+    },
+    "max_budget_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Hard cap for planned spend in this run"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Retry-safe key for orchestrator steps"
+    }
+  },
+  "additionalProperties": true
+}

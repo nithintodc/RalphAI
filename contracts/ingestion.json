@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IngestionAgent",
+  "description": "Pulls historical operator data from configured sources (e.g. DoorDash).",
+  "type": "object",
+  "properties": {
+    "input": {
+      "type": "object",
+      "required": ["operator_id", "source", "days"],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "enum": ["doordash"] },
+        "days": { "type": "integer", "minimum": 1, "maximum": 365 }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["operator_id", "data"],
+      "properties": {
+        "operator_id": { "type": "string" },
+        "data": {
+          "type": "object",
+          "required": ["orders", "revenue", "ads", "menu"],
+          "properties": {
+            "orders": { "type": "array", "items": { "type": "object" } },
+            "revenue": { "type": "array", "items": { "type": "object" } },
+            "ads": { "type": "array", "items": { "type": "object" } },
+            "menu": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

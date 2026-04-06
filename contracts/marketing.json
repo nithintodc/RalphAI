@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MarketingRecommendationAgent",
+  "description": "Turns insights into a concrete campaign plan.",
+  "type": "object",
+  "properties": {
+    "input": {
+      "type": "object",
+      "required": ["operator_id", "insights"],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "insights": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["operator_id", "campaign_plan"],
+      "properties": {
+        "operator_id": { "type": "string" },
+        "campaign_plan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["ads", "offers"] },
+              "budget": { "type": "number" },
+              "target": { "type": "string" },
+              "discount": { "type": "string" },
+              "condition": { "type": "string" }
+            },
+            "required": ["type"],
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# Dev wiring: replace with real queue + secrets.
+services:
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      LOG_LEVEL: INFO
+    # volumes:
+    #   - ../../:/app

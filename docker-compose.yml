@@ -1,0 +1,11 @@
+# Dev: Redis + optional future app service. See also `infra/docker/` for agent images.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
