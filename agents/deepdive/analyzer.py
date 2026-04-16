@@ -1,5 +1,5 @@
 """
-DeepDive analyzer — processes all SSM dataset categories into structured insights.
+DeepDive analyzer — processes DoorDash export dataset categories into structured insights.
 
 Produces a dict-of-dicts result with:
   - executive_summary
@@ -17,6 +17,8 @@ from typing import Any
 import pandas as pd
 import numpy as np
 
+from .metric_hierarchy import build_metric_hierarchy
+
 
 def analyze(datasets: dict[str, pd.DataFrame], operator_id: str) -> dict[str, Any]:
     """Run all analysis modules and return consolidated results."""
@@ -28,6 +30,7 @@ def analyze(datasets: dict[str, pd.DataFrame], operator_id: str) -> dict[str, An
     result["sections"]["operations"] = _analyze_operations(datasets)
     result["sections"]["support"] = _analyze_support(datasets)
     result["sections"]["executive_summary"] = _build_executive_summary(result["sections"])
+    result["sections"]["metric_hierarchy"] = build_metric_hierarchy(datasets)
 
     return result
 
@@ -534,5 +537,5 @@ def analyze_rows(rows: list[dict], operator_id: str):
         analysis_date=utc_now_iso(),
         order_breakdown=OrderBreakdown(),
         revenue_metrics=RevenueMetrics(),
-        recommendations_seed="Use analyze() with SSM datasets for full analysis.",
+            recommendations_seed="Use analyze() with FINANCIAL_DETAILED and related export datasets for full analysis.",
     )

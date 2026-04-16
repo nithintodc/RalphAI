@@ -28,5 +28,5 @@ def next_handlers(event: EventType, payload: dict[str, Any]) -> list[dict[str, A
     if event == "campaign_setup_complete":
         return [{"action": "schedule", "command": "/marketingperf", "delay_days": 7}]
     if event == "review_complete":
-        return [{"action": "noop", "note": "await Slack approval then Clawbot"}]
+        return [{"action": "noop", "note": "await Slack approval then RalphAI"}]
     return []

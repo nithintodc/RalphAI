@@ -1,4 +1,4 @@
-"""Load SSM zip exports from disk: unzip, detect CSV type, load into DataFrames."""
+"""Load DoorDash export zips from disk: unzip, detect CSV type, load into DataFrames."""
 
 from __future__ import annotations
 
@@ -27,6 +27,21 @@ _CATEGORY_PATTERNS: list[tuple[str, str]] = [
     ("SALES_viewByTime_byStoreProductPerformance", "sales_time_store_product"),
     ("SALES_viewByTime_byStoreCustomerCounts", "sales_time_store_customers"),
     ("SUPPORT_", "support"),
+]
+
+
+_DD_ID_CANDIDATES = [
+    "Store ID",
+    "Merchant store ID",
+    "Merchant Store ID",
+]
+
+_NATIONAL_ID_CANDIDATES = [
+    "National Store ID",
+    "Merchant Supplied ID",
+    "Merchant supplied ID",
+    "Merchant supplied store ID",
+    "Merchant Supplied Store ID",
 ]
 
 
@@ -64,9 +79,132 @@ def _parse_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _pick_col(df: pd.DataFrame, names: list[str]) -> str | None:
+    for n in names:
+        if n in df.columns:
+            return n
+    return None
+
+
+def _norm_id(v: Any) -> str | None:
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except TypeError:
+        pass
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        return str(int(float(s)))
+    except (TypeError, ValueError):
+        return s
+
+
+def _build_store_id_map(fin_df: pd.DataFrame) -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Build DD <-> National store ID mapping from FINANCIAL data.
+    Returns (dd_to_national, national_to_dd).
+    """
+    dd_col = _pick_col(fin_df, _DD_ID_CANDIDATES)
+    nat_col = _pick_col(fin_df, _NATIONAL_ID_CANDIDATES)
+    if not dd_col or not nat_col:
+        return {}, {}
+
+    pairs = fin_df[[dd_col, nat_col]].dropna(how="any")
+    dd_to_nat: dict[str, str] = {}
+    nat_to_dd: dict[str, str] = {}
+    for _, row in pairs.iterrows():
+        dd = _norm_id(row.get(dd_col))
+        nat = _norm_id(row.get(nat_col))
+        if not dd or not nat:
+            continue
+        dd_to_nat.setdefault(dd, nat)
+        nat_to_dd.setdefault(nat, dd)
+    return dd_to_nat, nat_to_dd
+
+
+def _ensure_store_id_columns(
+    df: pd.DataFrame,
+    dd_to_nat: dict[str, str],
+    nat_to_dd: dict[str, str],
+) -> pd.DataFrame:
+    """
+    Ensure both `Store ID` (DoorDash) and `National Store ID` exist where possible.
+    """
+    if df.empty:
+        return df
+    out = df.copy()
+    dd_col = _pick_col(out, _DD_ID_CANDIDATES)
+    nat_col = _pick_col(out, _NATIONAL_ID_CANDIDATES)
+
+    # Canonicalize column names when source columns exist.
+    rename: dict[str, str] = {}
+    if dd_col and dd_col != "Store ID":
+        rename[dd_col] = "Store ID"
+        dd_col = "Store ID"
+    if nat_col and nat_col != "National Store ID":
+        rename[nat_col] = "National Store ID"
+        nat_col = "National Store ID"
+    if rename:
+        out = out.rename(columns=rename)
+
+    if "Store ID" in out.columns:
+        out["Store ID"] = out["Store ID"].map(_norm_id)
+    if "National Store ID" in out.columns:
+        out["National Store ID"] = out["National Store ID"].map(_norm_id)
+
+    # Fill missing National Store ID from DD mapping.
+    if "Store ID" in out.columns:
+        if "National Store ID" not in out.columns:
+            out["National Store ID"] = out["Store ID"].map(dd_to_nat)
+        else:
+            missing_nat = out["National Store ID"].isna() | out["National Store ID"].astype(str).str.strip().eq("")
+            out.loc[missing_nat, "National Store ID"] = out.loc[missing_nat, "Store ID"].map(dd_to_nat)
+
+    # Fill missing DD Store ID from reverse mapping when possible.
+    if "National Store ID" in out.columns:
+        if "Store ID" not in out.columns:
+            out["Store ID"] = out["National Store ID"].map(nat_to_dd)
+        else:
+            missing_dd = out["Store ID"].isna() | out["Store ID"].astype(str).str.strip().eq("")
+            out.loc[missing_dd, "Store ID"] = out.loc[missing_dd, "National Store ID"].map(nat_to_dd)
+
+    return out
+
+
+def _apply_store_id_mapping(datasets: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """
+    Build DoorDash<->National mapping from financial datasets and apply to all datasets.
+    """
+    fin_sources = [datasets.get("financial_detailed"), datasets.get("financial_payouts"), datasets.get("financial_simplified")]
+    dd_to_nat: dict[str, str] = {}
+    nat_to_dd: dict[str, str] = {}
+    for fin_df in fin_sources:
+        if fin_df is None or fin_df.empty:
+            continue
+        d2n, n2d = _build_store_id_map(fin_df)
+        dd_to_nat.update({k: v for k, v in d2n.items() if k not in dd_to_nat})
+        nat_to_dd.update({k: v for k, v in n2d.items() if k not in nat_to_dd})
+
+    if not dd_to_nat and not nat_to_dd:
+        return datasets
+
+    mapped: dict[str, pd.DataFrame] = {}
+    for key, df in datasets.items():
+        mapped[key] = _ensure_store_id_columns(df, dd_to_nat=dd_to_nat, nat_to_dd=nat_to_dd)
+
+    # Expose mapping for debug/API usage.
+    mapping_rows = [{"doordash_store_id": dd, "national_store_id": nat} for dd, nat in sorted(dd_to_nat.items())]
+    mapped["store_id_mapping"] = pd.DataFrame(mapping_rows)
+    return mapped
+
+
 def load_ssm_zips(zip_dir: Path) -> dict[str, pd.DataFrame]:
     """
-    Given a directory containing SSM zip files, unzip and load all CSVs.
+    Given a directory containing `.zip` export files, unzip and load all CSVs.
     Returns dict mapping category key -> DataFrame.
     """
     zip_paths = sorted(zip_dir.glob("*.zip"))
@@ -89,7 +227,7 @@ def load_ssm_zips(zip_dir: Path) -> dict[str, pd.DataFrame]:
         except Exception:
             continue
 
-    return datasets
+    return _apply_store_id_mapping(datasets)
 
 
 def load_files(paths: list[Path | str]) -> dict[str, pd.DataFrame]:

@@ -11,7 +11,7 @@ Multi-agent marketing automation for TODC: JSON contracts, `agents/` (TODC + leg
 Single project combining:
 
 1. **JSON contracts + `agents/*/contract_pipeline.py`** — legacy wire format used by `flow_manager` + execution gating (same packages as TODC; no separate `apps/` tree).
-2. **TODC `agents/*/agent.py`** — DeepDive, MarketingReco, Campaign Setup (Clawbot), Campaign Review, Monthly Reporter with Pydantic models and `data/operators/{id}/` artifacts.
+2. **TODC `agents/*/agent.py`** — DeepDive, MarketingReco, Campaign Setup (RalphAI), Campaign Review, Monthly Reporter with Pydantic models and `data/operators/{id}/` artifacts.
 3. **Slack** — `slack_bot/` (Bolt) command stubs wired to `agents/`.
 4. **Orchestration** — `flow_manager` / `triggers` (legacy chain), `state_machine` + `event_router` (TODC), `todc_flow` (TODC Python API), merged `scheduler`.
 
@@ -72,3 +72,4 @@ Report engine code lives under `agents/monthly_reporter/cloud_app/` (ported from
 ## Docs
 
 - [planning.md](./planning.md) — full architecture and agent definitions.
+- [docs/GCP_DEPLOYMENT.md](./docs/GCP_DEPLOYMENT.md) — deploy the API + dashboard on Google Cloud (Cloud Run, VM, Firebase Hosting, secrets, team access).

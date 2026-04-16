@@ -1,10 +1,10 @@
-const logs = [
-  { ts: "14:32:01.042", level: "INFO", msg: "flow-manager pipeline.deepdive.start operator_id=op_north_01" },
-  { ts: "14:32:01.108", level: "INFO", msg: "ingestion-agent ingestion.done keys=[orders, revenue, ads, menu]" },
-  { ts: "14:32:01.112", level: "INFO", msg: "deepdive-agent deepdive.done n_insights=1" },
-  { ts: "14:28:55.301", level: "WARN", msg: "campaign_setup retry scheduled idempotency_key=plan_abc" },
-  { ts: "14:15:22.000", level: "ERROR", msg: "campaign_review missing post_campaign_data — using stub metrics" },
-];
+import { useEffect, useMemo, useState } from "react";
+
+type LogLine = {
+  ts: string;
+  level: string;
+  msg: string;
+};
 
 const levelStyle: Record<string, string> = {
   INFO: "bg-sky-100 text-sky-900",
@@ -13,6 +13,38 @@ const levelStyle: Record<string, string> = {
 };
 
 export function LogsPage() {
+  const [logs, setLogs] = useState<LogLine[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadLogs() {
+      try {
+        const res = await fetch("/api/logs/live?limit=120");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as LogLine[];
+        if (active) setLogs(Array.isArray(data) ? data : []);
+      } catch {
+        if (active) setLogs([]);
+      }
+    }
+    loadLogs();
+    const timer = window.setInterval(loadLogs, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const visibleLogs = useMemo(() => logs, [logs]);
+
+  function formatTs(ts: string): string {
+    if (!ts) return "—";
+    const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
+    const dt = new Date(normalized);
+    if (Number.isNaN(dt.getTime())) return ts;
+    return dt.toLocaleTimeString([], { hour12: false });
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -20,37 +52,42 @@ export function LogsPage() {
           Logs
         </h2>
         <p className="mt-1 text-ink-600 dark:text-white/65">
-          Structured pipeline output — sample data; stream from your backend later.
+          Live pipeline activity from your backend run history.
         </p>
       </div>
 
       <div className="overflow-hidden rounded-[28px] border border-brand-200 bg-white shadow-card">
         <div className="flex items-center justify-between border-b border-brand-100 bg-brand-50/90 px-4 py-3">
           <span className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-600">
-            Live tail (mock)
+            Live tail
           </span>
           <button
             type="button"
+            onClick={() => setLogs([])}
             className="rounded-xl border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 shadow-sm hover:bg-brand-50"
           >
             Clear
           </button>
         </div>
         <pre className="max-h-[min(70vh,560px)] overflow-auto bg-white p-4 font-mono text-[14px] leading-relaxed text-ink-900">
-          {logs.map((line, i) => (
-            <div
-              key={i}
-              className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-brand-100 py-2.5 last:border-0 sm:flex-nowrap"
-            >
-              <span className="shrink-0 tabular-nums text-ink-500">{line.ts}</span>
-              <span
-                className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold uppercase ${levelStyle[line.level] ?? ""}`}
+          {visibleLogs.length > 0 ? (
+            visibleLogs.map((line, i) => (
+              <div
+                key={`${line.ts}-${i}`}
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-brand-100 py-2.5 last:border-0 sm:flex-nowrap"
               >
-                {line.level}
-              </span>
-              <span className="min-w-0 flex-1 break-all text-ink-900">{line.msg}</span>
-            </div>
-          ))}
+                <span className="shrink-0 tabular-nums text-ink-500">{formatTs(line.ts)}</span>
+                <span
+                  className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold uppercase ${levelStyle[line.level] ?? ""}`}
+                >
+                  {line.level}
+                </span>
+                <span className="min-w-0 flex-1 break-all text-ink-900">{line.msg}</span>
+              </div>
+            ))
+          ) : (
+            <div className="py-3 text-sm text-ink-500">No live log lines yet. Trigger an agent run to stream entries.</div>
+          )}
         </pre>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -8,63 +9,160 @@ import {
   Zap,
 } from "lucide-react";
 
-const stats = [
-  {
-    label: "Active agents",
-    value: "6",
-    sub: "All healthy",
-    icon: Bot,
-    color: "from-brand-400 to-brand-600",
-  },
-  {
-    label: "Runs today",
-    value: "24",
-    sub: "+12% vs yesterday",
-    icon: Activity,
-    color: "from-ink-700 to-ink-900",
-  },
-  {
-    label: "Success rate",
-    value: "98.2%",
-    sub: "Last 7 days",
-    icon: CheckCircle2,
-    color: "from-brand-500 to-emerald-700",
-  },
-  {
-    label: "Avg. duration",
-    value: "2m 14s",
-    sub: "Per pipeline step",
-    icon: Clock,
-    color: "from-ink-500 to-ink-700",
-  },
-];
+type RunRecord = {
+  id: string;
+  agent: string;
+  operator?: string;
+  status?: string;
+  started?: string;
+  duration?: string;
+};
 
-const recent = [
-  {
-    id: "run_8f2a",
-    agent: "DeepDive",
-    op: "op_north_01",
-    status: "success",
-    time: "2 min ago",
-  },
-  {
-    id: "run_8f29",
-    agent: "MarketingReco",
-    op: "op_north_01",
-    status: "success",
-    time: "8 min ago",
-  },
-  {
-    id: "run_8f28",
-    agent: "Campaign Setup",
-    op: "op_west_04",
-    status: "running",
-    time: "12 min ago",
-  },
-];
+function parseDurationToSeconds(duration?: string): number | null {
+  if (!duration) return null;
+  const minMatch = duration.match(/(\d+)\s*m/);
+  const secMatch = duration.match(/(\d+)\s*s/);
+  const mins = minMatch ? Number(minMatch[1]) : 0;
+  const secs = secMatch ? Number(secMatch[1]) : 0;
+  const total = mins * 60 + secs;
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return total;
+}
+
+function formatSeconds(total: number | null): string {
+  if (total == null || !Number.isFinite(total) || total <= 0) return "—";
+  const mins = Math.floor(total / 60);
+  const secs = Math.round(total % 60);
+  return `${mins}m ${String(secs).padStart(2, "0")}s`;
+}
+
+function parseRunStart(raw?: string): Date | null {
+  if (!raw) return null;
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const dt = new Date(normalized);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function timeAgo(raw?: string): string {
+  const dt = parseRunStart(raw);
+  if (!dt) return "just now";
+  const deltaSec = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 1000));
+  if (deltaSec < 60) return "just now";
+  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)} min ago`;
+  if (deltaSec < 86400) return `${Math.floor(deltaSec / 3600)} hr ago`;
+  return `${Math.floor(deltaSec / 86400)} day ago`;
+}
+
+function displayAgentName(agent: string): string {
+  const map: Record<string, string> = {
+    deepdive: "DeepDive",
+    marketingreco: "MarketingReco",
+    monthly_reporter: "Monthly Reporter",
+    campaign_review: "Campaign Review",
+    offers: "RalphAI Offers",
+    ads: "RalphAI Ads",
+  };
+  return map[agent] ?? agent;
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const [runs, setRuns] = useState<RunRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadRuns() {
+      try {
+        const res = await fetch("/api/runs");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as RunRecord[];
+        if (active) setRuns(Array.isArray(data) ? data : []);
+      } catch {
+        if (active) setRuns([]);
+      }
+    }
+    loadRuns();
+    const timer = window.setInterval(loadRuns, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate(),
+    ).padStart(2, "0")}`;
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const runsToday = runs.filter((r) => (r.started ?? "").startsWith(today)).length;
+    const lastDayRuns = runs.filter((r) => {
+      const dt = parseRunStart(r.started);
+      return dt ? dt >= oneDayAgo : false;
+    });
+    const activeAgents = new Set(lastDayRuns.map((r) => r.agent).filter(Boolean)).size;
+
+    const weekRuns = runs.filter((r) => {
+      const dt = parseRunStart(r.started);
+      return dt ? dt >= sevenDaysAgo : false;
+    });
+    const successCount = weekRuns.filter((r) => (r.status ?? "").toLowerCase() === "success").length;
+    const successRate = weekRuns.length ? `${((successCount / weekRuns.length) * 100).toFixed(1)}%` : "—";
+
+    const durationSec = runs
+      .map((r) => parseDurationToSeconds(r.duration))
+      .filter((x): x is number => x != null);
+    const avgDuration =
+      durationSec.length > 0
+        ? formatSeconds(durationSec.reduce((sum, curr) => sum + curr, 0) / durationSec.length)
+        : "—";
+
+    return [
+      {
+        label: "Active agents",
+        value: String(activeAgents),
+        sub: "In the last 24 hours",
+        icon: Bot,
+        color: "from-brand-400 to-brand-600",
+      },
+      {
+        label: "Runs today",
+        value: String(runsToday),
+        sub: "Live from run history",
+        icon: Activity,
+        color: "from-ink-700 to-ink-900",
+      },
+      {
+        label: "Success rate",
+        value: successRate,
+        sub: "Last 7 days",
+        icon: CheckCircle2,
+        color: "from-brand-500 to-emerald-700",
+      },
+      {
+        label: "Avg. duration",
+        value: avgDuration,
+        sub: "Across recent runs",
+        icon: Clock,
+        color: "from-ink-500 to-ink-700",
+      },
+    ];
+  }, [runs]);
+
+  const recent = useMemo(
+    () =>
+      runs.slice(0, 5).map((r) => ({
+        id: r.id,
+        agent: displayAgentName(r.agent),
+        op: r.operator ?? "—",
+        status: r.status ?? "unknown",
+        time: timeAgo(r.started),
+      })),
+    [runs],
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -147,33 +245,39 @@ export function DashboardPage() {
             </Link>
           </div>
           <ul className="mt-4 divide-y divide-brand-100/80 dark:divide-white/10">
-            {recent.map((r) => (
-              <li
-                key={r.id}
-                className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
-              >
-                <div>
-                  <p className="font-medium text-ink-900 dark:text-white">
-                    {r.agent}
-                  </p>
-                  <p className="text-sm text-ink-500 dark:text-white/55">
-                    {r.op} · {r.id}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                      r.status === "success"
-                        ? "bg-brand-100 text-ink-900 dark:bg-brand-500/20 dark:text-brand-300"
-                        : "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400"
-                    }`}
-                  >
-                    {r.status}
-                  </span>
-                  <p className="mt-1 text-xs text-ink-400 dark:text-white/40">{r.time}</p>
-                </div>
-              </li>
-            ))}
+            {recent.length > 0 ? (
+              recent.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
+                >
+                  <div>
+                    <p className="font-medium text-ink-900 dark:text-white">
+                      {r.agent}
+                    </p>
+                    <p className="text-sm text-ink-500 dark:text-white/55">
+                      {r.op} · {r.id}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        r.status === "success"
+                          ? "bg-brand-100 text-ink-900 dark:bg-brand-500/20 dark:text-brand-300"
+                          : r.status === "failed"
+                            ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400"
+                            : "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                    <p className="mt-1 text-xs text-ink-400 dark:text-white/40">{r.time}</p>
+                  </div>
+                </li>
+              ))
+            ) : (
+              <li className="py-4 text-sm text-ink-500">No runs yet. Start an agent to see live activity.</li>
+            )}
           </ul>
         </div>
 

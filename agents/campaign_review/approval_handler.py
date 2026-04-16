@@ -1,4 +1,4 @@
-"""Slack approval for review actions before Clawbot mutations."""
+"""Slack approval for review actions before RalphAI mutations."""
 
 from __future__ import annotations
 

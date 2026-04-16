@@ -1,4 +1,4 @@
-"""Clawbot — Campaign Setup agent."""
+"""RalphAI — Campaign Setup agent."""
 
 from __future__ import annotations
 

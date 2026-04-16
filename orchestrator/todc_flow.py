@@ -29,7 +29,7 @@ def run_full_setup(
     *,
     campaign_type: CampaignKind = "ads",
 ) -> dict[str, Any]:
-    """After plan exists on disk; runs Clawbot stub for one campaign type."""
+    """After plan exists on disk; runs RalphAI stub for one campaign type."""
     from agents.campaign_setup.agent import run as setup_run
 
     chain = run_onboarding_chain(operator_id)

@@ -56,6 +56,9 @@ class CampaignReviewItem(BaseModel):
     campaign_name: str = ""
     pre_metrics: dict[str, Any] = Field(default_factory=dict)
     post_metrics: dict[str, Any] = Field(default_factory=dict)
+    post_window_days: int = 0
+    pre_window_days: int = 0
+    pre_data_coverage_pct: float = 0.0
     aov_lift_pct: float = 0.0
     order_volume_lift_pct: float = 0.0
     net_revenue_delta: float = 0.0

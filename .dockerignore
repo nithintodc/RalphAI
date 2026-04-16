@@ -1,0 +1,26 @@
+# Lean API image builds (see infra/gcp/Dockerfile.api and docs/GCP_DEPLOYMENT.md)
+.git
+.github
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+env
+ENV
+.env
+.env.*
+!.env.example
+dashboard/node_modules
+dashboard/dist
+*.tsbuildinfo
+.cursor
+**/.DS_Store
+htmlcov
+.coverage
+.coverage.*
+
+# Large / local-only (re-mount or sync via GCS in production if needed)
+data/runs/**

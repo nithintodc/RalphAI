@@ -74,6 +74,7 @@ def _build_html(sections: dict[str, Any], operator_id: str) -> str:
     mkt = sections.get("marketing", {})
     ops = sections.get("operations", {})
     sup = sections.get("support", {})
+    mh = sections.get("metric_hierarchy") or {}
 
     parts: list[str] = []
     parts.append(_html_head(operator_id))
@@ -93,20 +94,37 @@ def _build_html(sections: dict[str, Any], operator_id: str) -> str:
     # KPI Cards
     parts.append(_section_kpi_cards(summary))
 
-    # Financial
+    # Hierarchical metrics (FINANCIAL_DETAILED delivered orders)
+    parts.append(_section_metric_hierarchy(mh))
+
+    # Tab controls
+    parts.append("""
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="financials">Financials</button>
+        <button class="tab-btn" data-tab="sales">Sales</button>
+        <button class="tab-btn" data-tab="marketing">Marketing</button>
+        <button class="tab-btn" data-tab="operations">Operations</button>
+    </div>
+    """)
+
+    # Tab panels
+    parts.append('<div id="financials" class="tab-panel active">')
     parts.append(_section_financial(fin))
+    parts.append('</div>')
 
-    # Sales
+    parts.append('<div id="sales" class="tab-panel">')
     parts.append(_section_sales(sales))
+    parts.append('</div>')
 
-    # Marketing
+    parts.append('<div id="marketing" class="tab-panel">')
     parts.append(_section_marketing(mkt))
+    parts.append('</div>')
 
-    # Operations
+    # Keep support grouped with operations for a cleaner top-level view.
+    parts.append('<div id="operations" class="tab-panel">')
     parts.append(_section_operations(ops))
-
-    # Support
     parts.append(_section_support(sup))
+    parts.append('</div>')
 
     parts.append('</div></body></html>')
     return "\n".join(parts)
@@ -180,7 +198,49 @@ tr:hover {{ background: rgb(5 215 159 / 0.08); }}
 .pill-green {{ background: #d5fbf1; color: #04493a; }}
 .pill-red {{ background: #f8d7da; color: #721c24; }}
 .pill-blue {{ background: #b0f4e2; color: #046e54; }}
+.tabs {{
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 8px 0 16px;
+}}
+.tab-btn {{
+    border: 1px solid #d7ece5;
+    background: white;
+    color: #04493a;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}}
+.tab-btn:hover {{ background: #f1fcf8; }}
+.tab-btn.active {{
+    background: #05d79f;
+    border-color: #05d79f;
+    color: #252525;
+}}
+.tab-panel {{ display: none; }}
+.tab-panel.active {{ display: block; }}
+.table-scroll {{ max-height: 460px; overflow: auto; border: 1px solid #e7e7e7; border-radius: 10px; margin: 12px 0; }}
+.table-scroll table {{ margin: 0; }}
 </style>
+<script>
+document.addEventListener("DOMContentLoaded", function () {{
+  const buttons = Array.from(document.querySelectorAll(".tab-btn"));
+  const panels = Array.from(document.querySelectorAll(".tab-panel"));
+  buttons.forEach((btn) => {{
+    btn.addEventListener("click", () => {{
+      const tab = btn.getAttribute("data-tab");
+      buttons.forEach((b) => b.classList.remove("active"));
+      panels.forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      const panel = document.getElementById(tab);
+      if (panel) panel.classList.add("active");
+    }});
+  }});
+}});
+</script>
 </head>"""
 
 
@@ -207,6 +267,79 @@ def _section_executive_summary(s: dict) -> str:
         <ul class="insights-list">{items}</ul>
     </div>
     """
+
+
+def _section_metric_hierarchy(mh: dict) -> str:
+    """Hierarchical rollups: overall → store → store×slot → … → slot (all days, all stores)."""
+    if not mh or mh.get("source") == "none":
+        msg = mh.get("message", "No hierarchy data.") if isinstance(mh, dict) else "No data."
+        return f"""
+    <div class="section">
+        <h2>Performance hierarchy</h2>
+        <p style="color:#555;">{msg} Place export zips under <strong>data/data/TriArch</strong> (CLI default) or upload zips that include <strong>FINANCIAL_DETAILED_TRANSACTIONS</strong> with order timestamps.</p>
+    </div>
+    """
+
+    desc = mh.get("description", "")
+    money = ["sales", "payouts", "aov", "mode_order_value", "commission", "marketing_fees", "net_per_order"]
+    metric_map = {
+        "orders": "Orders",
+        "sales": "Sales ($)",
+        "payouts": "Payouts ($)",
+        "profitability_pct": "Profitability %",
+        "aov": "AOV ($)",
+        "mode_order_value": "Mode order ($)",
+        "commission": "Commission ($)",
+        "marketing_fees": "Mkt fees ($)",
+        "net_per_order": "Net / order ($)",
+    }
+
+    def _wrap(t: str) -> str:
+        return f'<div class="table-scroll">{t}</div>'
+
+    parts: list[str] = [
+        '<div class="section">',
+        "<h2>Performance hierarchy</h2>",
+        f'<p style="color:#555;font-size:0.95em;margin-bottom:14px;">{desc}</p>',
+    ]
+
+    ov = mh.get("overall")
+    if ov:
+        parts.append("<h3>1. Overall</h3>")
+        parts.append(
+            _wrap(
+                _table(
+                    [ov],
+                    {"label": "Scope", **metric_map},
+                    money_cols=money,
+                    number_cols=["orders", "profitability_pct"],
+                )
+            )
+        )
+
+    keys = [
+        ("by_store", "2. Store level", {"store_id": "Store ID", "store_name": "Store"}),
+        ("by_store_slot", "3. Store × slot (all weekdays)", {"store_id": "Store ID", "store_name": "Store", "slot": "Slot"}),
+        ("by_store_weekday", "4. Store × weekday", {"store_id": "Store ID", "store_name": "Store", "weekday": "Weekday"}),
+        (
+            "by_store_weekday_slot",
+            "5. Store × weekday × slot",
+            {"store_id": "Store ID", "store_name": "Store", "weekday": "Weekday", "slot": "Slot"},
+        ),
+        ("by_weekday_all_stores", "6. Weekday (all stores)", {"weekday": "Weekday"}),
+        ("by_weekday_slot_all_stores", "7. Weekday × slot (all stores)", {"weekday": "Weekday", "slot": "Slot"}),
+        ("by_slot_all_stores", "8. Slot (all stores, all weekdays)", {"slot": "Slot"}),
+    ]
+
+    for key, title, dim_map in keys:
+        rows = mh.get(key) or []
+        if not rows:
+            continue
+        parts.append(f"<h3>{title}</h3>")
+        parts.append(_wrap(_table(rows, {**dim_map, **metric_map}, money_cols=money, number_cols=["orders", "profitability_pct"])))
+
+    parts.append("</div>")
+    return "\n".join(parts)
 
 
 def _section_kpi_cards(s: dict) -> str:
@@ -638,21 +771,30 @@ def _chart_bar(labels, values, title, color=_BRAND_700) -> str:
 
 
 def _chart_pie(labels, values, title) -> str:
-    fig, ax = plt.subplots(figsize=(6, 5), dpi=120)
+    fig, ax = plt.subplots(figsize=(8.5, 5), dpi=120)
     fig.patch.set_facecolor("white")
     wedges, texts, autotexts = ax.pie(
-        values, labels=labels, autopct="%1.1f%%", startangle=90,
+        values, labels=None, autopct="%1.1f%%", startangle=90,
         colors=_CHART_PALETTE[:len(labels)], pctdistance=0.8,
         wedgeprops={"edgecolor": "white", "linewidth": 2}
     )
-    for t in texts:
-        t.set_fontsize(9)
-        t.set_color(_INK_700)
     for t in autotexts:
         t.set_fontsize(8)
         t.set_fontweight("bold")
+        t.set_color(_INK_900)
+    ax.legend(
+        wedges,
+        labels,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        fontsize=9,
+        labelcolor=_INK_700,
+        title="Categories",
+        title_fontsize=10,
+    )
     ax.set_title(title, fontsize=12, fontweight="bold", pad=15, color=_INK_900, fontfamily="sans-serif")
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 0.82, 1))
     return _fig_to_html(fig)
 
 

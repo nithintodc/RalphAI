@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, Play, Loader2 } from "lucide-react";
 
 export function DeepDivePage() {
-  const [operatorId, setOperatorId] = useState("SSM");
+  const [operatorId, setOperatorId] = useState("TriArch");
   const [zipFiles, setZipFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export function DeepDivePage() {
             className="rounded-xl border border-brand-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             value={operatorId}
             onChange={(e) => setOperatorId(e.target.value)}
-            placeholder="e.g. SSM"
+            placeholder="e.g. TriArch"
             required
           />
         </label>
@@ -99,7 +99,8 @@ export function DeepDivePage() {
             onChange={(e) => setZipFiles(Array.from(e.target.files ?? []))}
           />
           <span className="text-xs text-ink-500">
-            Upload one or more SSM zip exports. DeepDive will extract them first, then build the report.
+            CLI default reads zips from <code className="text-ink-800">data/data/TriArch</code>. Here, upload one or more
+            DoorDash export zips; DeepDive will extract them and build the report.
           </span>
           {zipFiles.length > 0 ? (
             <span className="text-xs text-ink-600">

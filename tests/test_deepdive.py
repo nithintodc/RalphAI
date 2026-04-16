@@ -9,13 +9,13 @@ def test_deepdive_run_structure():
     assert out["operator_id"] == "test_op" or out.get("status") == "no_data"
 
 
-def test_deepdive_ssm_real_data():
-    """Run against real SSM zips if available."""
-    ssm_dir = Path(__file__).resolve().parents[1] / "data" / "data" / "SSM"
-    if not ssm_dir.exists() or not list(ssm_dir.glob("*.zip")):
+def test_deepdive_triarch_real_data():
+    """Run against real zips in data/data/TriArch if present."""
+    triarch = Path(__file__).resolve().parents[1] / "data" / "data" / "TriArch"
+    if not triarch.exists() or not list(triarch.glob("*.zip")):
         return  # Skip if no data present
 
-    out = run(operator_id="SSM", data_dir=str(ssm_dir))
+    out = run(operator_id="TriArch", data_dir=str(triarch))
     assert out["status"] == "success"
     assert "report_html_path" in out
     assert len(out.get("datasets_loaded", [])) > 0

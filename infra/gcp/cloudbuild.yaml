@@ -1,0 +1,20 @@
+# Cloud Build: build and push API image (Artifact Registry).
+# Usage (from repo root):
+#   export IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/ralphai/ralphai-api:$TAG"
+#   gcloud builds submit . --config=infra/gcp/cloudbuild.yaml --substitutions=_IMAGE="$IMAGE"
+#
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/PROJECT_ID/ralphai/ralphai-api:latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/gcp/Dockerfile.api
+      - -t
+      - $_IMAGE
+      - .
+
+images:
+  - $_IMAGE

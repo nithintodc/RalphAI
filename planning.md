@@ -7,7 +7,7 @@ Automate operator onboarding → data analysis → marketing recommendations →
 This repo **merges** two *styles* in one **`agents/`** tree:
 
 - **Legacy JSON contract chain** — `orchestrator/flow_manager.py` imports `agents/*/contract_pipeline.py` (and `agents/ingestion/pipeline.py`) for the same shapes as `contracts/*.json`. Optional `python -m` / stdin: some `contract_pipeline` modules expose `__main__`.
-- **TODC product pipeline** — `agents/*/agent.py`, `slack_bot/`, `data/operators/`, Pydantic `shared/models/` — DeepDive, MarketingReco, Clawbot, Campaign Review, Monthly Reporter, Slack commands.
+- **TODC product pipeline** — `agents/*/agent.py`, `slack_bot/`, `data/operators/`, Pydantic `shared/models/` — DeepDive, MarketingReco, RalphAI, Campaign Review, Monthly Reporter, Slack commands.
 
 Add new behavior under the relevant **`agents/<package>/`** only; do not reintroduce a top-level `apps/`.
 
@@ -61,7 +61,7 @@ RalphAI/   # repo root
 |--------|---------------------|------------------|
 | Step 1 | `ingestion` → `deepdive.contract_pipeline` (insights list) | DeepDive report JSON + disk |
 | Step 2 | `marketingreco.contract_pipeline` (`campaign_plan` array) | MarketingReco + approval |
-| Step 3 | `campaign_setup.contract_pipeline` (stub execution) | Clawbot `offers` / `ads` flows |
+| Step 3 | `campaign_setup.contract_pipeline` (stub execution) | RalphAI `offers` / `ads` flows |
 | Step 4 | `campaign_review.contract_pipeline` (`actions`) | Campaign review + `/marketingperf` |
 
 Bridge when needed: map fields in an adapter (future) or standardize on TODC disk artifacts.
@@ -96,7 +96,7 @@ Pull/analyze ~90 days of DoorDash data; output includes `order_breakdown`, `reve
 
 Consumes DeepDive; outputs `recommended_campaigns`, `approval_status`. Writes `marketing_plan.json`.
 
-### Campaign setup — Clawbot (`/offers`, `/ads`)
+### Campaign setup — RalphAI (`/offers`, `/ads`)
 
 Browser automation stubs; writes `campaigns/setup.json`, sets `review_scheduled_at`.
 

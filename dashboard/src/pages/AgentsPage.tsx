@@ -2,15 +2,32 @@ import { Link } from "react-router-dom";
 import {
   Play,
   Cpu,
+  Bot,
   ShoppingBag,
   Megaphone,
   BarChart3,
-  ArrowDownCircle,
-  ArrowUpCircle,
   Calendar,
 } from "lucide-react";
 
 const agents = [
+  {
+    id: "data-run",
+    name: "Data Run",
+    desc: "Sequential report downloader by selected operators (fresh browser session per operator).",
+    icon: Bot,
+    status: "ready",
+    color: "from-sky-500 to-cyan-700",
+    inputs: [
+      "Operators (multi-select) from account directory CSV",
+      "Always pulls both financial and marketing reports",
+      "DoorDash credentials auto-loaded from Account Information CSV",
+    ],
+    outputs: [
+      "Downloaded report files under data/runs/data_run/",
+      "Per-operator status: success | no_files | failed",
+      "Run summary with selected file count per operator",
+    ],
+  },
   {
     id: "deepdive",
     name: "DeepDive",
@@ -32,24 +49,23 @@ const agents = [
   {
     id: "marketingreco",
     name: "MarketingReco",
-    desc: "Generate campaign plans from insights; approval workflow.",
+    desc: "Two tracks: Offers (promotion mappings to keep) and Ads",
     icon: Megaphone,
     status: "idle",
     color: "from-ink-700 to-black",
     inputs: [
-      "deepdive_report (JSON from DeepDive)",
-      "operator_profile — stores, region, tier",
-      "budget_cap, campaign_history (optional)",
+      "Manual / Auto: FINANCIAL_DETAILED (.zip or .csv) or DoorDash credentials",
+      "DeepDive mode: deepdive_report JSON, operator_profile, budget_cap (optional)",
     ],
     outputs: [
-      "marketing_plan.json — recommended_campaigns[]",
-      "Per campaign: type, budget, day-parts, discount_pct, rationale",
-      "approval_status: pending | approved | rejected | modified",
+      "Offers: campaign_mappings — store, min subtotal, slot tags, campaign name, status",
+      "Ads: ads_plan — day × daypart tiers, budgets as allocation %, bid hints, campaign names",
+      "marketing_plan.json — recommended_campaigns[]; approval workflow",
     ],
   },
   {
-    id: "clawbot-offers",
-    name: "Clawbot — Offers",
+    id: "ralphai-offers",
+    name: "RalphAI — Offers",
     desc: "Browser automation for promo campaigns in Merchant Portal.",
     icon: ShoppingBag,
     status: "ready",
@@ -66,8 +82,8 @@ const agents = [
     ],
   },
   {
-    id: "clawbot-ads",
-    name: "Clawbot — Ads",
+    id: "ralphai-ads",
+    name: "RalphAI — Ads",
     desc: "Sponsored listing setup and scheduling.",
     icon: Cpu,
     status: "ready",
@@ -91,7 +107,7 @@ const agents = [
     status: "idle",
     color: "from-amber-500 to-orange-600",
     inputs: [
-      "active_campaigns (Clawbot setup output)",
+      "active_campaigns (RalphAI setup output)",
       "post_campaign_data — 7-day DoorDash export",
       "pre_campaign_baseline (DeepDive or prior metrics)",
     ],
@@ -119,65 +135,7 @@ const agents = [
       "Google Drive upload when service-account JSON is configured",
     ],
   },
-  {
-    id: "ingestion",
-    name: "Ingestion (legacy)",
-    desc: "Contract-based micro-agent for raw pulls.",
-    icon: Cpu,
-    status: "legacy",
-    color: "from-slate-500 to-slate-700",
-    inputs: [
-      "operator_id, source (e.g. doordash), days (e.g. 90)",
-      "JSON stdin per contracts/ingestion.json",
-    ],
-    outputs: [
-      "Normalized buckets: orders[], revenue[], ads[], menu[]",
-      "Passes to legacy DeepDive / orchestrator chain",
-    ],
-  },
 ];
-
-function IoList({
-  title,
-  icon: Icon,
-  items,
-  variant,
-}: {
-  title: string;
-  icon: typeof ArrowDownCircle;
-  items: string[];
-  variant: "in" | "out";
-}) {
-  return (
-    <div
-      className={
-        variant === "in"
-          ? "rounded-2xl border border-brand-100 bg-brand-50/80 dark:border-white/10 dark:bg-white/5"
-          : "rounded-2xl border border-brand-200/80 bg-brand-100/50 dark:border-brand-500/20 dark:bg-brand-500/10"
-      }
-    >
-      <div className="flex items-center gap-2 border-b border-brand-100/80 px-3 py-2 dark:border-white/10">
-        <Icon
-          className={`h-3.5 w-3.5 shrink-0 ${variant === "in" ? "text-ink-500" : "text-brand-700 dark:text-brand-400"}`}
-        />
-        <span className="text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-white/55">
-          {title}
-        </span>
-      </div>
-      <ul className="space-y-1.5 px-3 py-2.5">
-        {items.map((line) => (
-          <li
-            key={line}
-            className="flex gap-2 text-[13px] leading-snug text-ink-600 dark:text-white/72"
-          >
-            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand-400 dark:bg-brand-500" />
-            <span>{line}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 export function AgentsPage() {
   return (
@@ -187,8 +145,7 @@ export function AgentsPage() {
           Agents
         </h2>
         <p className="mt-1 text-ink-600 dark:text-white/65">
-          Each card lists <strong className="font-medium text-ink-700 dark:text-white">Requires</strong> (inputs) and{" "}
-          <strong className="font-medium text-ink-700 dark:text-white">Produces</strong> (outputs) for chaining and contracts.
+          Agent cards show the runnable workflows available in RalphAI.
         </p>
       </div>
 
@@ -196,7 +153,7 @@ export function AgentsPage() {
         {agents.map((a) => (
           <article
             key={a.id}
-            className="brand-card group flex flex-col rounded-[24px] p-5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft"
+            className="brand-card group flex h-full min-h-[220px] flex-col rounded-[24px] p-5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft"
           >
             <div className="flex items-start justify-between gap-3">
               <div
@@ -223,22 +180,7 @@ export function AgentsPage() {
               {a.desc}
             </p>
 
-            <div className="mt-4 flex flex-col gap-3">
-              <IoList
-                title="Requires"
-                icon={ArrowDownCircle}
-                items={a.inputs}
-                variant="in"
-              />
-              <IoList
-                title="Produces"
-                icon={ArrowUpCircle}
-                items={a.outputs}
-                variant="out"
-              />
-            </div>
-
-            <div className="mt-4 flex gap-2">
+            <div className="mt-auto pt-4 flex gap-2">
               {a.id === "monthly-reporter" ? (
                 <Link
                   to="/agents/monthly-reporter"
@@ -255,6 +197,46 @@ export function AgentsPage() {
                   <Play className="h-4 w-4" />
                   Run
                 </Link>
+              ) : a.id === "marketingreco" ? (
+                <Link
+                  to="/agents/marketingreco"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : a.id === "ralphai-offers" ? (
+                <Link
+                  to="/agents/offers"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : a.id === "ralphai-ads" ? (
+                <Link
+                  to="/agents/ads"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : a.id === "review" ? (
+                <Link
+                  to="/agents/campaign-review"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : a.id === "data-run" ? (
+                <Link
+                  to="/agents/data-run"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
               ) : (
                 <button
                   type="button"
@@ -264,12 +246,6 @@ export function AgentsPage() {
                   Run
                 </button>
               )}
-              <button
-                type="button"
-                className="rounded-2xl border border-brand-100 px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:bg-brand-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"
-              >
-                Docs
-              </button>
             </div>
           </article>
         ))}
