@@ -12,8 +12,8 @@ from urllib.parse import quote
 
 from agents.health_check.drive_upload import upload_file_to_drive
 from agents.health_check.pdf_export import html_to_pdf
-from agents.health_check.campaign_wow import build_campaign_slack_summary, campaign_wow_for_html
-from agents.health_check.wow_viz import build_register_wow_report_html, build_wow_slack_message
+from agents.health_check.campaign_wow import campaign_wow_for_html
+from agents.health_check.wow_viz import build_register_wow_report_html
 from shared.register_build import (
     build_wow_register_csv,
     empty_ue_register_df,
@@ -21,36 +21,62 @@ from shared.register_build import (
     weekly_csv_to_register_df,
     write_register_csv,
 )
-from shared.register_wow import build_slack_summary, compare_register_slots
+from shared.register_wow import build_slack_pdf_card, compare_register_slots
 from shared.utils.slack_client import notify as slack_notify
 
 logger = logging.getLogger(__name__)
 
-def resolve_healthcheck_html_url(html_path: Path, *, operator_name: str) -> str | None:
-    """
-    Public URL for the WoW HTML report: Google Drive when configured, else API base URL.
-    """
-    html_path = Path(html_path)
-    if not html_path.is_file():
-        return None
-
-    upload = upload_file_to_drive(
-        html_path,
-        subfolder_name=f"healthcheck_{operator_name[:40]}",
-        file_name=f"{operator_name}_register_wow.html",
-        mimetype="text/html",
-    )
-    if upload and upload.get("webViewLink"):
-        return str(upload["webViewLink"])
-
-    base = (
+def _api_public_base() -> str:
+    return (
         os.getenv("RALPHAI_PUBLIC_BASE_URL")
         or os.getenv("RALPHAI_API_BASE_URL")
         or ""
     ).strip().rstrip("/")
-    if base:
-        return f"{base}/api/healthcheck/wow-viz?path={quote(str(html_path.resolve()))}"
-    return None
+
+
+def local_browser_report_url(html_path: Path) -> str | None:
+    """
+    Relative URL for the dashboard (Vite proxies to API) — renders styled HTML.
+
+    Do not upload .html to Drive; Drive shows raw source, not tables/colours.
+    """
+    html_path = Path(html_path).resolve()
+    if not html_path.is_file():
+        return None
+    return f"/api/healthcheck/wow-viz?path={quote(str(html_path))}"
+
+
+def public_browser_report_url(html_path: Path) -> str | None:
+    """Absolute URL for Slack / external open (same rendered report as the dashboard)."""
+    rel = local_browser_report_url(html_path)
+    if not rel:
+        return None
+    base = _api_public_base()
+    return f"{base}{rel}" if base else rel
+
+
+def local_pdf_report_url(pdf_path: Path) -> str | None:
+    """Relative URL for local PDF when Drive upload is unavailable."""
+    pdf_path = Path(pdf_path).resolve()
+    if not pdf_path.is_file():
+        return None
+    return f"/api/healthcheck/report-pdf?path={quote(str(pdf_path))}"
+
+
+def public_pdf_report_url(pdf_path: Path) -> str | None:
+    rel = local_pdf_report_url(pdf_path)
+    if not rel:
+        return None
+    base = _api_public_base()
+    return f"{base}{rel}" if base else rel
+
+
+def drive_pdf_view_link(upload: dict[str, Any]) -> str:
+    """Google Drive link that opens the PDF viewer (not a download of HTML)."""
+    fid = str(upload.get("file_id") or "").strip()
+    if fid:
+        return f"https://drive.google.com/file/d/{fid}/view"
+    return str(upload.get("webViewLink") or "").strip()
 
 
 REGISTER_FILES = {
@@ -61,7 +87,6 @@ REGISTER_FILES = {
     "wow_dd": "WoW-dd-register.csv",
     "wow_ue": "WoW-ue-register.csv",
     "html": "register_wow_report.html",
-    "html_legacy": "wow_buckets.html",
     "pdf": "register_wow_report.pdf",
     "wow_campaigns_promo": "wow_campaigns_promo.csv",
     "wow_campaigns_ads": "wow_campaigns_ads.csv",
@@ -79,6 +104,7 @@ def build_operator_register_bundle(
     ue_week1_csv: Path | None = None,
     ue_week2_csv: Path | None = None,
     campaign_wow_files: dict[str, str | None] | None = None,
+    post_slack: bool = True,
 ) -> dict[str, Any]:
     """
     Write register CSVs, HTML report, PDF, upload to Drive, post Slack summary.
@@ -169,23 +195,24 @@ def build_operator_register_bundle(
         campaigns_analysis=campaigns_html if campaigns_html.get("promo") or campaigns_html.get("ads") else None,
     )
     if html_path:
-        legacy = output_dir / REGISTER_FILES["html_legacy"]
-        legacy.write_text(Path(html_path).read_text(encoding="utf-8"), encoding="utf-8")
-        result["wow_viz_html"] = str(legacy)
+        result["wow_viz_html"] = str(html_path)
         result["register_wow_html"] = str(html_path)
 
-    html_url: Optional[str] = None
+    browser_url: Optional[str] = None
     if html_path:
-        html_url = resolve_healthcheck_html_url(Path(html_path), operator_name=operator_name)
-        if html_url:
-            result["html_report_url"] = html_url
+        browser_url = local_browser_report_url(Path(html_path))
+        if browser_url:
+            result["browser_report_url"] = browser_url
 
     pdf_path: Optional[Path] = None
     pdf_url: Optional[str] = None
+    result["pdf_export_ok"] = False
     if html_path:
         pdf_path = html_to_pdf(Path(html_path), output_dir / REGISTER_FILES["pdf"])
-        if pdf_path:
+        if pdf_path and pdf_path.is_file():
             result["register_files"]["pdf"] = str(pdf_path)
+            result["pdf_local_url"] = local_pdf_report_url(pdf_path)
+            result["pdf_export_ok"] = True
             upload = upload_file_to_drive(
                 pdf_path,
                 subfolder_name=f"healthcheck_{operator_name[:40]}",
@@ -193,42 +220,32 @@ def build_operator_register_bundle(
                 mimetype="application/pdf",
             )
             if upload:
-                pdf_url = upload.get("webViewLink") or None
+                pdf_url = drive_pdf_view_link(upload)
                 result["pdf_drive_url"] = pdf_url
                 result["pdf_drive_file_id"] = upload.get("file_id")
+            else:
+                pdf_url = public_pdf_report_url(pdf_path)
+                result["pdf_drive_url"] = None
+                result["pdf_public_url"] = pdf_url
+        else:
+            result["pdf_export_error"] = (
+                "PDF export failed — install Chromium: python -m playwright install chromium"
+            )
+            logger.warning(
+                "PDF export failed for %s — Slack/dashboard will use browser HTML link only",
+                operator_name,
+            )
 
-    slack_text = build_slack_summary(
-        dd_analysis,
-        title=operator_name,
-        pdf_url=pdf_url,
-        html_url=html_url,
-    )
-    if ue_analysis.get("slotCount") and result["platform"] == "dd+ue":
-        slack_text += "\n\n*Uber Eats*\n" + build_slack_summary(
-            ue_analysis,
+    slack_browser_url = public_browser_report_url(Path(html_path)) if html_path else None
+
+    if post_slack:
+        slack_text = build_slack_pdf_card(
             title=operator_name,
-            html_url=html_url,
-        )
-    elif not slack_text:
-        slack_text = build_wow_slack_message(
-            week1_weekly_csv,
-            week2_weekly_csv,
             week1_label=week1_label,
             week2_label=week2_label,
-            title=operator_name,
+            pdf_url=pdf_url,
+            html_url=slack_browser_url if not pdf_url else None,
         )
-    campaign_slack = build_campaign_slack_summary(
-        promo_wow_csv=Path(promo_wow) if promo_wow else None,
-        ads_wow_csv=Path(ads_wow) if ads_wow else None,
-        week1_label=week1_label,
-        week2_label=week2_label,
-        operator_name=operator_name,
-    )
-    if campaign_slack and (promo_wow or ads_wow):
-        slack_notify(campaign_slack)
-        result["campaign_slack_sent"] = True
-
-    if slack_text:
         slack_notify(slack_text)
         result["wow_slack_sent"] = True
 

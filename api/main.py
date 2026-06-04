@@ -1429,6 +1429,29 @@ def get_healthcheck_wow_viz(path: str):
     return FileResponse(target, media_type="text/html")
 
 
+@app.get("/api/healthcheck/report-pdf")
+def get_healthcheck_report_pdf(path: str):
+    """Serve a generated register WoW PDF from ``data/healthcheck`` (local fallback)."""
+    healthcheck_root = (ROOT / "data" / "healthcheck").resolve()
+    try:
+        target = Path(path).resolve()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(400, "Invalid path.") from exc
+    if target.name != "register_wow_report.pdf" or not target.is_relative_to(healthcheck_root):
+        raise HTTPException(
+            400,
+            "Path must be register_wow_report.pdf under data/healthcheck.",
+        )
+    if not target.is_file():
+        raise HTTPException(404, "PDF not found — run the health check first.")
+    return FileResponse(
+        target,
+        media_type="application/pdf",
+        filename=target.name,
+        headers={"Content-Disposition": f'inline; filename="{target.name}"'},
+    )
+
+
 @app.get("/api/runs/{run_id}/download/deepdive")
 def download_deepdive_json(run_id: str):
     _validate_run_id(run_id)

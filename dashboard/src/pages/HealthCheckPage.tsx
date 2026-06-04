@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Activity } from "lucide-react";
+import { ArrowLeft, Loader2, Activity, ExternalLink, FileText } from "lucide-react";
 import type { AccountOperator } from "../components/OperatorAccountPicker";
 
 const HEALTHCHECK_RUNNING_KEY = "healthcheck:running";
@@ -11,15 +11,46 @@ type InFlightHealthCheck = {
   promise: Promise<RunPayload>;
 };
 
+type OperatorReport = {
+  operator?: string;
+  email?: string;
+  status?: string;
+  browser_report_url?: string;
+  pdf_drive_url?: string;
+  pdf_local_url?: string;
+  pdf_public_url?: string;
+  pdf_export_ok?: boolean;
+  wow_viz_html?: string;
+};
+
 let inFlightHealthCheck: InFlightHealthCheck | null = null;
+
+function browserUrlFor(report: OperatorReport): string | null {
+  if (report.browser_report_url) return report.browser_report_url;
+  if (report.wow_viz_html) {
+    return `/api/healthcheck/wow-viz?path=${encodeURIComponent(report.wow_viz_html)}`;
+  }
+  return null;
+}
+
+function pdfUrlFor(report: OperatorReport): { url: string | null; isDrive: boolean } {
+  const drive = (report.pdf_drive_url || "").trim();
+  if (drive && drive.includes("drive.google.com")) {
+    return { url: drive, isDrive: true };
+  }
+  const local = (report.pdf_local_url || report.pdf_public_url || "").trim();
+  if (local) return { url: local, isDrive: false };
+  return { url: null, isDrive: false };
+}
 
 export function HealthCheckPage() {
   const [operators, setOperators] = useState<AccountOperator[]>([]);
   const [selectedOperatorIds, setSelectedOperatorIds] = useState<string[]>([]);
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<RunPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,9 +103,11 @@ export function HealthCheckPage() {
     }
 
     const persisted = localStorage.getItem(HEALTHCHECK_RUNNING_KEY);
-    if (!persisted) return () => {
-      cancelled = true;
-    };
+    if (!persisted) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     setLoading(true);
     setInfo("Health check is still running in background.");
@@ -97,11 +130,11 @@ export function HealthCheckPage() {
         );
         if (finished && !cancelled) {
           setLoading(false);
-          setInfo("Background health check finished. Open Runs for latest status details.");
+          setInfo("Background health check finished. Re-run or check Slack for the PDF link.");
           localStorage.removeItem(HEALTHCHECK_RUNNING_KEY);
         }
       } catch {
-        // Ignore polling failures, keep state until user refreshes.
+        // Ignore polling failures.
       }
     };
 
@@ -131,6 +164,40 @@ export function HealthCheckPage() {
     setSelectedOperatorIds([]);
   }
 
+  const reportCards = useMemo(() => {
+    if (!result) return [];
+    const wantEmails = new Set(selectedEmails.map((e) => e.toLowerCase()));
+    const fromApi = Array.isArray(result.operator_reports)
+      ? (result.operator_reports as OperatorReport[])
+      : [];
+    const fallback = Array.isArray(result.operator_results)
+      ? (result.operator_results as OperatorReport[])
+      : [];
+    const rows = fromApi.length ? fromApi : fallback;
+
+    return rows
+      .filter((r) => {
+        if (!wantEmails.size) return true;
+        const em = (r.email || "").trim().toLowerCase();
+        return em && wantEmails.has(em);
+      })
+      .filter((r) => r.status === "success")
+      .map((r) => {
+        const pdf = pdfUrlFor(r);
+        return {
+          operator: String(r.operator || r.email || "Operator"),
+          browserUrl: browserUrlFor(r),
+          pdfUrl: pdf.url,
+          pdfIsDrive: pdf.isDrive,
+        };
+      })
+      .filter((r) => r.browserUrl || r.pdfUrl);
+  }, [result, selectedEmails]);
+
+  const wowWeeks = result?.wow_weeks as
+    | { previous_completed?: string; current_completed?: string }
+    | undefined;
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -153,13 +220,15 @@ export function HealthCheckPage() {
       return;
     }
 
+    setSelectedEmails(emails);
+
     const formData = new FormData();
     formData.append("operator_emails", JSON.stringify(emails));
 
     const startedAtIso = new Date().toISOString().replace("T", " ").slice(0, 19);
     localStorage.setItem(HEALTHCHECK_RUNNING_KEY, startedAtIso);
     setLoading(true);
-    setInfo("Health check started. Status will remain even if you navigate away.");
+    setInfo("Health check started. Results will post to Slack as a PDF link when ready.");
 
     const runPromise: Promise<RunPayload> = (async () => {
       const res = await fetch("/api/runs/health-check", { method: "POST", body: formData });
@@ -182,23 +251,8 @@ export function HealthCheckPage() {
     }
   }
 
-  const masterSheets = Array.isArray(result?.master_sheets)
-    ? (result.master_sheets as string[])
-    : [];
-  const wowVizHtml = typeof result?.wow_viz_html === "string" ? result.wow_viz_html : "";
-  const operatorVizLinks = Array.isArray(result?.operator_results)
-    ? (result.operator_results as Array<Record<string, unknown>>)
-        .filter((r) => typeof r.wow_viz_html === "string" && r.wow_viz_html)
-        .map((r) => ({
-          operator: String(r.operator ?? r.email ?? "operator"),
-          path: String(r.wow_viz_html),
-        }))
-    : [];
-  const outputDir = typeof result?.output_dir === "object" && result.output_dir !== null
-    ? JSON.stringify(result.output_dir)
-    : typeof result?.output_dir === "string"
-      ? result.output_dir
-      : "";
+  const succeeded = typeof result?.operators_succeeded === "number" ? result.operators_succeeded : null;
+  const failed = typeof result?.operators_failed === "number" ? result.operators_failed : null;
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -212,12 +266,9 @@ export function HealthCheckPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">Health Check</h2>
         <p className="mt-1 max-w-3xl text-ink-600">
-          Pick operators and run. The agent logs into each DoorDash account in order, pulls <strong>one</strong>{" "}
-          combined export for the last two completed Mon–Sun weeks (financial + marketing), splits them into weekly
-          CSVs, then builds WoW analysis (previous completed week vs the most recent completed week), including{" "}
-          <strong>campaign WoW</strong> for each promo and ads campaign (sales, orders, spend, ROAS, cost/order,
-          check after promo). No dates or week counts to configure — the window is always “today” relative to the
-          server clock.
+          Pick operators and run. Use <strong>View in browser</strong> for the full styled report (tables and
+          colours). Open PDF (Drive) is the same report as a PDF in Google Drive — also what Slack links to.
+          HTML is never uploaded to Drive (Drive only shows raw HTML source).
         </p>
       </div>
 
@@ -282,66 +333,61 @@ export function HealthCheckPage() {
       </form>
 
       {result && (
-        <div className="brand-card rounded-[28px] p-6 text-sm text-ink-700">
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-brand-50/80 p-4 font-mono text-xs">
-            {JSON.stringify(result, null, 2)}
-          </pre>
-          {outputDir && (
-            <p className="mt-3 text-ink-600">
-              Output directory: <code className="rounded bg-white px-1">{outputDir}</code>
+        <div className="brand-card rounded-[28px] p-6">
+          <h3 className="font-display text-lg font-semibold text-ink-900">Reports</h3>
+          {wowWeeks?.previous_completed && wowWeeks?.current_completed ? (
+            <p className="mt-1 text-sm text-ink-600">
+              WoW window: {wowWeeks.previous_completed} → {wowWeeks.current_completed}
+              {succeeded != null ? (
+                <>
+                  {" "}
+                  · {succeeded} succeeded
+                  {failed ? `, ${failed} failed` : ""}
+                </>
+              ) : null}
             </p>
-          )}
-          {masterSheets.length > 0 && (
-            <ul className="mt-2 list-inside list-disc text-ink-600">
-              {masterSheets.map((p) => (
-                <li key={p}>
-                  <code className="text-xs">{p}</code>
+          ) : null}
+
+          {reportCards.length > 0 ? (
+            <ul className="mt-4 flex flex-col gap-3">
+              {reportCards.map((card) => (
+                <li key={card.operator} className="flex flex-wrap items-center gap-2">
+                  <span className="min-w-[10rem] text-sm font-medium text-ink-800">{card.operator}</span>
+                  {card.browserUrl ? (
+                    <a
+                      href={card.browserUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-2xl border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-ink-800 hover:bg-brand-50"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View in browser
+                    </a>
+                  ) : null}
+                  {card.pdfUrl ? (
+                    <a
+                      href={card.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-ink-900 px-4 py-2 text-sm font-semibold text-white hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                    >
+                      <FileText className="h-4 w-4" />
+                      {card.pdfIsDrive ? "Open PDF (Drive)" : "Open PDF"}
+                    </a>
+                  ) : (
+                    <span className="text-xs text-amber-800">
+                      PDF not ready — run{" "}
+                      <code className="rounded bg-amber-50 px-1">python -m playwright install chromium</code>
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-          )}
-          {typeof result?.pdf_drive_url === "string" && result.pdf_drive_url && (
-            <p className="mt-3">
-              <a
-                href={String(result.pdf_drive_url)}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-brand-700 hover:text-brand-800"
-              >
-                Google Drive PDF report
-              </a>
+          ) : (
+            <p className="mt-3 text-sm text-ink-600">
+              No report link for the selected operators yet. Re-run the health check after Playwright Chromium
+              is installed.
             </p>
-          )}
-          {(wowVizHtml || operatorVizLinks.length > 0) && (
-            <div className="mt-4">
-              <h4 className="text-sm font-semibold text-ink-900">Register WoW Report (HTML)</h4>
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {wowVizHtml && (
-                  <li>
-                    <a
-                      href={`/api/healthcheck/wow-viz?path=${encodeURIComponent(wowVizHtml)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-ink-700"
-                    >
-                      All operators
-                    </a>
-                  </li>
-                )}
-                {operatorVizLinks.map((v) => (
-                  <li key={v.path}>
-                    <a
-                      href={`/api/healthcheck/wow-viz?path=${encodeURIComponent(v.path)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-xl border border-brand-200 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-brand-50"
-                    >
-                      {v.operator}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
           )}
         </div>
       )}

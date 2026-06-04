@@ -239,7 +239,9 @@ export default function ConfigScreen() {
   const hasUe = hasUeFinancial;
   const hasUePeriods = hasUeFinancial;
   const ueOnly = hasUePeriods && !hasDdPeriods;
-  const showUePeriodEditor = hasUePeriods && (ueOnly || !syncDates);
+  const showCombinedPeriodEditor = syncDates && (hasDdPeriods || hasUePeriods);
+  const showDdPeriodEditor = !syncDates && hasDdPeriods;
+  const showUePeriodEditor = !syncDates && hasUePeriods;
 
   const ddCatalog = useMemo(() => buildDdStoreCatalog(dataStore.ddFinancial), [dataStore.ddFinancial]);
   const ueCatalog = useMemo(() => buildUeStoreCatalog(dataStore.ueFinancial), [dataStore.ueFinancial]);
@@ -340,8 +342,9 @@ export default function ConfigScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] p-4 sm:p-6">
-      <div className="w-full max-w-[96rem] mx-auto space-y-5 pb-12 min-w-0">
+    <div className="standalone-screen bg-[var(--bg)]">
+      <div className="standalone-screen-body p-4 sm:p-6">
+      <div className="w-full max-w-[96rem] mx-auto space-y-5 min-w-0">
         <div className="mb-2">
           <h1 className="text-xl font-bold text-[var(--text)]">Configure Analysis</h1>
           <p className="text-sm text-[var(--text-muted)] mt-1">Select operator, set date ranges, and exclusions</p>
@@ -383,7 +386,51 @@ export default function ConfigScreen() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {hasDdPeriods && (
+              {showCombinedPeriodEditor && (
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0 md:col-span-2">
+                  <div className="flex flex-col gap-1 mb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {hasDdPeriods && <PlatformLogo platform="dd" size={18} />}
+                      {hasUePeriods && <PlatformLogo platform="ue" size={18} />}
+                      <span className="text-sm font-medium text-[var(--text)]">
+                        {hasDdPeriods && hasUePeriods
+                          ? 'DoorDash & Uber Eats'
+                          : hasDdPeriods
+                            ? 'All platforms (DoorDash data)'
+                            : 'All platforms (Uber Eats data)'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 text-[10px] text-[var(--text-subtle)]">
+                      {hasDdPeriods && ddRange.min && (
+                        <span>
+                          DoorDash data: {formatDateShort(ddRange.min)} — {formatDateShort(ddRange.max)}
+                          {hasDdSales && !hasDdFinancial ? ' · from sales export' : ''}
+                        </span>
+                      )}
+                      {hasUePeriods && ueRange.min && (
+                        <span>
+                          Uber Eats data: {formatDateShort(ueRange.min)} — {formatDateShort(ueRange.max)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {hasDdSales && !hasDdFinancial && (
+                    <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mb-3">
+                      Sales ZIP only — date ranges come from your sales file. Upload <strong>Financial</strong> to run full analysis (Overview, Register, Buckets, etc.).
+                    </p>
+                  )}
+                  <PeriodRangePair
+                    key={`combined-${config.ddPreStart || config.uePreStart || ''}-${config.ddPreEnd || config.uePreEnd || ''}-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}`}
+                    preStart={hasDdPeriods ? config.ddPreStart : config.uePreStart}
+                    preEnd={hasDdPeriods ? config.ddPreEnd : config.uePreEnd}
+                    postStart={hasDdPeriods ? config.ddPostStart : config.uePostStart}
+                    postEnd={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
+                    onApply={hasDdPeriods ? config.setDdDates : setUeDates}
+                  />
+                </div>
+              )}
+
+              {showDdPeriodEditor && (
                 <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0">
                   <div className="flex flex-col gap-1 mb-3">
                     <div className="flex items-center gap-2">
@@ -426,11 +473,6 @@ export default function ConfigScreen() {
                       </span>
                     )}
                   </div>
-                  {ueOnly && syncDates && (
-                    <p className="text-[10px] text-[var(--text-subtle)] mb-3">
-                      Uber Eats only — these dates are used for analysis (synced toggle applies when DoorDash is added later).
-                    </p>
-                  )}
                   <PeriodRangePair
                     key={`ue-${config.uePreStart || ''}-${config.uePreEnd || ''}-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
                     preStart={config.uePreStart}
@@ -511,47 +553,27 @@ export default function ConfigScreen() {
         </div>
         </div>
 
-        <div className="space-y-2">
-          {analyzeError && (
-            <p className="text-sm text-[var(--negative)] bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {analyzeError}
-            </p>
-          )}
-          {!config.operatorName?.trim() && config.isConfigured() && canRunFullAnalysis && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Select an operator above — Analyze stays disabled until you do.
-            </p>
-          )}
-          {config.isConfigured() && !canRunFullAnalysis && hasDdPeriods && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Periods are set from your sales upload. Upload <strong>Financial</strong> (DoorDash and/or Uber Eats) to enable Analyze.
-            </p>
-          )}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setScreen('upload')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
-            >
-              <ChevronLeft size={16} />
-              Back
-            </button>
-            <button
-              disabled={!canAnalyze}
-              onClick={handleAnalyze}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm transition-all
-                ${canAnalyze
-                  ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] cursor-pointer'
-                  : 'bg-[var(--surface-3)] text-[var(--text-subtle)] cursor-not-allowed'}`}
-            >
-              {dataStore.isProcessing ? 'Analyzing...' : 'Analyze'}
-              <ChevronRight size={16} />
-            </button>
+        {(analyzeError || (!config.operatorName?.trim() && config.isConfigured() && canRunFullAnalysis) || (config.isConfigured() && !canRunFullAnalysis && hasDdPeriods)) && (
+          <div className="space-y-2">
+            {analyzeError && (
+              <p className="text-sm text-[var(--negative)] bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {analyzeError}
+              </p>
+            )}
+            {!config.operatorName?.trim() && config.isConfigured() && canRunFullAnalysis && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Select an operator above — Analyze stays disabled until you do.
+              </p>
+            )}
+            {config.isConfigured() && !canRunFullAnalysis && hasDdPeriods && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Periods are set from your sales upload. Upload <strong>Financial</strong> (DoorDash and/or Uber Eats) to enable Analyze.
+              </p>
+            )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {hasDd && hasUe && (
-        <div className="w-full max-w-[96rem] mx-auto pb-12 min-w-0">
+        {hasDd && hasUe && (
           <div className="card min-w-0">
             <h3 className="font-semibold text-[var(--text)] mb-2">Combined: DD ↔ UE store map</h3>
             <StoreMapEditor
@@ -561,8 +583,34 @@ export default function ConfigScreen() {
               setRows={setEditedMapRows}
             />
           </div>
+        )}
+      </div>
+      </div>
+
+      <div className="standalone-screen-footer px-4 py-3">
+        <div className="mx-auto flex w-full max-w-[96rem] items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setScreen('upload')}
+            className="flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+          >
+            <ChevronLeft size={16} />
+            Back
+          </button>
+          <button
+            type="button"
+            disabled={!canAnalyze}
+            onClick={handleAnalyze}
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition-all
+              ${canAnalyze
+                ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] cursor-pointer'
+                : 'bg-[var(--surface-3)] text-[var(--text-subtle)] cursor-not-allowed'}`}
+          >
+            {dataStore.isProcessing ? 'Analyzing...' : 'Analyze'}
+            <ChevronRight size={16} />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -42,7 +42,7 @@ export default function Shell({ active, setActive, periodLabel, onExport, isExpo
           className={
             isMapView
               ? 'flex flex-1 flex-col min-h-0 w-full min-w-0 p-0 overflow-hidden'
-              : 'p-6 w-full min-w-0 overflow-x-hidden'
+              : 'flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-6 w-full min-w-0'
           }
         >
           {children}

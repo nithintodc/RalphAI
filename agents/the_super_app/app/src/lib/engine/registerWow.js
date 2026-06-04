@@ -113,8 +113,9 @@ export function compareRegisterWeekSlots(week1Rows, week2Rows, labels = {}) {
   const k = topMoverCount(keys.length);
   const movers = {};
   for (const m of REGISTER_WOW_METRICS) {
-    const ranked = [...slots].sort((a, b) => a.metrics[m].delta - b.metrics[m].delta);
-    movers[m] = { top_up: ranked.slice(-k), top_down: ranked.slice(0, k) };
+    const ups = slots.filter((s) => s.metrics[m].delta > 0).sort((a, b) => b.metrics[m].delta - a.metrics[m].delta);
+    const downs = slots.filter((s) => s.metrics[m].delta < 0).sort((a, b) => a.metrics[m].delta - b.metrics[m].delta);
+    movers[m] = { top_up: ups.slice(0, k), top_down: downs.slice(0, k) };
   }
 
   return {

@@ -2,7 +2,7 @@
 # Build from repo root:
 #   docker build -f infra/gcp/Dockerfile.api -t ralphai-api:latest .
 
-# --- Stage 1: Build React dashboard ---
+# --- Stage 1: Build RalphAI workspace dashboard ---
 FROM node:20-alpine AS dashboard-build
 WORKDIR /dashboard
 COPY dashboard/package.json dashboard/package-lock.json* ./
@@ -10,7 +10,18 @@ RUN npm ci --ignore-scripts
 COPY dashboard/ .
 RUN npm run build
 
-# --- Stage 2: Python API ---
+# --- Stage 2: Build The Super App (embedded at /internal-apps/the-super-app) ---
+FROM node:20-alpine AS superapp-build
+WORKDIR /superapp
+COPY agents/the_super_app/app/package.json agents/the_super_app/app/package-lock.json* ./
+RUN npm ci --ignore-scripts
+COPY agents/the_super_app/app/ .
+# Export URLs are same-origin in the orchestrator container; placeholders satisfy Vite.
+ENV VITE_EXPORT_API_BASE=https://placeholder.invalid \
+    VITE_GOOGLE_SHEETS_EXPORT_URL=https://placeholder.invalid/export
+RUN npm run build
+
+# --- Stage 3: Python API ---
 FROM python:3.12-slim
 WORKDIR /app
 
@@ -24,8 +35,9 @@ RUN python -m playwright install --with-deps chromium
 
 COPY . .
 
-# Copy built dashboard into the container
+# Copy built UIs into the container
 COPY --from=dashboard-build /dashboard/dist /app/dashboard/dist
+COPY --from=superapp-build /superapp/dist /app/agents/the_super_app/app/dist
 
 EXPOSE 8080
 CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

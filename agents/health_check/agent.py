@@ -115,9 +115,27 @@ def _safe_name(value: str) -> str:
     return safe[:80]
 
 
-def _operator_dirs(operator_name: str) -> dict[str, Path]:
+def _run_folder_name(when: datetime | None = None) -> str:
+    ts = (when or datetime.now()).strftime("%Y%m%d_%H%M%S")
+    return f"run-{ts}"
+
+
+def _legacy_operator_dirs(operator_name: str) -> dict[str, Path]:
+    """Historical per-operator tree (used for skip_download reads)."""
     safe = _safe_name(operator_name)
     root = HEALTHCHECK_ROOT / safe
+    return {
+        "root": root,
+        "rawdata": root / "rawdata",
+        "operatorlevel": root / "operatorlevel",
+        "wow": root / "WoW",
+    }
+
+
+def _operator_run_dirs(run_root: Path, operator_name: str) -> dict[str, Path]:
+    """One operator's artifacts under ``data/healthcheck/run-<timestamp>/<operator>/``."""
+    safe = _safe_name(operator_name)
+    root = run_root / safe
     return {
         "root": root,
         "rawdata": root / "rawdata",
@@ -401,7 +419,7 @@ def merge_operator_csvs(week_start: date, week_end: date, operators: list[dict[s
 
     for operator in operators:
         op_name = operator["business_name"] or operator["email"]
-        op_level_dir = _operator_dirs(op_name)["operatorlevel"]
+        op_level_dir = _legacy_operator_dirs(op_name)["operatorlevel"]
         csv_path = op_level_dir / f"{week_label}.csv"
         if csv_path.exists():
             try:
@@ -455,7 +473,8 @@ def run_health_check(
             (case-insensitive, stripped).
         reference_date: Reference date for week calculation (default: today).
         skip_download: If True, skip browser-use download and use existing per-week CSVs under
-            ``data/healthcheck/<operator>/operatorlevel/``.
+            ``data/healthcheck/<operator>/operatorlevel/`` (legacy layout). New runs write under
+            ``data/healthcheck/run-<timestamp>/<operator>/``.
     """
     _setup_logging()
     HEALTHCHECK_ROOT.mkdir(parents=True, exist_ok=True)
@@ -522,25 +541,29 @@ def run_health_check(
         format_week_label(*week_newer),
     )
 
-    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_root = HEALTHCHECK_ROOT / run_timestamp
-    full_wow_dir = run_root / "full_WoW"
-    full_wow_dir.mkdir(parents=True, exist_ok=True)
+    run_started = datetime.now()
+    run_root = HEALTHCHECK_ROOT / _run_folder_name(run_started)
+    run_root.mkdir(parents=True, exist_ok=True)
 
-    week_csvs: dict[tuple[date, date], Path] = {}
     store_operator_map: dict[str, str] = {}
     operator_results: list[dict[str, Any]] = []
 
     for operator in operators:
         safe_name = _safe_name(operator["business_name"] or operator["email"])
         op_name = operator["business_name"] or operator["email"]
-        op_dirs = _operator_dirs(op_name)
-        op_raw_dir = op_dirs["rawdata"]
-        op_level_dir = op_dirs["operatorlevel"]
+        legacy_dirs = _legacy_operator_dirs(op_name)
+        op_dirs = _operator_run_dirs(run_root, op_name)
         op_wow_dir = op_dirs["wow"]
-        op_raw_dir.mkdir(parents=True, exist_ok=True)
-        op_level_dir.mkdir(parents=True, exist_ok=True)
         op_wow_dir.mkdir(parents=True, exist_ok=True)
+
+        if skip_download:
+            op_raw_dir = legacy_dirs["rawdata"]
+            op_level_dir = legacy_dirs["operatorlevel"]
+        else:
+            op_raw_dir = op_dirs["rawdata"]
+            op_level_dir = op_dirs["operatorlevel"]
+            op_raw_dir.mkdir(parents=True, exist_ok=True)
+            op_level_dir.mkdir(parents=True, exist_ok=True)
 
         op_store_map: dict[str, str] = {}
         operator_week_csvs: dict[tuple[date, date], Path] = {}
@@ -571,6 +594,7 @@ def run_health_check(
         operator_result: dict[str, Any] = {
             "operator": op_name,
             "email": operator["email"],
+            "output_dir": str(op_dirs["root"]),
             "download_status": download_result.get("status"),
             "missing_reports": download_result.get("missing_reports") or [],
             "weekly_csvs": [],
@@ -673,100 +697,35 @@ def run_health_check(
             )
         operator_results.append(operator_result)
 
-    for week_start, week_end in weeks_ordered:
-        week_folder_name = format_week_folder(week_start, week_end)
-        merged_prebuilt = full_wow_dir / f"{week_folder_name}.csv"
-        if skip_download and merged_prebuilt.exists():
-            logger.info("Using existing merged weekly CSV for %s", week_folder_name)
-            week_csvs[(week_start, week_end)] = merged_prebuilt
-            continue
-
-        combined = merge_operator_csvs(week_start, week_end, operators, full_wow_dir)
-        if combined:
-            week_csvs[(week_start, week_end)] = combined
-
-    from agents.health_check.wow_analysis import build_master_sheet, build_operator_scorecard, build_summary_sheet
-    from agents.health_check.register_outputs import build_operator_register_bundle
-
-    sorted_weeks = sorted(week_csvs.keys())
-    master_paths = []
-    full_wow_viz_path: Optional[Path] = None
-    full_bundle: dict[str, Any] = {}
-
-    if len(sorted_weeks) >= 2:
-        current_week = sorted_weeks[-1]
-        previous_week = sorted_weeks[-2]
-
-        current_csv = week_csvs[current_week]
-        previous_csv = week_csvs[previous_week]
-
-        master_output = full_wow_dir / "master_wow_analysis.csv"
-        master_path = build_master_sheet(current_csv, previous_csv, master_output, store_operator_map)
-        if master_path:
-            master_paths.append(str(master_path))
-
-        summary_output = full_wow_dir / "summary_wow.csv"
-        summary_path = build_summary_sheet(current_csv, previous_csv, summary_output, store_operator_map)
-        if summary_path:
-            master_paths.append(str(summary_path))
-            scorecard_output = full_wow_dir / "operator_scorecard.csv"
-            scorecard_path = build_operator_scorecard(summary_output, master_output, scorecard_output)
-            if scorecard_path:
-                master_paths.append(str(scorecard_path))
-
-        full_bundle = build_operator_register_bundle(
-            week1_weekly_csv=previous_csv,
-            week2_weekly_csv=current_csv,
-            output_dir=full_wow_dir,
-            week1_label=format_week_label(*previous_week),
-            week2_label=format_week_label(*current_week),
-            operator_name="All Operators",
-        )
-        full_wow_viz_path = (
-            Path(full_bundle["wow_viz_html"])
-            if full_bundle.get("wow_viz_html")
-            else None
+    wow_weeks = {
+        "previous_completed": format_week_label(*week_older),
+        "current_completed": format_week_label(*week_newer),
+    }
+    operator_reports = []
+    for r in operator_results:
+        operator_reports.append(
+            {
+                "operator": r.get("operator"),
+                "email": r.get("email"),
+                "status": r.get("status"),
+                "browser_report_url": r.get("browser_report_url"),
+                "pdf_drive_url": r.get("pdf_drive_url"),
+                "pdf_local_url": r.get("pdf_local_url"),
+                "pdf_public_url": r.get("pdf_public_url"),
+                "pdf_export_ok": r.get("pdf_export_ok"),
+                "wow_viz_html": r.get("wow_viz_html"),
+            }
         )
 
     return {
         "status": "success",
+        "run_folder": str(run_root),
         "operators_processed": len(operators),
         "operators_succeeded": sum(1 for r in operator_results if r.get("status") == "success"),
         "operators_failed": sum(1 for r in operator_results if r.get("status") == "failed"),
-        "weeks_processed": len(week_csvs),
-        "reference_date": ref.isoformat(),
-        "combined_download_range": {
-            "start": combined_start.isoformat(),
-            "end": combined_end.isoformat(),
-            "folder_label": combined_label,
-        },
-        "wow_weeks": {
-            "previous_completed": format_week_label(*week_older),
-            "current_completed": format_week_label(*week_newer),
-        },
-        "execution_model": {
-            "operators": "sequential",
-            "browser_sessions": "one DoorDash login per operator; single export for both weeks",
-            "analytics": "runs immediately after each operator's download (same process)",
-            "parallel_subagents": (
-                "Possible pattern: worker A pulls operator N while worker B analyzes N-1's files — "
-                "requires isolated browser profiles and stable file paths; not enabled here."
-            ),
-        },
-        "week_folders": {
-            format_week_label(k[0], k[1]): str(v) for k, v in week_csvs.items()
-        },
-        "master_sheets": master_paths,
-        "wow_viz_html": str(full_wow_viz_path) if full_wow_viz_path else None,
-        "register_files": full_bundle.get("register_files") if len(sorted_weeks) >= 2 else {},
-        "pdf_drive_url": full_bundle.get("pdf_drive_url") if len(sorted_weeks) >= 2 else None,
+        "wow_weeks": wow_weeks,
+        "operator_reports": operator_reports,
         "operator_results": operator_results,
-        "output_dir": {
-            "healthcheck_root": str(HEALTHCHECK_ROOT),
-            "run_root": str(run_root),
-            "full_wow": str(full_wow_dir),
-            "per_operator_layout": "data/healthcheck/<operator>/rawdata|operatorlevel|WoW",
-        },
     }
 
 

@@ -234,9 +234,22 @@ export SA_JSON=agents/the_super_app/streamlit_app/todc-marketing-XXXX.json
 
 ---
 
-### Full orchestrator on GCP (advanced)
+### Full orchestrator on GCP (Path A — recommended)
 
-Deploy the workspace API and React dashboard together as **`ralphai-api`** on Cloud Run, with managed Redis, GCS for run artifacts, and Secret Manager for API keys.
+**Git → GitHub Actions → Cloud Build → Cloud Run** — step-by-step checklist:
+
+**[docs/DEPLOY_PATH_A.md](docs/DEPLOY_PATH_A.md)**
+
+Quick start:
+
+```bash
+export GCP_PROJECT_ID=your-project-id
+./scripts/gcp-bootstrap.sh
+# Add GitHub secrets GCP_PROJECT_ID, GCP_REGION, GCP_SA_KEY (see doc)
+git push origin main
+```
+
+Deploy the workspace API and React dashboard to existing Cloud Run **`todc-reporting-app`** (`todc-marketing`, `us-central1`). Each CI deploy replaces the service image; prior revisions remain for rollback.
 
 #### Architecture
 

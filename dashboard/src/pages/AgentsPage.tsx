@@ -71,9 +71,9 @@ const agents = [
       "Runs full pipeline per operator in sequence (login → download → analytics)",
     ],
     outputs: [
-      "data/healthcheck/<operator>/rawdata, /operatorlevel, /WoW",
-      "data/healthcheck/<run_timestamp>/full_WoW — combined selected-operator WoW",
-      "full_WoW/master_wow_analysis.csv and summary_wow.csv",
+      "data/healthcheck/run-<timestamp>/<operator>/rawdata, operatorlevel, WoW",
+      "WoW/register_wow_report.html and .pdf (one HTML per operator)",
+      "Slack: PDF link on Google Drive",
     ],
   },
   {

@@ -45,8 +45,6 @@ export const COMBINED_COLUMNS = [
   { key: 'finOrders', label: 'Financial Unique Orders' },
   { key: 'mktSales', label: 'Marketing Sales' },
   { key: 'mktOrders', label: 'Marketing Orders' },
-  { key: 'mktFees', label: 'Marketing Fees' },
-  { key: 'mktCustDisc', label: 'Marketing Customer Discounts' },
   { key: 'salesGross', label: 'Sales Gross Sales' },
   { key: 'salesOrders', label: 'Sales Orders Incl. Cancelled' },
   { key: 'salesAov', label: 'Sales AOV' },
@@ -272,14 +270,10 @@ export function computeMarketingScope(dataset, filters = {}) {
 
   let sales = 0;
   let orders = 0;
-  let marketingFees = 0;
-  let customerDiscounts = 0;
 
   for (const row of rows) {
     sales += row.sales;
     orders += row.orders;
-    marketingFees += row.marketingFees;
-    customerDiscounts += row.customerDiscounts;
   }
 
   const summary = [
@@ -289,8 +283,6 @@ export function computeMarketingScope(dataset, filters = {}) {
     { label: 'Self serve filter', value: selectedSelfServe === 'ALL' ? 'All' : selectedSelfServe },
     { label: 'Sales', value: sales, kind: 'usd' },
     { label: 'Orders', value: orders, kind: 'int' },
-    { label: 'Marketing fees', value: marketingFees, kind: 'usd' },
-    { label: 'Customer discounts', value: customerDiscounts, kind: 'usd' },
   ];
 
   const pivotMap = new Map();
@@ -437,8 +429,6 @@ export function buildCombinedRows(financialPivot, marketingPivot, salesPivot) {
         finOrders: fin?.orderIds?.size ?? null,
         mktSales: mkt?.sales ?? null,
         mktOrders: mkt?.orders ?? null,
-        mktFees: mkt?.marketingFees ?? null,
-        mktCustDisc: mkt?.customerDiscounts ?? null,
         salesGross: sales?.grossSales ?? null,
         salesOrders: sales?.totalOrders ?? null,
         salesAov: aov,

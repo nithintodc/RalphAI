@@ -77,6 +77,30 @@ def top_mover_count(slot_count: int, *, fraction: float = 0.10, floor: int = 5) 
     return max(floor, min(slot_count, int(math.ceil(slot_count * fraction))))
 
 
+def split_top_movers(
+    items: list[dict[str, Any]],
+    metric: str,
+    k: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Largest positive deltas (up) and largest negative deltas (down), each capped at ``k``.
+
+    Unlike slicing a single sorted list, this stays correct when the rollup has fewer
+    rows than ``k`` (e.g. 3 stores with topK=13).
+    """
+    if k <= 0:
+        return {"top_up": [], "top_down": []}
+
+    def _delta(item: dict[str, Any]) -> float:
+        return float(item["metrics"][metric]["delta"])
+
+    ups = [x for x in items if _delta(x) > 0]
+    downs = [x for x in items if _delta(x) < 0]
+    top_up = sorted(ups, key=_delta, reverse=True)[:k]
+    top_down = sorted(downs, key=_delta)[:k]
+    return {"top_up": top_up, "top_down": top_down}
+
+
 def _pct_change(w1: float, w2: float) -> Optional[float]:
     if w1 == 0 and w2 == 0:
         return 0.0
@@ -151,14 +175,7 @@ def compare_register_slots(
     k = top_mover_count(n)
     movers: dict[str, Any] = {}
     for m in REGISTER_SLOT_METRICS:
-        ranked = sorted(
-            slots,
-            key=lambda s: s["metrics"][m]["delta"],
-        )
-        movers[m] = {
-            "top_up": list(reversed(ranked[-k:])) if k else [],
-            "top_down": ranked[:k] if k else [],
-        }
+        movers[m] = split_top_movers(slots, m, k)
 
     rollups = _build_rollups(slots, k)
 
@@ -203,8 +220,7 @@ def _build_rollups(slots: list[dict[str, Any]], k: int) -> dict[str, Any]:
         return out
 
     def top_for_rollups(items: list[dict[str, Any]], metric: str) -> dict[str, list]:
-        ranked = sorted(items, key=lambda x: x["metrics"][metric]["delta"])
-        return {"top_up": list(reversed(ranked[-k:])) if k else [], "top_down": ranked[:k] if k else []}
+        return split_top_movers(items, metric, k)
 
     by_store = aggregate(
         lambda s: f"Store {s['storeId']}" if s.get("storeId") else "",
@@ -327,17 +343,53 @@ def _append_rollup_movers(
         lines.append(format_slack_mover_line(lbl, block, metric, bucket_key=bucket_key))
 
 
+def build_slack_pdf_card(
+    *,
+    title: str,
+    week1_label: str,
+    week2_label: str,
+    pdf_url: str | None = None,
+    html_url: str | None = None,
+) -> str:
+    """Short Slack message with report link only (no slot-by-slot insights)."""
+    lines = [
+        f"📊 *Health Check — {title}*",
+        f"_{week1_label} → {week2_label}_",
+    ]
+    if pdf_url:
+        label = "Open PDF report"
+        if "drive.google.com" in pdf_url.lower():
+            label = "Open PDF on Google Drive"
+        lines.append(f"📄 *Results (PDF):* <{pdf_url}|{label}>")
+    elif html_url:
+        lines.append(f"📈 *View in browser:* <{html_url}|Open interactive report>")
+    else:
+        lines.append("_Report link unavailable (PDF export or Drive upload failed)._")
+    return "\n".join(lines)
+
+
 def build_slack_summary(
     analysis: dict[str, Any],
     *,
     title: str,
     pdf_url: str | None = None,
     html_url: str | None = None,
+    include_insights: bool = False,
 ) -> str:
-    """Major WoW findings for Slack (rollup movers in plain language)."""
+    """Slack summary: PDF/HTML card by default; optional verbose rollup movers."""
     labels = analysis.get("labels") or {}
     w1 = labels.get("week1", "Week 1")
     w2 = labels.get("week2", "Week 2")
+    if not include_insights:
+        return build_slack_pdf_card(
+            title=title,
+            week1_label=w1,
+            week2_label=w2,
+            pdf_url=pdf_url,
+            html_url=html_url,
+        )
+
+    # Verbose rollup movers (opt-in via include_insights=True).
     k = analysis.get("topK", 5)
     lines = [
         f"📊 *Health Check WoW — {title}*",

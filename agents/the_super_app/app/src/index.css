@@ -89,6 +89,52 @@ html.in-iframe .superapp-main {
   height: 100%;
 }
 
+/* Standalone screens (upload, config): scroll inside iframe — html/body overflow is hidden */
+html.in-iframe #root {
+  display: flex;
+  flex-direction: column;
+}
+
+.standalone-screen,
+.upload-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.in-iframe .standalone-screen,
+html.in-iframe .upload-screen {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.standalone-screen-body,
+.upload-screen-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.standalone-screen-footer,
+.upload-screen-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.standalone-screen .card,
+.upload-screen .card {
+  padding: 14px;
+}
+
 .tnum { font-variant-numeric: tabular-nums; }
 
 .table-heading-content {

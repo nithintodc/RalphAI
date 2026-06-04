@@ -12,6 +12,7 @@ import pandas as pd
 from agents.health_check.campaign_wow import (
     CAMPAIGN_METRICS,
     build_campaigns_wow_csv,
+    campaign_wow_for_html,
     derive_campaign_metrics,
 )
 from agents.health_check.data_processor import build_campaigns_csv
@@ -160,6 +161,47 @@ class TestCampaignMetrics(unittest.TestCase):
             orders_cols = [c for c in wow.columns if c.startswith("Orders")]
             for c in orders_cols:
                 self.assertTrue(wow[c].notna().all() or (wow[c].fillna(0) == wow[c].fillna(0)).all())
+
+    def test_campaign_wow_for_html_uses_template_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            wow = pd.DataFrame(
+                [
+                    {
+                        "Campaign Type": "Ads",
+                        "Campaign Name": "New W2 Campaign",
+                        "Store ID": "2",
+                        "Store Name": "B",
+                        "Promotion Type": "",
+                        "Campaign Owner": "Corp",
+                        "Status": "Improving",
+                        "Sales WoW Δ": 60.0,
+                        "Sales WoW %": float("nan"),
+                        "Orders WoW Δ": 3,
+                        "Orders WoW %": float("nan"),
+                        "Spend WoW Δ": 15.0,
+                        "Spend WoW %": float("nan"),
+                        "ROAS WoW Δ": 4.0,
+                        "ROAS WoW %": float("nan"),
+                        "Cost per Order WoW Δ": 5.0,
+                        "Cost per Order WoW %": float("nan"),
+                        "Promo AOV WoW Δ": 20.0,
+                        "Promo AOV WoW %": float("nan"),
+                        "Check After Promo WoW Δ": 15.0,
+                        "Check After Promo WoW %": float("nan"),
+                    }
+                ]
+            )
+            ads_path = td_path / "ads.csv"
+            wow.to_csv(ads_path, index=False)
+
+            out = campaign_wow_for_html(None, ads_path)
+            self.assertEqual(out["promo"], [])
+            self.assertEqual(len(out["ads"]), 1)
+            self.assertIn("salesDelta", out["ads"][0])
+            self.assertIn("ordersDelta", out["ads"][0])
+            self.assertIn("checkDelta", out["ads"][0])
+            self.assertNotIn("SalesDelta", out["ads"][0])
 
 
 if __name__ == "__main__":

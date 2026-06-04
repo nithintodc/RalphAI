@@ -22,6 +22,16 @@ CAMPAIGN_METRICS = [
     "Check After Promo",
 ]
 
+CAMPAIGN_HTML_KEYS = {
+    "Orders": "orders",
+    "Sales": "sales",
+    "Spend": "spend",
+    "ROAS": "roas",
+    "Cost per Order": "cpo",
+    "Promo AOV": "promoAov",
+    "Check After Promo": "check",
+}
+
 WOW_MERGE_KEYS = ["Campaign Type", "Campaign Name", "Store ID"]
 
 
@@ -349,7 +359,7 @@ def campaign_wow_for_html(
     """Serialize top campaign movers for embedded HTML."""
     out: dict[str, Any] = {"promo": [], "ads": [], "metrics": CAMPAIGN_METRICS}
 
-    for key, csv_path in (("promo", promo_wow_csv), ("ads", ads_wow_csv)):
+    for platform_key, csv_path in (("promo", promo_wow_csv), ("ads", ads_wow_csv)):
         df = _load_wow_csv(csv_path)
         if df.empty:
             continue
@@ -368,8 +378,10 @@ def campaign_wow_for_html(
                 "status": str(r.get("Status", "")),
             }
             for m in CAMPAIGN_METRICS:
-                row[f"{m}Delta"] = float(pd.to_numeric(r.get(f"{m} WoW Δ"), errors="coerce") or 0)
-                row[f"{m}Pct"] = r.get(f"{m} WoW %")
+                metric_key = CAMPAIGN_HTML_KEYS[m]
+                delta = pd.to_numeric(r.get(f"{m} WoW Δ"), errors="coerce")
+                row[f"{metric_key}Delta"] = 0.0 if pd.isna(delta) else float(delta)
+                row[f"{metric_key}Pct"] = r.get(f"{m} WoW %")
             rows.append(row)
-        out[key] = rows
+        out[platform_key] = rows
     return out

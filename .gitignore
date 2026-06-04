@@ -41,6 +41,9 @@ dashboard/dist/
 *.tmp
 *.temp
 
+# GCP deploy keys (from scripts/gcp-bootstrap.sh)
+.gcp/
+
 # Credential files - NEVER commit
 accounts.csv
 Account Information*.csv

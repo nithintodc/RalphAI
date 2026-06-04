@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import numbers
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +27,20 @@ VIZ_COLUMNS = [
     "Orders",
     "AOV",
 ]
+
+
+def _json_safe(value):
+    """Return a structure that can be emitted as strict browser JSON."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    return value
 
 
 def load_weekly_rows(csv_path: Path) -> list[dict]:
@@ -57,13 +73,14 @@ def build_register_wow_report_html(
 ) -> Optional[Path]:
     """Self-contained HTML for DD (+ optional UE) register WoW."""
     payload = json.dumps(
-        {
+        _json_safe({
             "dd": dd_analysis,
             "ue": ue_analysis,
             "ueHasData": bool(ue_has_data and ue_analysis),
             "campaigns": campaigns_analysis,
-        },
+        }),
         ensure_ascii=False,
+        allow_nan=False,
         separators=(",", ":"),
     )
     payload = payload.replace("</", "<\\/")
@@ -212,6 +229,15 @@ function fmtVal(metric, v) {
   if (metric === 'Sales' || metric === 'Payouts' || metric === 'AOV') return fmtMoney(v);
   return fmtNum(v);
 }
+function fmtDelta(metric, d) {
+  const n = Number(d);
+  if (metric === 'Sales' || metric === 'Payouts' || metric === 'AOV') {
+    const sign = n > 0 ? '+' : n < 0 ? '' : '';
+    return sign + fmtMoney(n);
+  }
+  const sign = n > 0 ? '+' : '';
+  return sign + fmtNum(n);
+}
 function fmtPct(pct) {
   if (pct == null) return '—';
   const sign = pct > 0 ? '+' : '';
@@ -230,7 +256,7 @@ function renderMoversTable(rows, metric, colLabel) {
       <td>${row.label}</td>
       <td class="num">${fmtVal(metric, m.week1)}</td>
       <td class="num">${fmtVal(metric, m.week2)}</td>
-      <td class="num ${deltaClass(m.delta)}">${fmtVal(metric, m.delta)}</td>
+      <td class="num ${deltaClass(m.delta)}">${fmtDelta(metric, m.delta)}</td>
       <td class="num ${deltaClass(m.delta)}">${fmtPct(m.pct)}</td>
     </tr>`;
   }
@@ -244,16 +270,18 @@ function renderRollupViews(metric, DATA) {
     const bucket = rollups[view.key] || { top_up: [], top_down: [] };
     const up = bucket.top_up || [];
     const down = bucket.top_down || [];
+    const upTitle = up.length ? `Increases (${up.length}${k ? ` of up to ${k}` : ''})` : 'No increases';
+    const downTitle = down.length ? `Decreases (${down.length}${k ? ` of up to ${k}` : ''})` : 'No decreases';
     return `<div class="rollup-block">
       <h3>${view.label}</h3>
       <p class="rollup-hint">${view.hint}</p>
       <div class="grid-2">
         <div>
-          <h3>Top ${k} increasing</h3>
-          ${renderMoversTable([...up].reverse(), metric, view.col)}
+          <h3>${upTitle}</h3>
+          ${renderMoversTable(up, metric, view.col)}
         </div>
         <div>
-          <h3>Top ${k} decreasing</h3>
+          <h3>${downTitle}</h3>
           ${renderMoversTable(down, metric, view.col)}
         </div>
       </div>
@@ -269,7 +297,7 @@ function renderPlatform(platformLabel, DATA) {
   const w2 = DATA.labels.week2;
   const k = DATA.topK;
   let html = `<section class="platform"><h2 class="platform-title">${platformLabel}</h2>
-    <p class="subtitle">${DATA.slotCount} underlying slots · ${w1} → ${w2} · top ${k} movers per rollup</p>`;
+    <p class="subtitle">${DATA.slotCount} underlying slots · ${w1} → ${w2} · up to ${k} largest increases / decreases per rollup (actual row counts shown below)</p>`;
   html += METRICS.map(metric => renderMetric(metric, DATA)).join('');
   return html + '</section>';
 }
