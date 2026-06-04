@@ -42,10 +42,65 @@ CACHE_TTL = int(os.getenv("AIRTABLE_CACHE_TTL_SECONDS", "300"))
 
 _cache: dict[str, Any] = {"ts": 0.0, "data": None}
 _lock = threading.Lock()
+_refreshing = threading.Event()
 
 
 def _snapshot_path() -> Path:
     return data_root() / "cache" / "airtable_accounts.json"
+
+
+def _load_snapshot() -> dict[str, Any] | None:
+    try:
+        directory = json.loads(_snapshot_path().read_text(encoding="utf-8"))
+        directory["source"] = "snapshot"
+        return directory
+    except (OSError, ValueError):
+        return None
+
+
+def _background_refresh() -> None:
+    """Refresh the directory from Airtable in a daemon thread (deduped)."""
+    if _refreshing.is_set():
+        return
+    _refreshing.set()
+
+    def _run() -> None:
+        try:
+            get_accounts(force_refresh=True)
+        except Exception:
+            pass
+        finally:
+            _refreshing.clear()
+
+    threading.Thread(target=_run, name="airtable-refresh", daemon=True).start()
+
+
+def get_accounts_fast() -> dict[str, Any]:
+    """
+    Non-blocking directory access for hot UI endpoints (operator dropdown, map).
+
+    Returns the in-process cache if present, else the on-disk snapshot
+    immediately, and kicks off a background Airtable refresh when the data is
+    stale. Only blocks on a live fetch when there is no cache *and* no snapshot.
+    """
+    # Atomic dict reads under the GIL — never block behind an in-flight refresh.
+    data = _cache["data"]
+    fresh = data is not None and (time.time() - _cache["ts"]) < CACHE_TTL
+    if data is not None:
+        if not fresh:
+            _background_refresh()
+        return data
+
+    snapshot = _load_snapshot()
+    if snapshot is not None:
+        with _lock:
+            if _cache["data"] is None:
+                _cache.update(ts=0.0, data=snapshot)
+        _background_refresh()
+        return snapshot
+
+    # No cache and no snapshot — must fetch live this once.
+    return get_accounts()
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -121,31 +176,36 @@ def get_accounts(*, force_refresh: bool = False) -> dict[str, Any]:
     Account directory grouped by account → stores. Fetched live from Airtable
     on every app run; cached in-process for AIRTABLE_CACHE_TTL_SECONDS and
     snapshotted to disk as an offline fallback.
+
+    The network fetch runs *outside* the cache lock so concurrent readers (e.g.
+    ``get_accounts_fast``) never block behind a slow Airtable round-trip.
     """
-    with _lock:
-        now = time.time()
-        if not force_refresh and _cache["data"] is not None and (now - _cache["ts"]) < CACHE_TTL:
-            return _cache["data"]
+    now = time.time()
+    # Atomic dict reads under the GIL — safe without the lock.
+    cached = _cache["data"]
+    if not force_refresh and cached is not None and (now - _cache["ts"]) < CACHE_TTL:
+        return cached
+
+    try:
+        directory = _build_directory(fetch_records())
+        with _lock:
+            _cache.update(ts=time.time(), data=directory)
         try:
-            directory = _build_directory(fetch_records())
-            _cache.update(ts=now, data=directory)
-            try:
-                snap = _snapshot_path()
-                snap.parent.mkdir(parents=True, exist_ok=True)
-                snap.write_text(json.dumps(directory), encoding="utf-8")
-            except OSError:
-                pass
-            return directory
-        except Exception as e:
-            # Fall back to last disk snapshot so the app keeps working offline.
-            try:
-                directory = json.loads(_snapshot_path().read_text(encoding="utf-8"))
-                directory["source"] = "snapshot"
-                directory["warning"] = f"Airtable fetch failed, using last snapshot: {e}"
-                _cache.update(ts=now, data=directory)
-                return directory
-            except (OSError, ValueError):
-                raise RuntimeError(f"Airtable fetch failed and no snapshot available: {e}") from e
+            snap = _snapshot_path()
+            snap.parent.mkdir(parents=True, exist_ok=True)
+            snap.write_text(json.dumps(directory), encoding="utf-8")
+        except OSError:
+            pass
+        return directory
+    except Exception as e:
+        # Fall back to last disk snapshot so the app keeps working offline.
+        snapshot = _load_snapshot()
+        if snapshot is not None:
+            snapshot["warning"] = f"Airtable fetch failed, using last snapshot: {e}"
+            with _lock:
+                _cache.update(ts=now, data=snapshot)
+            return snapshot
+        raise RuntimeError(f"Airtable fetch failed and no snapshot available: {e}") from e
 
 
 def load_account_operators_airtable() -> tuple[list[dict[str, Any]], str | None]:
@@ -156,7 +216,7 @@ def load_account_operators_airtable() -> tuple[list[dict[str, Any]], str | None]
     Each item: business_name, operator_id, doordash_email, doordash_password
     (+ ubereats / gmail credentials and store_count).
     """
-    directory = get_accounts()
+    directory = get_accounts_fast()
     out: list[dict[str, Any]] = []
     for name in directory["account_names"]:
         acc = directory["accounts"][name]
@@ -182,3 +242,28 @@ def load_account_operators_airtable() -> tuple[list[dict[str, Any]], str | None]
             }
         )
     return out, directory.get("warning")
+
+
+def load_health_check_operators() -> tuple[list[dict[str, str]], str | None]:
+    """
+    DoorDash operators for the health-check agent (deduped by login email).
+
+    Each item: ``email``, ``password``, ``business_name`` (Business Name from Airtable).
+    Skips accounts with no DoorDash login + password.
+    """
+    operators, warning = load_account_operators_airtable()
+    by_email: dict[str, dict[str, str]] = {}
+    for op in operators:
+        email = (op.get("doordash_email") or "").strip()
+        password = (op.get("doordash_password") or "").strip()
+        business = (op.get("business_name") or "").strip()
+        if not email or not password:
+            continue
+        key = email.lower()
+        if key not in by_email:
+            by_email[key] = {
+                "email": email,
+                "password": password,
+                "business_name": business,
+            }
+    return list(by_email.values()), warning

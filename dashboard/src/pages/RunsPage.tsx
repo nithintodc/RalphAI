@@ -17,6 +17,15 @@ const statusStyle: Record<string, string> = {
   failed: "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-400",
 };
 
+function formatStarted(raw: string): string {
+  if (!raw) return "—";
+  // Backend timestamps are UTC without a marker — append "Z" so they render in local time.
+  const normalized = raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`;
+  const dt = new Date(normalized);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return dt.toLocaleString([], { hour12: false });
+}
+
 export function RunsPage() {
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,7 +143,7 @@ export function RunsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-ink-600 dark:text-white/60">
-                      {r.started}
+                      {formatStarted(r.started)}
                     </td>
                     <td className="px-5 py-3 text-ink-600 dark:text-white/60">
                       {r.duration}

@@ -28,6 +28,7 @@ export function addDerivedMetrics(storeData) {
       r[`${metric}_ly_prevspost`] = round(postLY - preLY);
       r[`${metric}_yoy`] = round(post - postLY);
       r[`${metric}_growth_pct`] = round(cleanInfinity(safeDivide(post - pre, pre) * 100));
+      r[`${metric}_ly_growth_pct`] = round(cleanInfinity(safeDivide(postLY - preLY, preLY) * 100));
       r[`${metric}_yoy_pct`] = round(cleanInfinity(safeDivide(post - postLY, postLY) * 100));
     }
 
@@ -39,17 +40,23 @@ export function addDerivedMetrics(storeData) {
     }
 
     r.aov_prevspost = round(r.post_aov - r.pre_aov, 2);
+    r.aov_ly_prevspost = round(r.postLY_aov - r.preLY_aov, 2);
     r.aov_growth_pct = round(cleanInfinity(safeDivide(r.aov_prevspost, r.pre_aov) * 100));
+    r.aov_ly_growth_pct = round(cleanInfinity(safeDivide(r.aov_ly_prevspost, r.preLY_aov) * 100));
     r.aov_yoy = round(r.post_aov - r.postLY_aov, 2);
     r.aov_yoy_pct = round(cleanInfinity(safeDivide(r.aov_yoy, r.postLY_aov) * 100));
 
     r.avg_payout_prevspost = round(r.post_avg_payout - r.pre_avg_payout, 2);
+    r.avg_payout_ly_prevspost = round(r.postLY_avg_payout - r.preLY_avg_payout, 2);
     r.avg_payout_growth_pct = round(cleanInfinity(safeDivide(r.avg_payout_prevspost, r.pre_avg_payout) * 100));
+    r.avg_payout_ly_growth_pct = round(cleanInfinity(safeDivide(r.avg_payout_ly_prevspost, r.preLY_avg_payout) * 100));
     r.avg_payout_yoy = round(r.post_avg_payout - r.postLY_avg_payout, 2);
     r.avg_payout_yoy_pct = round(cleanInfinity(safeDivide(r.avg_payout_yoy, r.postLY_avg_payout) * 100));
 
     r.prof_prevspost = round(r.post_profitability - r.pre_profitability);
+    r.prof_ly_prevspost = round(r.postLY_profitability - r.preLY_profitability);
     r.prof_growth_pct = round(cleanInfinity(safeDivide(r.prof_prevspost, r.pre_profitability) * 100));
+    r.prof_ly_growth_pct = round(cleanInfinity(safeDivide(r.prof_ly_prevspost, r.preLY_profitability) * 100));
     r.prof_yoy = round(r.post_profitability - r.postLY_profitability);
     r.prof_yoy_pct = round(cleanInfinity(safeDivide(r.prof_yoy, r.postLY_profitability) * 100));
 
@@ -75,6 +82,7 @@ export function buildSummaryRow(storeData, metricName) {
     lyPrevspost: round(lyPrevspost),
     yoy: round(yoy),
     growthPct: round(cleanInfinity(safeDivide(prevspost, totals.pre) * 100)),
+    lyGrowthPct: round(cleanInfinity(safeDivide(lyPrevspost, totals.preLY) * 100)),
     yoyPct: round(cleanInfinity(safeDivide(yoy, totals.postLY) * 100)),
   };
 }
@@ -94,11 +102,13 @@ function buildDerivedFromRows(sales, payouts, orders, type) {
     const preLY = calc(payouts.preLY, sales.preLY);
     const postLY = calc(payouts.postLY, sales.postLY);
     const prevspost = round(post - pre);
+    const lyPrevspost = round(postLY - preLY);
     const yoy = round(post - postLY);
     return {
       metric: 'profitability', pre, post, preLY, postLY,
-      prevspost, lyPrevspost: round(postLY - preLY), yoy,
+      prevspost, lyPrevspost, yoy,
       growthPct: round(cleanInfinity(safeDivide(prevspost, pre) * 100)),
+      lyGrowthPct: round(cleanInfinity(safeDivide(lyPrevspost, preLY) * 100)),
       yoyPct: round(cleanInfinity(safeDivide(yoy, postLY) * 100)),
     };
   }
@@ -109,11 +119,13 @@ function buildDerivedFromRows(sales, payouts, orders, type) {
     const preLY = calc(sales.preLY, orders.preLY);
     const postLY = calc(sales.postLY, orders.postLY);
     const prevspost = round(post - pre, 2);
+    const lyPrevspost = round(postLY - preLY, 2);
     const yoy = round(post - postLY, 2);
     return {
       metric: 'aov', pre, post, preLY, postLY,
-      prevspost, lyPrevspost: round(postLY - preLY, 2), yoy,
+      prevspost, lyPrevspost, yoy,
       growthPct: round(cleanInfinity(safeDivide(prevspost, pre) * 100)),
+      lyGrowthPct: round(cleanInfinity(safeDivide(lyPrevspost, preLY) * 100)),
       yoyPct: round(cleanInfinity(safeDivide(yoy, postLY) * 100)),
     };
   }
@@ -129,6 +141,7 @@ function combineSummaryRows(dd, ue, metric) {
   row.lyPrevspost = row.postLY - row.preLY;
   row.yoy = row.post - row.postLY;
   row.growthPct = round(cleanInfinity(safeDivide(row.prevspost, row.pre) * 100));
+  row.lyGrowthPct = round(cleanInfinity(safeDivide(row.lyPrevspost, row.preLY) * 100));
   row.yoyPct = round(cleanInfinity(safeDivide(row.yoy, row.postLY) * 100));
   return row;
 }
@@ -228,6 +241,7 @@ export function buildCombinedStoreTables(ddStoreData, ueStoreData, ddToUeStoreMa
       row[`${m}_ly_prevspost`] = round(row[`postLY_${m}`] - row[`preLY_${m}`]);
       row[`${m}_yoy`] = round(row[`post_${m}`] - row[`postLY_${m}`]);
       row[`${m}_growth_pct`] = round(cleanInfinity(safeDivide(row[`${m}_prevspost`], row[`pre_${m}`]) * 100));
+      row[`${m}_ly_growth_pct`] = round(cleanInfinity(safeDivide(row[`${m}_ly_prevspost`], row[`preLY_${m}`]) * 100));
       row[`${m}_yoy_pct`] = round(cleanInfinity(safeDivide(row[`${m}_yoy`], row[`postLY_${m}`]) * 100));
     }
 
@@ -241,11 +255,17 @@ export function buildCombinedStoreTables(ddStoreData, ueStoreData, ddToUeStoreMa
       row[`${w}_profitability`] = round(safeDivide(row[`${w}_payouts`], row[`${w}_sales`]) * 100);
     }
     row.aov_prevspost = round(row.post_aov - row.pre_aov, 2);
+    row.aov_ly_prevspost = round(row.postLY_aov - row.preLY_aov, 2);
     row.aov_growth_pct = round(cleanInfinity(safeDivide(row.aov_prevspost, row.pre_aov) * 100));
+    row.aov_ly_growth_pct = round(cleanInfinity(safeDivide(row.aov_ly_prevspost, row.preLY_aov) * 100));
     row.avg_payout_prevspost = round(row.post_avg_payout - row.pre_avg_payout, 2);
+    row.avg_payout_ly_prevspost = round(row.postLY_avg_payout - row.preLY_avg_payout, 2);
     row.avg_payout_growth_pct = round(cleanInfinity(safeDivide(row.avg_payout_prevspost, row.pre_avg_payout) * 100));
+    row.avg_payout_ly_growth_pct = round(cleanInfinity(safeDivide(row.avg_payout_ly_prevspost, row.preLY_avg_payout) * 100));
     row.prof_prevspost = round(row.post_profitability - row.pre_profitability);
+    row.prof_ly_prevspost = round(row.postLY_profitability - row.preLY_profitability);
     row.prof_growth_pct = round(cleanInfinity(safeDivide(row.prof_prevspost, row.pre_profitability) * 100));
+    row.prof_ly_growth_pct = round(cleanInfinity(safeDivide(row.prof_ly_prevspost, row.preLY_profitability) * 100));
 
     combined.push(row);
   }

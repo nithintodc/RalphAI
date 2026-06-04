@@ -88,8 +88,8 @@ export function DataRunPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">Data Run</h2>
         <p className="mt-1 max-w-3xl text-ink-600">
-          Runs browser-use reporting one operator at a time from account CSV credentials: login, download financial and
-          marketing reports, close browser session, start a new session, and repeat.
+          Runs browser-use reporting one operator at a time using DoorDash credentials from Airtable: login, download
+          financial and marketing reports, close browser session, start a new session, and repeat.
         </p>
       </div>
 

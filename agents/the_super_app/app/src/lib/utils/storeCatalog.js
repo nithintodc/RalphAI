@@ -55,6 +55,18 @@ function formatUeOptionLabel(store) {
   return store.name !== '—' ? `${store.name} (${store.id})` : store.id;
 }
 
+/** Map DoorDash store ID → merchant store ID (register, product mix, marketing). */
+export function buildDdStoreIdToMerchantMap(ddFinancial) {
+  const map = new Map();
+  for (const r of ddFinancial || []) {
+    const merchant = sanitizeStoreId(r.merchantStoreId) || sanitizeStoreId(r.storeId);
+    if (!merchant) continue;
+    if (r.ddStoreId) map.set(String(r.ddStoreId), String(merchant));
+    if (r.storeId) map.set(String(r.storeId), String(merchant));
+  }
+  return map;
+}
+
 /** DoorDash stores: merchant ID (map key), optional DD Store ID column, store name. */
 export function buildDdStoreCatalog(rows) {
   const byKey = new Map();

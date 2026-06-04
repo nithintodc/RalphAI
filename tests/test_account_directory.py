@@ -1,4 +1,4 @@
-"""Tests for account CSV aggregation (operator dropdown)."""
+"""Tests for account directory (CSV parser + Airtable loader)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from shared.utils.account_directory import load_account_operators_csv
+from shared.utils.account_directory import load_account_operators, load_account_operators_csv
 
 
 class TestAccountDirectory(unittest.TestCase):
@@ -41,6 +42,17 @@ class TestAccountDirectory(unittest.TestCase):
         ops, err = load_account_operators_csv(Path("/nonexistent/no.csv"))
         self.assertEqual(ops, [])
         self.assertIsNotNone(err)
+
+    @patch("shared.utils.airtable_directory.load_account_operators_airtable")
+    def test_load_account_operators_delegates_to_airtable(self, mock_airtable) -> None:
+        mock_airtable.return_value = (
+            [{"business_name": "Acme", "operator_id": "Acme", "doordash_email": "a@x.com", "doordash_password": "pw"}],
+            None,
+        )
+        ops, err = load_account_operators()
+        mock_airtable.assert_called_once()
+        self.assertIsNone(err)
+        self.assertEqual(ops[0]["business_name"], "Acme")
 
 
 if __name__ == "__main__":

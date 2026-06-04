@@ -1,4 +1,4 @@
-import DataTable from '../../components/ui/DataTable';
+import SplitDataTable from '../../components/ui/SplitDataTable';
 import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
 import { useApp2Pack } from '../../hooks/useApp2Pack';
 import { columnsFromObjects } from '../../lib/engine/app2Bucketing';
@@ -41,16 +41,16 @@ export default function App2BucketingScreen() {
           </div>
 
           <SectionTitle>By store × period (Sales · Payouts · AOV · Mkt Spend)</SectionTitle>
-          <DataTable columns={columnsFromObjects(pack.byPeriod)} data={pack.byPeriod} maxHeight="360px" />
+          <SplitDataTable columns={columnsFromObjects(pack.byPeriod)} data={pack.byPeriod} maxHeight="360px" dense />
 
           <SectionTitle>By slot × period</SectionTitle>
-          <DataTable columns={columnsFromObjects(pack.bySlotPeriod)} data={pack.bySlotPeriod} maxHeight="360px" />
+          <SplitDataTable columns={columnsFromObjects(pack.bySlotPeriod)} data={pack.bySlotPeriod} maxHeight="360px" dense />
 
           <SectionTitle>Daypart GC — Post</SectionTitle>
-          <DataTable columns={columnsFromObjects(pack.daypartGcPost)} data={pack.daypartGcPost} maxHeight="280px" />
+          <SplitDataTable columns={columnsFromObjects(pack.daypartGcPost)} data={pack.daypartGcPost} maxHeight="280px" dense />
 
           <SectionTitle>Daypart GC — Delta (Post − Pre)</SectionTitle>
-          <DataTable columns={columnsFromObjects(pack.daypartGcDelta)} data={pack.daypartGcDelta} maxHeight="280px" />
+          <SplitDataTable columns={columnsFromObjects(pack.daypartGcDelta)} data={pack.daypartGcDelta} maxHeight="280px" dense />
         </section>
       )}
     </div>

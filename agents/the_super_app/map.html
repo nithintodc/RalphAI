@@ -17,7 +17,8 @@
     --accent:#E0431A; --accent-d:#B8350F; --amber:#E8A317;
     --shadow:0 1px 2px rgba(28,24,20,.05), 0 8px 24px rgba(28,24,20,.07);
     --shadow-lg:0 12px 40px rgba(28,24,20,.18);
-    --land:#FFFFFF; --land-stroke:#D9CFBE;
+    --land:#D4EBE0; --land-stroke:#1B6B4F;
+    --map-bg:#C8E0D6; --water:#9EC9DB;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -122,9 +123,13 @@
   label.opt.hide{display:none}
 
   /* ---- Map ---- */
-  .map-wrap{position:relative;flex:1;min-width:0;background:var(--paper)}
-  #map{position:absolute;inset:0;background:var(--paper)}
-  .leaflet-container{font-family:"Public Sans",sans-serif;background:var(--paper)}
+  .map-wrap{position:relative;flex:1;min-width:0;background:var(--map-bg)}
+  #map{position:absolute;inset:0;background:var(--map-bg)}
+  .leaflet-container{font-family:"Public Sans",sans-serif;background:var(--map-bg)}
+  .map-wrap::after{
+    content:'';position:absolute;inset:0;pointer-events:none;z-index:450;
+    background:radial-gradient(ellipse 85% 75% at 50% 45%,transparent 55%,rgba(20,50,40,.07) 100%);
+  }
 
   .r-dot-wrap{background:none;border:none}
   .r-dot{display:block;width:13px;height:13px;border-radius:50%;background:var(--c);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);transition:transform .12s}
@@ -379,13 +384,21 @@ const map = L.map('map',{zoomControl:true,minZoom:3,maxZoom:18,worldCopyJump:fal
 const USA_VIEW = {center:[39.5,-98.35], zoom:4};
 
 // base tiles (load when online; if blocked, the states layer below keeps the map legible)
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
-  subdomains:'abcd', maxZoom:19,
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  subdomains:'abcd', maxZoom:20,
   attribution:'&copy; OpenStreetMap &copy; CARTO'
 }).addTo(map);
 
-// vector states fallback / overlay
-L.geoJSON(US_STATES,{style:{color:'#C9BFAE',weight:.8,fill:true,fillColor:'#FFFFFF',fillOpacity:.45,interactive:false}}).addTo(map);
+map.createPane('stateTint');
+map.getPane('stateTint').style.zIndex = 350;
+L.geoJSON(US_STATES,{
+  pane:'stateTint',
+  style:{
+    color:'#146C43', weight:1.15, opacity:0.65,
+    fill:true, fillColor:'#5BB98A', fillOpacity:0.14,
+    interactive:false
+  }
+}).addTo(map);
 
 const cluster = L.markerClusterGroup({
   maxClusterRadius:52, spiderfyOnMaxZoom:true, showCoverageOnHover:false,

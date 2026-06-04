@@ -39,7 +39,8 @@ export function LogsPage() {
 
   function formatTs(ts: string): string {
     if (!ts) return "—";
-    const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
+    // Backend timestamps are UTC without a marker — append "Z" so they render in local time.
+    const normalized = ts.includes("T") ? ts : `${ts.replace(" ", "T")}Z`;
     const dt = new Date(normalized);
     if (Number.isNaN(dt.getTime())) return ts;
     return dt.toLocaleTimeString([], { hour12: false });

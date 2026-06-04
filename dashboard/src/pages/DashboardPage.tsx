@@ -6,7 +6,6 @@ import {
   Bot,
   CheckCircle2,
   Clock,
-  Zap,
 } from "lucide-react";
 
 type RunRecord = {
@@ -38,7 +37,9 @@ function formatSeconds(total: number | null): string {
 
 function parseRunStart(raw?: string): Date | null {
   if (!raw) return null;
-  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  // Index timestamps are UTC without a timezone marker ("YYYY-MM-DD HH:MM:SS") —
+  // append "Z" so they aren't misread as local time.
+  const normalized = raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`;
   const dt = new Date(normalized);
   if (Number.isNaN(dt.getTime())) return null;
   return dt;
@@ -58,7 +59,7 @@ function displayAgentName(agent: string): string {
   const map: Record<string, string> = {
     deepdive: "DeepDive (Legacy)",
     marketingreco: "MarketingReco",
-    monthly_reporter: "Monthly Reporter",
+    monthly_reporter: "Monthly Reporter (legacy)",
     campaign_review: "Campaign Review",
     data_run: "Data Run",
     strategist: "Strategist",
@@ -102,7 +103,14 @@ export function DashboardPage() {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const runsToday = runs.filter((r) => (r.started ?? "").startsWith(today)).length;
+    const runsToday = runs.filter((r) => {
+      const dt = parseRunStart(r.started);
+      if (!dt) return false;
+      const local = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
+        dt.getDate(),
+      ).padStart(2, "0")}`;
+      return local === today;
+    }).length;
     const lastDayRuns = runs.filter((r) => {
       const dt = parseRunStart(r.started);
       return dt ? dt >= oneDayAgo : false;
@@ -171,36 +179,24 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       <section className="brand-card overflow-hidden rounded-[28px] border border-white/70 p-6 sm:p-7">
-        <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
-          <div>
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <div className="inline-flex items-center rounded-full bg-brand-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-900">
               TODC Overview
             </div>
             <h2 className="mt-4 max-w-2xl font-display text-3xl font-semibold tracking-tight text-ink-900 dark:text-white sm:text-4xl">
-              Operate campaigns with the same tone as the TODC brand.
+              TODC — drive your delivery business, smartly
             </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-ink-600 dark:text-white/70 sm:text-base">
-              Monitor agents, launch growth workflows, and keep restaurant performance
-              visible from one branded control surface.
-            </p>
           </div>
-          <div className="brand-grid rounded-[24px] border border-brand-200/70 bg-brand-50/70 p-5 dark:border-brand-500/20 dark:bg-white/5">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-ink-500 dark:text-white/50">
-              Live Priority
+          <div className="flex shrink-0 flex-col items-end justify-end gap-1.5 sm:pb-0.5">
+            <img
+              src="/logos/TODC.webp"
+              alt="TODC"
+              className="h-11 w-auto max-w-[min(220px,42vw)] object-contain sm:h-14"
+            />
+            <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-ink-500 dark:text-white/50">
+              The On Demand Company
             </p>
-            <p className="mt-3 font-display text-2xl font-semibold text-ink-900 dark:text-white">
-              Merchant Portal Campaign Launch
-            </p>
-            <p className="mt-2 text-sm leading-6 text-ink-600 dark:text-white/65">
-              DeepDive and MarketingReco are aligned for the next promotion cycle.
-            </p>
-            <Link
-              to="/agents"
-              className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-ink-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-            >
-              <Zap className="h-4 w-4" />
-              Run agent
-            </Link>
           </div>
         </div>
       </section>
@@ -295,9 +291,9 @@ export function DashboardPage() {
           <ul className="mt-4 space-y-2">
             {[
               {
-                label: "DeepDive — 90 day analysis",
+                label: "Health Check — WoW analysis",
                 onClick: () => {
-                  navigate("/agents/deepdive");
+                  navigate("/agents/health-check");
                 },
               },
               {
@@ -313,9 +309,9 @@ export function DashboardPage() {
                 },
               },
               {
-                label: "Monthly Reporter — KPI rollup",
+                label: "Breakdown — financial summary",
                 onClick: () => {
-                  navigate("/agents/monthly-reporter");
+                  navigate("/agents/the-super-app?tab=breakdown");
                 },
               },
             ].map((t) => (

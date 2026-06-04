@@ -46,6 +46,20 @@ export function classifyOrder(marketingFees, customerDiscounts) {
   return 'organic';
 }
 
+/**
+ * Uber Eats: Marketplace Fee is standard commission on most orders, not ad spend.
+ * Promo = Offers on items; Ads = Marketing Adjustment (when present).
+ */
+export function classifyUeOrder(offers, marketingAdjustment) {
+  const EPSILON = 0.01;
+  const hasPromo = Math.abs(offers || 0) >= EPSILON;
+  const hasAds = Math.abs(marketingAdjustment || 0) >= EPSILON;
+  if (hasPromo && hasAds) return 'promo_ads';
+  if (hasPromo) return 'promo';
+  if (hasAds) return 'ads';
+  return 'organic';
+}
+
 function buildOrderLevel(records, platform = 'dd') {
   const src = platform === 'dd'
     ? records.filter(r => !r.transactionType || r.transactionType === 'Order')
@@ -66,6 +80,12 @@ function buildOrderLevel(records, platform = 'dd') {
     const customerDiscounts = platform === 'ue'
       ? rows.reduce((s, r) => s + Math.abs(r.offers || 0), 0)
       : sumPromoDiscountsFromRows(rows);
+    const marketingAdjustment = platform === 'ue'
+      ? rows.reduce((s, r) => s + Math.abs(r.marketingAdjustment || 0), 0)
+      : 0;
+    const orderType = platform === 'ue'
+      ? classifyUeOrder(customerDiscounts, marketingAdjustment)
+      : classifyOrder(marketingFees, customerDiscounts);
     out.push({
       orderId,
       date: rows[0].date,
@@ -74,8 +94,9 @@ function buildOrderLevel(records, platform = 'dd') {
       payouts,
       marketingFees,
       customerDiscounts,
+      marketingAdjustment,
       bucket: assignBucket(sales),
-      orderType: classifyOrder(marketingFees, customerDiscounts),
+      orderType,
     });
   }
   return out;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import DataTable from '../../components/ui/DataTable';
+import SplitDataTable from '../../components/ui/SplitDataTable';
 import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
 import { useApp2Pack } from '../../hooks/useApp2Pack';
 import { columnsFromObjects, APP2_MERCHANT_STORE_COL } from '../../lib/engine/app2Bucketing';
@@ -63,10 +63,11 @@ export default function App2DateWiseScreen() {
             </select>
           </label>
 
-          <DataTable
+          <SplitDataTable
             columns={columnsFromObjects(detailRows)}
             data={detailRows}
             maxHeight="calc(100vh - 320px)"
+            dense
           />
         </section>
       )}

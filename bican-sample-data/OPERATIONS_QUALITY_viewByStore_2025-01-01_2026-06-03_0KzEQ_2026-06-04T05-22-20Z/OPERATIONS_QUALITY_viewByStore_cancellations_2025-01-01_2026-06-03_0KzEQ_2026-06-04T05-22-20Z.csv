@@ -1,0 +1,40 @@
+Start Date,End Date,Store ID,Store Name,Merchant Supplied ID,Cancellation Category - Short,Cancellation Category - Description,Count of Orders
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Staff requested - Busy or cannot fulfill,42
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Wrong order handed to dasher,40
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Store operations issue,102
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Item out of stock,134
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Store closed,183
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Extreme dasher wait time,54
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Avoidable Store Operations,Slow order confirmation,24
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Customer Cancellations,Long order fulfillment time,262
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Customer Cancellations,NULL,21
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Customer Cancellations,Customer requested - Unspecified reason,173
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Customer Cancellations,Customer entered the wrong address,27
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Customer Cancellations,Customer needed to modify order cart contents,35
+2025-01-01,2026-06-03,655822,McDonald's (493-S BND-N MICHIGAN),493,Other,Other,75
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Wrong order handed to dasher,18
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Extreme dasher wait time,20
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Store closed,18
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Staff requested - Busy or cannot fulfill,11
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Slow order confirmation,20
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Store operations issue,22
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Avoidable Store Operations,Item out of stock,23
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Customer Cancellations,Long order fulfillment time,115
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Customer Cancellations,NULL,14
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Customer Cancellations,Customer entered the wrong address,13
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Customer Cancellations,Customer needed to modify order cart contents,21
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Customer Cancellations,Customer requested - Unspecified reason,79
+2025-01-01,2026-06-03,655825,McDonald's (3206-S BEND-WESTERN),3206,Other,Other,40
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Store operations issue,128
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Item out of stock,50
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Extreme dasher wait time,19
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Slow order confirmation,10
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Wrong order handed to dasher,17
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Staff requested - Busy or cannot fulfill,44
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Avoidable Store Operations,Store closed,204
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Customer Cancellations,Customer needed to modify order cart contents,11
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Customer Cancellations,Customer requested - Unspecified reason,58
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Customer Cancellations,NULL,10
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Customer Cancellations,Long order fulfillment time,139
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Customer Cancellations,Customer entered the wrong address,10
+2025-01-01,2026-06-03,655827,McDonald's (574-S BND-S MICHIGAN),574,Other,Other,21

@@ -1,4 +1,4 @@
-import { subYears, parse, format, getDay } from 'date-fns';
+import { subYears, parse, format, getDay, differenceInCalendarDays } from 'date-fns';
 
 export function parseDate(str) {
   if (!str) return null;
@@ -52,6 +52,43 @@ export function formatSlashDateRange(start, end) {
 export function formatDateShort(d) {
   if (!d) return '';
   return format(d, 'MMM d, yyyy');
+}
+
+/** Compact range when start/end share month or year (e.g. Mar 1–31, 2026). */
+export function formatCompactDateRange(start, end) {
+  if (!start) return '';
+  if (!end || start.getTime() === end.getTime()) return formatDateShort(start);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  if (sameMonth) {
+    return `${format(start, 'MMM d')}–${format(end, 'd, yyyy')}`;
+  }
+  if (sameYear) {
+    return `${format(start, 'MMM d')}–${format(end, 'MMM d, yyyy')}`;
+  }
+  return `${formatDateShort(start)} – ${formatDateShort(end)}`;
+}
+
+/** Pre/Post windows for the topbar date chip. */
+export function formatPeriodComparisonLabel(preStart, preEnd, postStart, postEnd) {
+  const pre = formatCompactDateRange(preStart, preEnd);
+  const post = formatCompactDateRange(postStart, postEnd);
+  if (!pre && !post) return null;
+  if (pre === post) return pre;
+  return `Pre ${pre} · Post ${post}`;
+}
+
+/** Top 10% count rounded up (minimum 1 when total > 0). */
+export function percentSpotlightCount(total, pct = 0.1) {
+  if (!total || total <= 0) return 0;
+  return Math.max(1, Math.ceil(total * pct));
+}
+
+/** Spotlight day count for a calendar window (inclusive). */
+export function daySpotlightCount(start, end, pct = 0.1) {
+  if (!start || !end) return 0;
+  const days = differenceInCalendarDays(end, start) + 1;
+  return percentSpotlightCount(days, pct);
 }
 
 export function getFourWindows(preStart, preEnd, postStart, postEnd) {

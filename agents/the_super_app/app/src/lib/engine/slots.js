@@ -1,40 +1,44 @@
+import { differenceInCalendarDays } from 'date-fns';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
 import { safeDivide, round } from '../utils/safeMath';
-import { assignBucket, BUCKET_RANGES, classifyOrder, sumPromoDiscountsFromRows } from './buckets';
+import { assignBucket, BUCKET_RANGES, classifyOrder, classifyUeOrder, sumPromoDiscountsFromRows } from './buckets';
 
-const DD_SLOTS = [
-  { name: 'Overnight', min: 0, max: 299 },
-  { name: 'Breakfast', min: 300, max: 659 },
-  { name: 'Lunch', min: 660, max: 839 },
-  { name: 'Afternoon', min: 840, max: 959 },
-  { name: 'Dinner', min: 960, max: 1199 },
-  { name: 'Late Night', min: 1200, max: 1439 },
+const SLOT_RANGES = [
+  { name: 'Overnight', min: 0, max: 299, range: '12:00 AM – 4:59 AM' },
+  { name: 'Breakfast', min: 300, max: 659, range: '5:00 AM – 10:59 AM' },
+  { name: 'Lunch', min: 660, max: 839, range: '11:00 AM – 1:59 PM' },
+  { name: 'Afternoon', min: 840, max: 959, range: '2:00 PM – 4:59 PM' },
+  { name: 'Dinner', min: 960, max: 1199, range: '5:00 PM – 7:59 PM' },
+  { name: 'Late Night', min: 1200, max: 1439, range: '8:00 PM – 11:59 PM' },
 ];
 
-const UE_SLOTS = [
-  { name: 'Overnight', min: 0, max: 299 },
-  { name: 'Breakfast', min: 300, max: 659 },
-  { name: 'Lunch', min: 660, max: 839 },
-  { name: 'Afternoon', min: 840, max: 1019 },
-  { name: 'Dinner', min: 1020, max: 1199 },
-  { name: 'Late Night', min: 1200, max: 1439 },
-];
+/** @deprecated use SLOT_RANGES — kept for callers that referenced DD_SLOTS / UE_SLOTS */
+const DD_SLOTS = SLOT_RANGES;
+const UE_SLOTS = SLOT_RANGES;
+
+export const SLOT_DEFINITIONS = SLOT_RANGES.map(({ name, range }) => ({ name, range }));
 
 export const SLOT_NAMES = ['Overnight', 'Breakfast', 'Lunch', 'Afternoon', 'Dinner', 'Late Night'];
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-/** Row keys on `buildSlotAnalysis` for DataTable columns + formatting. */
+/** Primary slot tables — daily avg for $ metrics; AOV and profitability are ratios. */
+export const SLOT_DISPLAY_METRICS = [
+  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: true },
+  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: true },
+  { key: 'aov', label: 'AOV', valueKind: 'usd2', dailyAvg: false },
+  { key: 'profitability', label: 'Profitability %', valueKind: 'pct', dailyAvg: false },
+];
+
+/** Row keys on `buildSlotAnalysis` for export / extended views. */
 export const SLOT_METRIC_TABLES = [
-  { key: 'sales', title: 'Sales', valueKind: 'usd' },
+  ...SLOT_DISPLAY_METRICS.map(({ key, label, valueKind }) => ({ key, title: label, valueKind })),
   { key: 'orders', title: 'Orders', valueKind: 'int' },
-  { key: 'payouts', title: 'Payouts', valueKind: 'usd' },
   { key: 'mktSpend', title: 'Mkt spend', valueKind: 'usd' },
   { key: 'adsSpend', title: 'Ads spend', valueKind: 'usd' },
   { key: 'organicOrders', title: 'Organic orders', valueKind: 'int' },
   { key: 'promoOrders', title: 'Promo-driven orders', valueKind: 'int' },
   { key: 'adsOrders', title: 'Ads-driven orders', valueKind: 'int' },
   { key: 'bothOrders', title: 'Both-driven orders', valueKind: 'int' },
-  { key: 'aov', title: 'AOV', valueKind: 'usd2' },
 ];
 
 export function parseTimeToMinutes(timeStr) {
@@ -105,11 +109,11 @@ function buildUeOrdersWithSlots(rawData, timeField) {
     if (!SLOT_NAMES.includes(slot)) continue;
     const sales = rs.reduce((s, r) => s + (r.sales || 0), 0);
     const payouts = rs.reduce((s, r) => s + (r.totalPayout || 0), 0);
-    const mp = rs.reduce((s, r) => s + (r.marketplaceFee || 0), 0);
-    const off = rs.reduce((s, r) => s + (r.offers || 0), 0);
-    const adsSpend = mp;
-    const mktSpend = Math.abs(mp) + Math.abs(off);
-    const orderType = classifyOrder(mp, off);
+    const off = rs.reduce((s, r) => s + Math.abs(r.offers || 0), 0);
+    const mktAdj = rs.reduce((s, r) => s + Math.abs(r.marketingAdjustment || 0), 0);
+    const adsSpend = mktAdj;
+    const mktSpend = Math.abs(off) + Math.abs(mktAdj);
+    const orderType = classifyUeOrder(off, mktAdj);
     const bucket = assignBucket(sales);
     out.push({
       orderId,
@@ -126,6 +130,17 @@ function buildUeOrdersWithSlots(rawData, timeField) {
   return out;
 }
 
+function inclusiveDayCount(start, end) {
+  if (!start || !end) return 1;
+  return Math.max(1, differenceInCalendarDays(end, start) + 1);
+}
+
+function shiftYear(date, years = -1) {
+  const d = new Date(date);
+  d.setFullYear(d.getFullYear() + years);
+  return d;
+}
+
 function emptySlotAgg() {
   return {
     sales: 0,
@@ -138,6 +153,7 @@ function emptySlotAgg() {
     adsOrders: 0,
     bothOrders: 0,
     aov: 0,
+    profitability: 0,
   };
 }
 
@@ -163,6 +179,7 @@ function buildWindowFromOrders(orderList, start, end, excludedDates) {
       else if (o.orderType === 'promo_ads') agg.bothOrders += 1;
     }
     agg.aov = round(safeDivide(agg.sales, agg.orders), 2);
+    agg.profitability = round(safeDivide(agg.payouts, agg.sales) * 100);
     slotData[name] = agg;
   }
   return slotData;
@@ -170,6 +187,7 @@ function buildWindowFromOrders(orderList, start, end, excludedDates) {
 
 function roundMetric(metricKey, v) {
   if (metricKey === 'aov') return round(v, 2);
+  if (metricKey === 'profitability') return round(v);
   if (
     metricKey === 'orders'
     || metricKey === 'organicOrders'
@@ -182,37 +200,58 @@ function roundMetric(metricKey, v) {
   return round(v, 0);
 }
 
-function mapPrePost(metricKey, pre, post) {
+function slotMetricValue(agg, metricKey, dayCount, dailyAvg) {
+  if (metricKey === 'profitability') {
+    return round(safeDivide(agg.payouts, agg.sales) * 100);
+  }
+  let v = agg[metricKey] || 0;
+  if (dailyAvg && dayCount > 0 && (metricKey === 'sales' || metricKey === 'payouts')) {
+    v = safeDivide(v, dayCount);
+  }
+  return roundMetric(metricKey, v);
+}
+
+function mapPrePost(metricKey, pre, post, preLY, postLY, dayCounts, dailyAvg) {
+  const { preDays, postDays, preLyDays, postLyDays } = dayCounts;
   return SLOT_NAMES.map((s) => {
-    const a = pre[s][metricKey] || 0;
-    const b = post[s][metricKey] || 0;
-    const diff = b - a;
+    const a = slotMetricValue(pre[s], metricKey, preDays, dailyAvg);
+    const b = slotMetricValue(post[s], metricKey, postDays, dailyAvg);
+    const lyPre = slotMetricValue(preLY[s], metricKey, preLyDays, dailyAvg);
+    const lyPost = slotMetricValue(postLY[s], metricKey, postLyDays, dailyAvg);
+    const diff = roundMetric(metricKey, b - a);
+    const lyDiff = roundMetric(metricKey, lyPost - lyPre);
     return {
       slot: s,
-      pre: roundMetric(metricKey, a),
-      post: roundMetric(metricKey, b),
-      prevspost: roundMetric(metricKey, diff),
+      pre: a,
+      post: b,
+      prevspost: diff,
+      lyPrevspost: lyDiff,
       growthPct: round(safeDivide(diff, a) * 100),
+      lyGrowthPct: round(safeDivide(lyDiff, lyPre) * 100),
     };
   });
 }
 
-function mapYoY(metricKey, postLY, post) {
+function mapYoY(metricKey, postLY, post, dayCounts, dailyAvg) {
+  const { postLyDays, postDays } = dayCounts;
   return SLOT_NAMES.map((s) => {
-    const ly = postLY[s][metricKey] || 0;
-    const b = post[s][metricKey] || 0;
-    const diff = b - ly;
+    const ly = slotMetricValue(postLY[s], metricKey, postLyDays, dailyAvg);
+    const b = slotMetricValue(post[s], metricKey, postDays, dailyAvg);
+    const diff = roundMetric(metricKey, b - ly);
     return {
       slot: s,
-      postLY: roundMetric(metricKey, ly),
-      post: roundMetric(metricKey, b),
-      yoy: roundMetric(metricKey, diff),
+      postLY: ly,
+      post: b,
+      yoy: diff,
       yoyPct: round(safeDivide(diff, ly) * 100),
     };
   });
 }
 
 const METRIC_KEYS = SLOT_METRIC_TABLES.map((m) => m.key);
+const DISPLAY_METRIC_CONFIG = Object.fromEntries(
+  SLOT_DISPLAY_METRICS.map((m) => [m.key, m]),
+);
 
 export function buildSlotAnalysis(rawData, config) {
   const { preStart, preEnd, postStart, postEnd, excludedDates = [], platform = 'dd', timeField = 'time' } = config;
@@ -221,18 +260,23 @@ export function buildSlotAnalysis(rawData, config) {
     ? buildUeOrdersWithSlots(rawData, timeField)
     : buildDdOrdersWithSlots(rawData, timeField);
 
-  const lyPost = { start: new Date(postStart), end: new Date(postEnd) };
-  lyPost.start.setFullYear(lyPost.start.getFullYear() - 1);
-  lyPost.end.setFullYear(lyPost.end.getFullYear() - 1);
-
   const pre = buildWindowFromOrders(orderList, preStart, preEnd, excludedDates);
   const post = buildWindowFromOrders(orderList, postStart, postEnd, excludedDates);
-  const postLY = buildWindowFromOrders(orderList, lyPost.start, lyPost.end, excludedDates);
+  const preLY = buildWindowFromOrders(orderList, shiftYear(preStart), shiftYear(preEnd), excludedDates);
+  const postLY = buildWindowFromOrders(orderList, shiftYear(postStart), shiftYear(postEnd), excludedDates);
+
+  const dayCounts = {
+    preDays: inclusiveDayCount(preStart, preEnd),
+    postDays: inclusiveDayCount(postStart, postEnd),
+    preLyDays: inclusiveDayCount(shiftYear(preStart), shiftYear(preEnd)),
+    postLyDays: inclusiveDayCount(shiftYear(postStart), shiftYear(postEnd)),
+  };
 
   const out = {};
   for (const k of METRIC_KEYS) {
-    out[`${k}PrePost`] = mapPrePost(k, pre, post);
-    out[`${k}YoY`] = mapYoY(k, postLY, post);
+    const dailyAvg = DISPLAY_METRIC_CONFIG[k]?.dailyAvg ?? false;
+    out[`${k}PrePost`] = mapPrePost(k, pre, post, preLY, postLY, dayCounts, dailyAvg);
+    out[`${k}YoY`] = mapYoY(k, postLY, post, dayCounts, dailyAvg);
   }
 
   return out;

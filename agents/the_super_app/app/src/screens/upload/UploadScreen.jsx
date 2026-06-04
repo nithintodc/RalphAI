@@ -3,16 +3,28 @@ import { Upload, CheckCircle2, Circle, FileArchive, FileSpreadsheet, ChevronRigh
 import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
 import { processUploadedFile, ALL_FILE_TYPES } from '../../lib/parsers/zipHandler';
-import { normalizeDdFinancial } from '../../lib/parsers/ddFinancial';
+import { normalizeDdFinancial, normalizeDdErrorCharges } from '../../lib/parsers/ddFinancial';
 import { normalizeUeFinancial } from '../../lib/parsers/ueFinancial';
 import { normalizeDdPromotion, normalizeDdSponsored } from '../../lib/parsers/ddMarketing';
+import { applyDdOrderPlacedTiming } from '../../lib/parsers/ddOrderTiming';
+
+function syncDdPlacedTiming() {
+  const s = useDataStore.getState();
+  const sales = s.ddSales?.byOrder;
+  if (s.ddFinancial?.length) {
+    s.setDdFinancial(applyDdOrderPlacedTiming(s.ddFinancial, sales));
+  }
+  if (s.ddFinancialError?.length) {
+    s.setDdFinancialError(applyDdOrderPlacedTiming(s.ddFinancialError, sales));
+  }
+}
 
 const CATEGORY_INFO = {
   Financials: { desc: 'Sales, Payouts, Orders, AOV, Profitability, Bucketing, Slots', screens: ['Overview', 'Pre vs Post', 'Stores', 'Slots', 'Buckets'] },
-  Marketing: { desc: 'Corp vs TODC spend, ROAS, New Customers, Campaigns', screens: ['Marketing'] },
+  Marketing: { desc: 'Export breakdown pivots, Corp vs TODC, ROAS, campaigns', screens: ['Marketing'] },
   Operations: { desc: 'Cancellations, Downtime, Missing/Incorrect orders', screens: ['Operations'] },
   'Product Mix': { desc: 'Item-level performance and mix analysis', screens: ['Product Mix'] },
-  Sales: { desc: 'Order-level, time-based, and store-level sales views', screens: ['Diagnostics'] },
+  Sales: { desc: 'Order-level, time-based, and store-level sales views', screens: ['Slots', 'Diagnostics'] },
 };
 
 export default function UploadScreen() {
@@ -41,13 +53,19 @@ export default function UploadScreen() {
         if (type === 'dd_financial' && data.detailed) {
           const normalized = normalizeDdFinancial(data.detailed);
           store.setDdFinancial(normalized);
+          if (data.errorCharges) {
+            store.setDdFinancialError(normalizeDdErrorCharges(data.errorCharges));
+          }
           store.setUploadedFile('dd_financial', { name: file.name, rows: normalized.length, status: 'done' });
+          syncDdPlacedTiming();
         } else if (type === 'dd_marketing') {
           if (data.promotion) {
+            store.setDdMarketingRaw('promotion', data.promotion, file.name);
             const promo = normalizeDdPromotion(data.promotion);
             store.setDdMarketing('promotion', promo);
           }
           if (data.sponsored) {
+            store.setDdMarketingRaw('sponsored', data.sponsored, file.name);
             const sponsored = normalizeDdSponsored(data.sponsored);
             store.setDdMarketing('sponsored', sponsored);
           }
@@ -56,13 +74,15 @@ export default function UploadScreen() {
           store.setDdProductMix(data.productMix.data);
           store.setUploadedFile('dd_product_mix', { name: file.name, status: 'done' });
         } else if (type === 'dd_sales_by_order') {
-          store.setDdSales('byOrder', data.data);
-          store.setUploadedFile('dd_sales_by_order', { name: file.name, status: 'done' });
+          store.setDdSales('byOrder', data);
+          const rowCount = data?.data?.length ?? 0;
+          store.setUploadedFile('dd_sales_by_order', { name: file.name, rows: rowCount, status: 'done' });
+          syncDdPlacedTiming();
         } else if (type === 'dd_sales_by_time') {
-          store.setDdSales('byTime', data.data);
+          store.setDdSales('byTime', { ...data, fileLabel: file.name });
           store.setUploadedFile('dd_sales_by_time', { name: file.name, status: 'done' });
         } else if (type === 'dd_sales_by_store') {
-          store.setDdSales('byStore', data.data);
+          store.setDdSales('byStore', data);
           store.setUploadedFile('dd_sales_by_store', { name: file.name, status: 'done' });
         } else if (type === 'dd_ops_order') {
           store.setDdOps('byOrder', data);
@@ -105,8 +125,8 @@ export default function UploadScreen() {
   const canContinue = uploadCount > 0;
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-8">
-      <div className="w-full max-w-3xl space-y-6">
+    <div className="min-h-screen bg-[var(--bg)] p-6 sm:p-8">
+      <div className="w-full max-w-3xl mx-auto space-y-6 pb-12">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2.5 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center font-bold text-lg">R</div>

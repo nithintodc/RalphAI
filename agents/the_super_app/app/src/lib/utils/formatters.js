@@ -32,3 +32,52 @@ export function formatMetricValue(value, metric) {
       return typeof value === 'number' ? value.toFixed(1) : String(value);
   }
 }
+
+function isEmptyExportVal(v) {
+  return v == null || v === '' || (typeof v === 'number' && Number.isNaN(v));
+}
+
+/** Cell formatters for spreadsheet / Google Sheets export (strings with units). */
+export const xf = {
+  pct: (v) => (isEmptyExportVal(v) ? '' : fmt.pct(v)),
+  deltaPct: (v) => (isEmptyExportVal(v) ? '' : fmt.delta(v)),
+  pp: (v) => {
+    if (isEmptyExportVal(v)) return '';
+    const n = Number(v);
+    return `${n >= 0 ? '+' : ''}${n.toFixed(1)} pp`;
+  },
+  usd: (v) => (isEmptyExportVal(v) ? '' : fmt.usd(v)),
+  usd2: (v) => (isEmptyExportVal(v) ? '' : fmt.usd2(v)),
+  int: (v) => (isEmptyExportVal(v) ? '' : fmt.int(v)),
+  roas: (v) => (isEmptyExportVal(v) ? '' : fmt.x(v)),
+};
+
+export function exportByKind(kind, v) {
+  if (isEmptyExportVal(v)) return '';
+  switch (kind) {
+    case 'pct': return xf.pct(v);
+    case 'int': return xf.int(v);
+    case 'usd2': return xf.usd2(v);
+    case 'usd': return xf.usd(v);
+    case 'roas': return xf.roas(v);
+    default: return v;
+  }
+}
+
+export function exportSummaryMetric(v, metric) {
+  const kind = metric === 'profitability' ? 'pct'
+    : metric === 'orders' ? 'int'
+      : metric === 'aov' ? 'usd2'
+        : 'usd';
+  return exportByKind(kind, v);
+}
+
+export function exportStoreSpecValue(spec, v) {
+  return exportByKind(
+    spec.id === 'profitability' ? 'pct'
+      : spec.id === 'orders' ? 'int'
+        : spec.id === 'aov' ? 'usd2'
+          : 'usd',
+    v,
+  );
+}

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useDataStore } from '../../stores/dataStore';
-import DataTable from '../../components/ui/DataTable';
+import SplitDataTable from '../../components/ui/SplitDataTable';
 import MatrixPivotTable from '../../components/ui/MatrixPivotTable';
 import { fmt } from '../../lib/utils/formatters';
 import {
@@ -20,7 +20,7 @@ function cols(rows) {
 }
 
 const dhmCols = [
-  { key: 'label', label: 'Bucket', sortable: true, render: (v) => <span className="font-medium">{v}</span> },
+  { key: 'label', label: 'Bucket', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
   { key: 'days', label: 'Days', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
   { key: 'hours', label: 'Hours', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
   { key: 'minutes', label: 'Minutes', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
@@ -126,7 +126,7 @@ export default function OperationsScreen() {
   }
 
   const downtimeTableCols = [
-    { key: 'store', label: 'Store', sortable: true, render: (v) => <span className="font-medium">{v}</span> },
+    { key: 'store', label: 'Store', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
     { key: 'days', label: 'Days', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
     { key: 'hours', label: 'Hours', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
     { key: 'minutes', label: 'Minutes', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
@@ -135,7 +135,7 @@ export default function OperationsScreen() {
   ];
 
   const countCols = [
-    { key: 'store', label: 'Store', sortable: true, render: (v) => <span className="font-medium">{v}</span> },
+    { key: 'store', label: 'Store', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
     { key: 'rowCount', label: 'Count', align: 'right', sortable: true, render: (v) => fmt.int(Number(v) || 0) },
   ];
 
@@ -155,7 +155,7 @@ export default function OperationsScreen() {
   const minuteFmt = (v) => (v == null || v === 0 ? '—' : fmt.int(Math.round(v)));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-full min-w-0 overflow-x-hidden">
       {downtimePivot.rows.length > 0 && (
         <section className="space-y-2">
           <div>
@@ -177,7 +177,7 @@ export default function OperationsScreen() {
               ) : null}
             </p>
           </div>
-          <DataTable columns={downtimeTableCols} data={downtimePivot.rows} maxHeight="min(480px, 55vh)" />
+          <SplitDataTable columns={downtimeTableCols} data={downtimePivot.rows} maxHeight="min(480px, 55vh)" layout="tight" dense />
         </section>
       )}
 
@@ -192,7 +192,7 @@ export default function OperationsScreen() {
               ) : null}
             </p>
           </div>
-          <DataTable columns={dhmCols} data={downtimeByCategory.rows} maxHeight="min(440px, 50vh)" />
+          <SplitDataTable columns={dhmCols} data={downtimeByCategory.rows} maxHeight="min(440px, 50vh)" layout="tight" dense />
         </section>
       )}
 
@@ -214,7 +214,7 @@ export default function OperationsScreen() {
           {extraOneWay.map((block) => (
             <div key={block.dimCol} className="mb-6 last:mb-0">
               <h4 className="text-xs font-semibold text-[var(--text)] mb-2">{block.title}</h4>
-              <DataTable columns={dhmCols} data={block.rows} maxHeight="min(360px, 42vh)" />
+              <SplitDataTable columns={dhmCols} data={block.rows} maxHeight="min(360px, 42vh)" layout="tight" dense />
             </div>
           ))}
 
@@ -257,7 +257,7 @@ export default function OperationsScreen() {
               </p>
             )}
           </div>
-          <DataTable columns={countCols} data={cancelPivot.rows} maxHeight="400px" />
+          <SplitDataTable columns={countCols} data={cancelPivot.rows} maxHeight="400px" layout="tight" dense />
         </section>
       )}
 
@@ -304,7 +304,7 @@ export default function OperationsScreen() {
               </p>
             )}
           </div>
-          <DataTable columns={countCols} data={missPivot.rows} maxHeight="400px" />
+          <SplitDataTable columns={countCols} data={missPivot.rows} maxHeight="400px" layout="tight" dense />
         </section>
       )}
 
@@ -382,7 +382,7 @@ export default function OperationsScreen() {
         <section key={label} className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--text)]">{label} — by store</h3>
           {pivot.rows?.length ? (
-            <DataTable columns={countCols} data={pivot.rows} maxHeight="360px" />
+            <SplitDataTable columns={countCols} data={pivot.rows} maxHeight="360px" layout="tight" dense />
           ) : (
             <p className="text-xs text-[var(--text-muted)]">{rows.length} rows — could not detect a store column for pivot.</p>
           )}

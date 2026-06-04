@@ -32,7 +32,8 @@ try:
 except ImportError:
     pass
 
-from shared.config.settings import account_information_csv_path, marketingreco_reporting_root
+from shared.config.settings import marketingreco_reporting_root
+from shared.utils.airtable_directory import load_health_check_operators
 
 logger = logging.getLogger(__name__)
 
@@ -105,36 +106,6 @@ def format_week_label(monday: date, sunday: date) -> str:
 def format_date_range_for_doordash(monday: date, sunday: date) -> tuple[str, str]:
     """Format dates as MM/DD/YYYY for DoorDash report date pickers."""
     return monday.strftime("%m/%d/%Y"), sunday.strftime("%m/%d/%Y")
-
-
-def load_operators_from_csv(csv_path: Path) -> list[dict[str, str]]:
-    """
-    Load unique operators from accounts CSV (Business Name, DoorDash Login, Password).
-    Groups by DoorDash Login to deduplicate (one login covers multiple stores).
-    """
-    if not csv_path.is_file():
-        logger.error("Account CSV not found at %s", csv_path)
-        return []
-
-    operators = {}
-    with csv_path.open(encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            login = (row.get("DoorDash Login") or "").strip()
-            password = (row.get("DoorDash Password") or "").strip()
-            business = (row.get("Business Name (original)") or "").strip()
-            if not login or not password:
-                continue
-            if login not in operators:
-                operators[login] = {
-                    "email": login,
-                    "password": password,
-                    "business_name": business,
-                }
-
-    result = list(operators.values())
-    logger.info("Loaded %d unique operators from %s", len(result), csv_path)
-    return result
 
 
 def _safe_name(value: str) -> str:
@@ -354,19 +325,19 @@ def _build_combined_campaigns_csv(
     combined_label: str,
     week1: tuple[date, date] | None = None,
     week2: tuple[date, date] | None = None,
-) -> Optional[Path]:
+    wow_dir: Path | None = None,
+) -> dict[str, Any]:
     """Build campaigns outputs for combined range + per-week files + WoW campaigns."""
-    from agents.health_check.data_processor import (
-        build_campaigns_wow_csv,
-        build_campaigns_csv,
-        extract_marketing_csvs_from_zip,
-    )
+    from agents.health_check.campaign_wow import build_all_campaign_wow_outputs
+    from agents.health_check.data_processor import build_campaigns_csv, extract_marketing_csvs_from_zip
+
+    result: dict[str, Any] = {"combined_campaigns_csv": None, "campaign_wow_files": {}}
 
     if download_result.get("status") != "success":
-        return None
+        return result
     marketing_path = download_result.get("marketing_path")
     if not marketing_path:
-        return None
+        return result
     mkt_path = Path(marketing_path)
     marketing_csvs: list[Path] = []
     if mkt_path.suffix.lower() == ".zip":
@@ -375,14 +346,15 @@ def _build_combined_campaigns_csv(
         marketing_csvs = [mkt_path]
 
     if not marketing_csvs:
-        return None
+        return result
 
     operator_level_dir.mkdir(parents=True, exist_ok=True)
     out = operator_level_dir / f"current_campaigns_{combined_label}.csv"
     combined_path = build_campaigns_csv(marketing_csvs=marketing_csvs, output_path=out)
+    result["combined_campaigns_csv"] = str(combined_path) if combined_path else None
 
     if week1 is None or week2 is None:
-        return combined_path
+        return result
 
     w1_start, w1_end = week1
     w2_start, w2_end = week2
@@ -390,7 +362,6 @@ def _build_combined_campaigns_csv(
     w2_label = format_week_folder(w2_start, w2_end)
     w1_path = operator_level_dir / f"current_campaigns_{w1_label}.csv"
     w2_path = operator_level_dir / f"current_campaigns_{w2_label}.csv"
-    wow_path = operator_level_dir / f"wow_campaigns_{w1_label}_vs_{w2_label}.csv"
 
     build_campaigns_csv(
         marketing_csvs=marketing_csvs,
@@ -405,16 +376,18 @@ def _build_combined_campaigns_csv(
         week_end=w2_end,
     )
     if w1_path.exists() and w2_path.exists():
-        build_campaigns_wow_csv(
-            week1_campaigns_csv=w1_path,
-            week2_campaigns_csv=w2_path,
-            week1_start=w1_start,
-            week1_end=w1_end,
-            week2_start=w2_start,
-            week2_end=w2_end,
-            output_path=wow_path,
+        wow_out_dir = wow_dir or operator_level_dir
+        wow_out_dir.mkdir(parents=True, exist_ok=True)
+        result["campaign_wow_files"] = build_all_campaign_wow_outputs(
+            w1_path,
+            w2_path,
+            w1_start,
+            w1_end,
+            w2_start,
+            w2_end,
+            wow_out_dir,
         )
-    return combined_path
+    return result
 
 
 def merge_operator_csvs(week_start: date, week_end: date, operators: list[dict[str, str]], output_dir: Path) -> Optional[Path]:
@@ -487,12 +460,16 @@ def run_health_check(
     _setup_logging()
     HEALTHCHECK_ROOT.mkdir(parents=True, exist_ok=True)
 
-    accounts_path = account_information_csv_path()
-    operators = load_operators_from_csv(accounts_path)
+    operators, airtable_warning = load_health_check_operators()
+    if airtable_warning:
+        logger.warning("Airtable directory warning: %s", airtable_warning)
     if not operators:
         return {
             "status": "error",
-            "message": f"No operators found in {accounts_path} (set ACCOUNT_INFORMATION_CSV or add DoorDash Login rows).",
+            "message": (
+                "No operators with DoorDash login credentials found in Airtable "
+                "(Business Name / Account Information). Check AIRTABLE_PAT and Enterprise DB access."
+            ),
         }
 
     if operator_emails is not None:
@@ -506,14 +483,14 @@ def run_health_check(
         missing = want - loaded_emails
         if missing:
             logger.warning(
-                "Selected emails not found in account CSV (skipped): %s",
+                "Selected emails not found in Airtable (skipped): %s",
                 ", ".join(sorted(missing)[:10]) + ("…" if len(missing) > 10 else ""),
             )
         operators = [op for op in operators if op["email"].strip().lower() in want]
         if not operators:
             return {
                 "status": "error",
-                "message": "No operators in the account CSV match the selected DoorDash logins.",
+                "message": "No operators in Airtable match the selected DoorDash logins.",
             }
     elif operator_filter:
         operators = [
@@ -634,7 +611,7 @@ def run_health_check(
                 operator_week_csvs[(week_start, week_end)] = weekly_csv
                 operator_result["weekly_csvs"].append(str(weekly_csv))
 
-        combined_campaigns_csv = _build_combined_campaigns_csv(
+        campaign_bundle = _build_combined_campaigns_csv(
             operator,
             download_result,
             op_raw_dir,
@@ -642,9 +619,11 @@ def run_health_check(
             combined_label,
             week1=week_older,
             week2=week_newer,
+            wow_dir=op_wow_dir,
         )
-        operator_result["combined_campaigns_csv"] = str(combined_campaigns_csv) if combined_campaigns_csv else None
-        if not combined_campaigns_csv:
+        operator_result["combined_campaigns_csv"] = campaign_bundle.get("combined_campaigns_csv")
+        operator_result["campaign_wow_files"] = campaign_bundle.get("campaign_wow_files") or {}
+        if not operator_result["combined_campaigns_csv"]:
             logger.warning(
                 "Operator %s (%s): marketing campaigns outputs were not produced from downloaded report",
                 op_name,
@@ -652,8 +631,8 @@ def run_health_check(
             )
 
         if len(operator_week_csvs) >= 2:
+            from agents.health_check.register_outputs import build_operator_register_bundle
             from agents.health_check.wow_analysis import build_master_sheet, build_summary_sheet
-            from agents.health_check.wow_viz import build_wow_viz_html
 
             current_csv = operator_week_csvs[week_newer]
             previous_csv = operator_week_csvs[week_older]
@@ -669,15 +648,18 @@ def run_health_check(
                 op_wow_dir / "summary_wow.csv",
                 op_store_map,
             )
-            viz_path = build_wow_viz_html(
-                previous_csv,
-                current_csv,
-                op_wow_dir / "wow_buckets.html",
+            wow_files = operator_result.get("campaign_wow_files") or {}
+            bundle = build_operator_register_bundle(
+                week1_weekly_csv=previous_csv,
+                week2_weekly_csv=current_csv,
+                output_dir=op_wow_dir,
                 week1_label=format_week_label(*week_older),
                 week2_label=format_week_label(*week_newer),
-                title_suffix=op_name,
+                operator_name=op_name,
+                campaign_wow_files=wow_files,
             )
-            operator_result["wow_viz_html"] = str(viz_path) if viz_path else None
+            operator_result.update(bundle)
+            operator_result["wow_viz_html"] = bundle.get("wow_viz_html")
             operator_result["status"] = "success"
         else:
             operator_result["status"] = "failed"
@@ -704,11 +686,12 @@ def run_health_check(
             week_csvs[(week_start, week_end)] = combined
 
     from agents.health_check.wow_analysis import build_master_sheet, build_operator_scorecard, build_summary_sheet
-    from agents.health_check.wow_viz import build_wow_viz_html
+    from agents.health_check.register_outputs import build_operator_register_bundle
 
     sorted_weeks = sorted(week_csvs.keys())
     master_paths = []
     full_wow_viz_path: Optional[Path] = None
+    full_bundle: dict[str, Any] = {}
 
     if len(sorted_weeks) >= 2:
         current_week = sorted_weeks[-1]
@@ -731,13 +714,18 @@ def run_health_check(
             if scorecard_path:
                 master_paths.append(str(scorecard_path))
 
-        full_wow_viz_path = build_wow_viz_html(
-            previous_csv,
-            current_csv,
-            full_wow_dir / "wow_buckets.html",
+        full_bundle = build_operator_register_bundle(
+            week1_weekly_csv=previous_csv,
+            week2_weekly_csv=current_csv,
+            output_dir=full_wow_dir,
             week1_label=format_week_label(*previous_week),
             week2_label=format_week_label(*current_week),
-            title_suffix="All Operators",
+            operator_name="All Operators",
+        )
+        full_wow_viz_path = (
+            Path(full_bundle["wow_viz_html"])
+            if full_bundle.get("wow_viz_html")
+            else None
         )
 
     return {
@@ -770,6 +758,8 @@ def run_health_check(
         },
         "master_sheets": master_paths,
         "wow_viz_html": str(full_wow_viz_path) if full_wow_viz_path else None,
+        "register_files": full_bundle.get("register_files") if len(sorted_weeks) >= 2 else {},
+        "pdf_drive_url": full_bundle.get("pdf_drive_url") if len(sorted_weeks) >= 2 else None,
         "operator_results": operator_results,
         "output_dir": {
             "healthcheck_root": str(HEALTHCHECK_ROOT),

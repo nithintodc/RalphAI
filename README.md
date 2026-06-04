@@ -36,7 +36,7 @@ RalphAI/   # repo root
 ├── .env.example
 ├── requirements.txt
 ├── contracts/                  # JSON Schema (micro-agent I/O)
-├── agents/                     # deepdive (incl. monthly reporting + superapp + ralph_analyse), campaign_analyser, marketingreco, campaign_setup, campaign_review, ingestion
+├── agents/                     # deepdive (incl. monthly reporting + superapp), campaign_analyser, marketingreco, campaign_setup, campaign_review, ingestion
 │                               # + contract_pipeline.py where flow_manager needs legacy JSON I/O
 ├── orchestrator/
 │   ├── flow_manager.py         # imports agents/*/contract_pipeline + ingestion
@@ -62,12 +62,11 @@ Every tool in RalphAI is housed in `agents/` and exposes a standardized interfac
 
 ## Available Agents
 
-*   **`the_super_app`**: The primary flagship React/Node frontend and Streamlit export API. Contains all bucketing analysis, marketing (TODC vs Corporate) breakdowns, time slot analysis, A/B comparison screens, and Chart.js powered PDF report exports.
+*   **`the_super_app`**: The primary flagship React/Node frontend and Streamlit export API. Contains DoorDash export breakdown pivots (financial / marketing / sales-by-time), bucketing analysis, marketing (TODC vs Corporate) breakdowns, time slot analysis, A/B comparison screens, and Chart.js powered PDF report exports.
 *   **`app2_0` & `app2_0_savvy`**: Legacy Python Streamlit dashboards (the predecessors to TheSuperApp). Maintained for historical reference and specific financial P&L rollups.
 *   **`app3_0`**: The cloud-ready Streamlit app that introduced the comparison engine and headless runner. Functionality has been ported to TheSuperApp.
-*   **`marketing_breakdown`**: A dedicated Node.js application for analyzing marketing spend and promotional data.
 *   **`campaign_analyser`**: Python engine for 42-slot campaign analysis, zero-fire diagnosis, and slot performance.
-*   **`ralph_analyse` & `markup_app`**: Supplemental analysis tools and simple HTTP servers for static markup viewing.
+*   **`markup_app`**: Simple HTTP server for static markup viewing.
 *   **`reporting_browser_use_*`**: A suite of browser-automation scripts (various copies/variants like `browser`, `melt`, `new`, `savvy`) built using Python. These automate data extraction and report generation directly from the web.
 
 ---
@@ -90,9 +89,9 @@ Browser automation stubs; writes `campaigns/setup.json`, sets `review_scheduled_
 
 Pre/post comparison; `recommendation` ∈ `/update`, `/delete`, `/new`, `/keep`. Writes `campaign_review.json`.
 
-### Monthly Reporter
+### Breakdown (The Super App)
 
-Rolls up monthly KPIs and narrative summary from prior DeepDive / review artifacts (stub writes `reports/monthly_report_YYYY-MM.json` under `data/operators/{id}/`).
+Financial Summary table (App2.0 parity): Pre/Post/LY/YoY metrics from loaded DD + UE financial exports. Sidebar module **Breakdown** at `/agents/the-super-app?tab=breakdown`.
 
 ### Operator states (`state_machine.py`)
 
@@ -118,6 +117,37 @@ Bridge when needed: map fields in an adapter (future) or standardize on TODC dis
 All test and sample data has been scrubbed from the individual agent folders to enforce a single source of truth.
 
 *   **Sample Data:** Located exclusively at `sample_data_bican/` in the root of this project.
+
+---
+
+## Quick Start
+
+From the repo root:
+
+```bash
+cp .env.example .env   # fill in API keys / credentials as needed
+./run.sh               # API :8000 + dashboard :5173 + builds Super App if needed
+```
+
+Open **http://localhost:5173** — the RalphAI workspace dashboard.
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| Dashboard | `/` | Run stats, recent activity, quick actions |
+| Agents | `/agents` | Launch any agent workflow |
+| MarketingReco | `/agents/marketingreco` | Offers + Ads plan generation |
+| Offers / Ads | `/agents/offers`, `/agents/ads` | Browser automation setup |
+| Campaign Review | `/agents/campaign-review` | Post-campaign performance |
+| Breakdown | `/agents/the-super-app?tab=breakdown` | Financial Summary (Pre/Post/LY) |
+| Health Check | `/agents/health-check` | WoW operator health + viz |
+| The Super App | `/agents/the-super-app` | Full analytics UI (internal); Marketing tab includes export breakdown pivots |
+| Jobs / Runs / Logs | `/jobs`, `/runs`, `/logs` | Saved jobs, history, activity |
+
+Run tests:
+
+```bash
+PYTHONPATH=. python3 -m pytest tests/ -q
+```
 
 ---
 
@@ -454,7 +484,77 @@ For VM-based deployment and browser-automation caveats, see `docs/GCP_DEPLOYMENT
 
 ---
 
-## Future Work
+## Release Checklist
+
+Before shipping a RalphAI iteration:
+
+1. Copy `.env.example` → `.env` and set required secrets (`ANTHROPIC_API_KEY`, DoorDash credentials, optional Slack/Airtable).
+2. Run `./run.sh` locally — confirm dashboard at `:5173` and API at `:8000`.
+3. Smoke-test key agent pages: MarketingReco, Health Check, The Super App (Breakdown tab).
+4. Run `PYTHONPATH=. python3 -m pytest tests/ -q` (expect all green; one browser-use discovery test may skip locally).
+5. Deploy with `./deploy.sh <GCP_PROJECT_ID>` or the full orchestrator steps in **Deployment** above.
+6. Rollback: redeploy a prior Cloud Run revision or revert git and redeploy.
+
+---
+
+## Roadmap / Pending Work
+
+### Stabilize API and Slack
+
+- Harden `api/main.py` endpoints with input validation, consistent error payloads, and agent timeout handling.
+- Complete Slack command behavior for DeepDive and MarketingReco with clear success/failure user messages.
+- Add end-to-end test coverage for API + orchestrator handoff on updated agent paths.
+
+### Tests and quality
+
+- Expand DeepDive and MarketingReco tests for metric hierarchy edge cases and ads planner fallbacks.
+- Fix `tests/test_doordash_download_discovery.py` import isolation for `reporting_browser_use` (currently skips when shadowed by repo `agents/`).
+
+### Dashboard UX
+
+- Add loading, empty, and error states on any agent pages still missing them.
+- Surface agent run status/progress in UI (queued / running / success / failed).
+- Ensure page-level forms match API contracts for Ads and Offers workflows.
+
+### Platform and agents
+
+- Harden agent error handling — retries, timeouts, structured error responses.
+- Complete Slack bot wiring — all command stubs invoke the correct agents.
+- Add UberEats and GrubHub support to browser automation agents.
+- Build operator onboarding wizard in the dashboard.
+- User authentication and role-based access in the dashboard.
+- Rate limiting and queue management for concurrent agent runs.
+- Data validation layer for CSV/Excel uploads.
+- Agent performance monitoring (success rates, latency, errors).
+- Multi-tenant data isolation and SSO/OAuth for SaaS mode.
+- Campaign performance alerting (ROAS threshold drops).
+
+### Operations
+
+- CI/CD pipeline (GitHub Actions) for tests and deployment.
+- Staging environment on GCP for pre-production testing.
+- Runbook for common failure modes and recovery.
+- Monitoring and alerting (Datadog / Prometheus+Grafana).
+- Automated backups and operator data migration scripts.
+- Production Redis queue wiring (replace flat-file dev state).
+- Log aggregation and search.
+
+### Documentation
+
+- API documentation for all agent endpoints.
+- Operator user guide with screenshots.
+- Agent contract JSON schema with examples.
+- Architecture decision records (ADRs).
+- Troubleshooting guide for common agent failures.
+- Document all environment variables (see `.env.example`).
+
+### Productization
+
+- SaaS billing (Stripe), self-service signup, marketing landing page.
+- Demo environment with sample data (`sample_data_bican/`).
+- Product analytics (PostHog / Mixpanel).
+
+### Architecture (future)
 
 - Single adapter mapping `contracts/*.json` ↔ Pydantic `shared/models/`.
 - Replace flat files with Postgres + object storage.

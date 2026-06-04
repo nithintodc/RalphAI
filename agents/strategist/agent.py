@@ -1,5 +1,5 @@
 """
-Strategist agent: sequential browser-use login per operator from accounts.csv,
+Strategist agent: sequential browser-use login per operator from Airtable,
 download financial + marketing reports for the last 3 calendar months, run them
 through the full Reporting analysis pipeline (same as MarketingReco), and produce
 a combined_analysis Excel with Campaign Mappings (store-wise campaigns with slots).
@@ -18,8 +18,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.config.settings import account_information_csv_path, marketingreco_reporting_root
-from shared.utils.account_directory import load_account_operators_csv
+from shared.config.settings import marketingreco_reporting_root
+from shared.utils.account_directory import load_account_operators
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +57,11 @@ def _safe_email(email: str) -> str:
 
 
 def _resolve_selected_operators(selected_operator_ids: list[str]) -> list[StrategistOperator]:
-    csv_path = account_information_csv_path()
-    rows, warning = load_account_operators_csv(csv_path)
-    if warning:
-        raise RuntimeError(warning)
+    rows, warning = load_account_operators()
+    if not rows:
+        raise RuntimeError(
+            warning or "No operators in Airtable account directory (check AIRTABLE_PAT)."
+        )
     by_operator_id = {str(r.get("operator_id", "")).strip(): r for r in rows}
     out: list[StrategistOperator] = []
     for oid in selected_operator_ids:

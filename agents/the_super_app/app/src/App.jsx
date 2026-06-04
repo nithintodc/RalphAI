@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import ExportResultModal from './components/ui/ExportResultModal';
 import { useUiStore } from './stores/uiStore';
 import { useDataStore } from './stores/dataStore';
@@ -17,12 +17,13 @@ import BucketsScreen from './screens/dashboard/BucketsScreen';
 import MarketingScreen from './screens/dashboard/MarketingScreen';
 import OperationsScreen from './screens/dashboard/OperationsScreen';
 import ProductMixScreen from './screens/dashboard/ProductMixScreen';
-import App2DateWiseScreen from './screens/dashboard/App2DateWiseScreen';
-import App2BucketingScreen from './screens/dashboard/App2BucketingScreen';
+import RegisterScreen from './screens/dashboard/RegisterScreen';
 import MapScreen from './screens/dashboard/MapScreen';
-import { formatDateShort } from './lib/utils/dateUtils';
+import BreakdownScreen from './screens/dashboard/BreakdownScreen';
+import { formatPeriodComparisonLabel } from './lib/utils/dateUtils';
 import { exportAllReports } from './lib/export/exportWorkbook';
 import { exportPartnershipReport, openReportForPdf } from './lib/export/reportDocument';
+import { notifySlackExport } from './lib/export/notifySlackExport';
 
 const DASHBOARD_SCREENS = {
   overview: OverviewScreen,
@@ -36,30 +37,40 @@ const DASHBOARD_SCREENS = {
   marketing: MarketingScreen,
   operations: OperationsScreen,
   productMix: ProductMixScreen,
-  app2DateWise: App2DateWiseScreen,
-  app2Bucketing: App2BucketingScreen,
+  register: RegisterScreen,
   map: MapScreen,
+  breakdown: BreakdownScreen,
 };
 
 export default function App() {
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.self !== window.top) {
+      document.documentElement.classList.add('in-iframe');
+    }
+  }, []);
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab && DASHBOARD_SCREENS[tab]) {
+      useUiStore.getState().setActiveTab(tab);
+    }
+  }, []);
+
   const [isExporting, setIsExporting] = useState(false);
   const [exportModal, setExportModal] = useState(null);
   const reportSnapshot = useRef(null);
   const { screen, activeTab, setActiveTab } = useUiStore();
   const config = useConfigStore();
 
-  const periodLabel = useMemo(() => {
-    if (!config.ddPreStart || !config.ddPostStart) return null;
-    const sameWindow =
-      config.ddPreStart?.getTime?.() === config.ddPostStart?.getTime?.()
-      && config.ddPreEnd?.getTime?.() === config.ddPostEnd?.getTime?.();
-    if (sameWindow) {
-      const start = formatDateShort(config.ddPostStart);
-      const end = formatDateShort(config.ddPostEnd);
-      return start === end ? start : `${start} – ${end}`;
-    }
-    return `${formatDateShort(config.ddPreStart)} vs ${formatDateShort(config.ddPostStart)}`;
-  }, [config.ddPreStart, config.ddPreEnd, config.ddPostStart, config.ddPostEnd]);
+  const periodLabel = useMemo(
+    () => formatPeriodComparisonLabel(
+      config.ddPreStart,
+      config.ddPreEnd,
+      config.ddPostStart,
+      config.ddPostEnd,
+    ),
+    [config.ddPreStart, config.ddPreEnd, config.ddPostStart, config.ddPostEnd],
+  );
 
   const handleExport = async () => {
     if (isExporting) return;
@@ -83,13 +94,19 @@ export default function App() {
         report = { googleDoc: { error: reportErr.message || String(reportErr) } };
       }
 
+      const spreadsheetUrl = result.spreadsheetUrl ?? null;
+      const docUrl = report.docUrl ?? null;
+
+      // Notify Slack whenever local export succeeded (links may be null if Google push failed).
+      notifySlackExport(config, { docUrl, spreadsheetUrl });
+
       setExportModal({
         kind: 'result',
         filename: result.filename,
-        spreadsheetUrl: result.spreadsheetUrl ?? null,
+        spreadsheetUrl,
         googleSheets: result.googleSheets,
         docFilename: report.docFilename ?? null,
-        docUrl: report.docUrl ?? null,
+        docUrl,
         googleDoc: report.googleDoc ?? null,
         canOpenPdf: !!reportSnapshot.current,
       });
@@ -101,9 +118,9 @@ export default function App() {
     }
   };
 
-  const handleOpenPdf = () => {
+  const handleOpenPdf = async () => {
     if (!reportSnapshot.current) return;
-    openReportForPdf(reportSnapshot.current.data, reportSnapshot.current.config);
+    await openReportForPdf(reportSnapshot.current.data, reportSnapshot.current.config);
   };
 
   if (screen === 'upload') return <UploadScreen />;
@@ -120,7 +137,13 @@ export default function App() {
         onExport={handleExport}
         isExporting={isExporting}
       >
-        <DashboardScreen />
+        {activeTab === 'map' ? (
+          <DashboardScreen />
+        ) : (
+          <div className="max-w-full min-w-0 overflow-x-hidden">
+            <DashboardScreen />
+          </div>
+        )}
       </Shell>
       <ExportResultModal
         open={!!exportModal}

@@ -33,7 +33,7 @@ export function HealthCheckPage() {
       } catch {
         if (!cancelled) {
           setOperators([]);
-          setError("Could not load operators from account directory.");
+          setError("Could not load operators from Airtable.");
         }
       }
     })();
@@ -149,7 +149,7 @@ export function HealthCheckPage() {
     }
     const emails = [...emailSet];
     if (!emails.length) {
-      setError("Selected operators have no DoorDash login in the account file.");
+      setError("Selected operators have no DoorDash login in Airtable.");
       return;
     }
 
@@ -185,6 +185,15 @@ export function HealthCheckPage() {
   const masterSheets = Array.isArray(result?.master_sheets)
     ? (result.master_sheets as string[])
     : [];
+  const wowVizHtml = typeof result?.wow_viz_html === "string" ? result.wow_viz_html : "";
+  const operatorVizLinks = Array.isArray(result?.operator_results)
+    ? (result.operator_results as Array<Record<string, unknown>>)
+        .filter((r) => typeof r.wow_viz_html === "string" && r.wow_viz_html)
+        .map((r) => ({
+          operator: String(r.operator ?? r.email ?? "operator"),
+          path: String(r.wow_viz_html),
+        }))
+    : [];
   const outputDir = typeof result?.output_dir === "object" && result.output_dir !== null
     ? JSON.stringify(result.output_dir)
     : typeof result?.output_dir === "string"
@@ -205,8 +214,10 @@ export function HealthCheckPage() {
         <p className="mt-1 max-w-3xl text-ink-600">
           Pick operators and run. The agent logs into each DoorDash account in order, pulls <strong>one</strong>{" "}
           combined export for the last two completed Mon–Sun weeks (financial + marketing), splits them into weekly
-          CSVs, then builds WoW analysis (previous completed week vs the most recent completed week). No dates or
-          week counts to configure — the window is always “today” relative to the server clock.
+          CSVs, then builds WoW analysis (previous completed week vs the most recent completed week), including{" "}
+          <strong>campaign WoW</strong> for each promo and ads campaign (sales, orders, spend, ROAS, cost/order,
+          check after promo). No dates or week counts to configure — the window is always “today” relative to the
+          server clock.
         </p>
       </div>
 
@@ -288,6 +299,49 @@ export function HealthCheckPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {typeof result?.pdf_drive_url === "string" && result.pdf_drive_url && (
+            <p className="mt-3">
+              <a
+                href={String(result.pdf_drive_url)}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-brand-700 hover:text-brand-800"
+              >
+                Google Drive PDF report
+              </a>
+            </p>
+          )}
+          {(wowVizHtml || operatorVizLinks.length > 0) && (
+            <div className="mt-4">
+              <h4 className="text-sm font-semibold text-ink-900">Register WoW Report (HTML)</h4>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {wowVizHtml && (
+                  <li>
+                    <a
+                      href={`/api/healthcheck/wow-viz?path=${encodeURIComponent(wowVizHtml)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-ink-700"
+                    >
+                      All operators
+                    </a>
+                  </li>
+                )}
+                {operatorVizLinks.map((v) => (
+                  <li key={v.path}>
+                    <a
+                      href={`/api/healthcheck/wow-viz?path=${encodeURIComponent(v.path)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-xl border border-brand-200 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-brand-50"
+                    >
+                      {v.operator}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

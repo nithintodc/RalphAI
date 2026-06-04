@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
-import DataTable from '../../components/ui/DataTable';
+import SplitDataTable from '../../components/ui/SplitDataTable';
 import { fmt } from '../../lib/utils/formatters';
 
 const METRICS = [
@@ -193,10 +193,17 @@ export default function AbComparisonScreen() {
           </span>
         </div>
       </div>
-      <DataTable columns={columns} data={data} sortable={false} />
+      <SplitDataTable
+        columns={columns}
+        data={data}
+        sortable={false}
+        dense
+        splitAt={4}
+        chunkTitles={['Group values', 'Pre vs Post growth', 'YoY and deltas']}
+      />
       <div className="card">
         <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Store-level breakdown ({leftTag}/{rightTag})</h3>
-        <DataTable columns={storeColumns} data={storeLevelRows} maxHeight="420px" />
+        <SplitDataTable columns={storeColumns} data={storeLevelRows} maxHeight="420px" dense />
       </div>
     </div>
   );

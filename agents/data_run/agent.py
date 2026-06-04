@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.config.settings import account_information_csv_path, marketingreco_reporting_root
-from shared.utils.account_directory import load_account_operators_csv
+from shared.config.settings import marketingreco_reporting_root
+from shared.utils.account_directory import load_account_operators
 
 @dataclass(frozen=True)
 class DataRunOperator:
@@ -42,10 +42,11 @@ def _safe_name(value: str) -> str:
 
 
 def _resolve_selected_operators(selected_operator_ids: list[str]) -> list[DataRunOperator]:
-    csv_path = account_information_csv_path()
-    rows, warning = load_account_operators_csv(csv_path)
-    if warning:
-        raise RuntimeError(warning)
+    rows, warning = load_account_operators()
+    if not rows:
+        raise RuntimeError(
+            warning or "No operators in Airtable account directory (check AIRTABLE_PAT)."
+        )
     by_operator_id = {str(r.get("operator_id", "")).strip(): r for r in rows}
     out: list[DataRunOperator] = []
     for oid in selected_operator_ids:

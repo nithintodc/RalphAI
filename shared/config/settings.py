@@ -88,8 +88,8 @@ def deepdive_include_metric_hierarchy() -> bool:
 
 def account_information_csv_path() -> Path:
     """
-    CSV with columns including ``Business Name (original)``, ``DoorDash Login``, ``DoorDash Password``.
-    Used by the dashboard operator dropdown (see GET /api/account-directory).
+    Legacy CSV path (``ACCOUNT_INFORMATION_CSV``). Operator pickers and agents use
+    Airtable via ``shared.utils.account_directory.load_account_operators`` instead.
     """
     raw = os.environ.get("ACCOUNT_INFORMATION_CSV", "").strip()
     if raw:

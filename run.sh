@@ -44,6 +44,19 @@ else
     source .venv/bin/activate
 fi
 
+# Build the Super App static bundle (served internally by the API at /internal-apps/the-super-app)
+SUPERAPP_DIR="agents/the_super_app/app"
+if [ -d "$SUPERAPP_DIR" ]; then
+    if [ ! -d "$SUPERAPP_DIR/node_modules" ]; then
+        echo "Installing Super App dependencies..."
+        (cd "$SUPERAPP_DIR" && npm ci)
+    fi
+    if [ ! -d "$SUPERAPP_DIR/dist" ] || [ "${REBUILD_SUPERAPP:-0}" = "1" ]; then
+        echo "Building Super App..."
+        (cd "$SUPERAPP_DIR" && npm run build)
+    fi
+fi
+
 # Start the FastAPI backend
 echo "Starting API on port 8000..."
 PYTHONPATH=. uvicorn api.main:app --reload --port 8000 &

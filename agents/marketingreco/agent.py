@@ -274,12 +274,49 @@ else:
     raise RuntimeError("Failed to build combined analysis from FINANCIAL_DETAILED input")
 
 
+def _run_manual_from_register(
+    operator_id: str,
+    *,
+    register_report_path: str,
+    reporting_root: str,
+) -> dict[str, Any]:
+    from .register_reco import build_recommendations_from_register
+
+    root = Path(reporting_root)
+    slots_csv = root / "slots.csv"
+    built = build_recommendations_from_register(
+        Path(register_report_path),
+        slots_csv=slots_csv,
+    )
+    mappings = built.get("campaign_mappings") or []
+    ads_plan = built.get("ads_plan")
+    plan = _campaigns_from_mappings(operator_id, mappings)
+    out = _save_plan(operator_id, plan)
+    out["campaign_mappings"] = mappings
+    out["slot_recommendations"] = built.get("slot_recommendations") or []
+    out["ads_plan"] = ads_plan
+    out["input_type"] = "register"
+    return out
+
+
 def _run_manual_mode(
     operator_id: str,
     *,
-    financial_report_path: str,
+    financial_report_path: str | None = None,
+    register_report_path: str | None = None,
     reporting_root: str,
 ) -> dict[str, Any]:
+    if register_report_path:
+        return _run_manual_from_register(
+            operator_id,
+            register_report_path=register_report_path,
+            reporting_root=reporting_root,
+        )
+    if not financial_report_path:
+        raise ValueError(
+            "manual mode requires register_report_path (DD register Excel/CSV) "
+            "or financial_report_path (legacy FINANCIAL_DETAILED)"
+        )
     combined_path, ads_plan = _build_combined_from_financial_input(
         Path(reporting_root),
         Path(financial_report_path),
@@ -290,6 +327,7 @@ def _run_manual_mode(
     out = _save_plan(operator_id, plan)
     out["campaign_mappings"] = mappings
     out["ads_plan"] = ads_plan
+    out["input_type"] = "financial"
     return out
 
 
@@ -423,6 +461,7 @@ def run(
     mode: MarketingRecoMode = "deepdive",
     deepdive_report: dict[str, Any] | None = None,
     financial_report_path: str | None = None,
+    register_report_path: str | None = None,
     doordash_email: str | None = None,
     doordash_password: str | None = None,
     reporting_root: str | None = None,
@@ -433,11 +472,15 @@ def run(
     if reporting_root is None:
         reporting_root = str(marketingreco_reporting_root())
     if mode == "manual":
-        if not financial_report_path:
-            raise ValueError("manual mode requires financial_report_path (FINANCIAL_DETAILED zip/csv)")
+        if not register_report_path and not financial_report_path:
+            raise ValueError(
+                "manual mode requires register_report_path (DD register Excel/CSV) "
+                "or financial_report_path (legacy FINANCIAL_DETAILED)"
+            )
         return _run_manual_mode(
             operator_id,
             financial_report_path=financial_report_path,
+            register_report_path=register_report_path,
             reporting_root=reporting_root,
         )
     if mode == "auto":

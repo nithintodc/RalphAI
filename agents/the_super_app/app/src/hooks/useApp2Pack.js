@@ -10,14 +10,7 @@ export function useApp2Pack() {
 
   const pack = useMemo(
     () => buildApp2BucketingPack(ddFinancial, config),
-    [
-      ddFinancial,
-      config.ddPreStart,
-      config.ddPreEnd,
-      config.ddPostStart,
-      config.ddPostEnd,
-      config.ddExcludedDates,
-    ],
+    [ddFinancial, config],
   );
 
   const combinedSummary = useMemo(() => summaryTables?.combined || [], [summaryTables]);

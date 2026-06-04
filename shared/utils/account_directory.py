@@ -1,4 +1,4 @@
-"""Load operator / DoorDash credentials from the McDonald's account CSV (or similar)."""
+"""Operator / DoorDash credentials from Airtable Enterprise account directory."""
 
 from __future__ import annotations
 
@@ -6,6 +6,19 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+
+def load_account_operators() -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Load operators for agent runs (Data Run, Strategist, Campaign Killer, etc.).
+
+    Uses live Airtable ``Account Information`` data (same source as
+    ``GET /api/account-directory``). Optional ``warning`` when serving a stale
+    on-disk snapshot after a failed refresh.
+    """
+    from shared.utils.airtable_directory import load_account_operators_airtable
+
+    return load_account_operators_airtable()
 
 
 COL_BUSINESS = "Business Name (original)"

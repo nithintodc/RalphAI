@@ -50,8 +50,13 @@
 
 * { box-sizing: border-box; }
 
-body {
+html, body {
   margin: 0;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -60,9 +65,74 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-#root { min-height: 100vh; }
+#root {
+  min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Embedded in dashboard iframe: use iframe height, not browser 100vh */
+html.in-iframe,
+html.in-iframe body,
+html.in-iframe #root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.in-iframe .superapp-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+html.in-iframe .superapp-main {
+  height: 100%;
+}
 
 .tnum { font-variant-numeric: tabular-nums; }
+
+.table-heading-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.table-heading-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-height: 1.15;
+  max-height: 4.6em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: normal;
+}
+
+/* Register / wide tables: narrow columns, wrapped headers, horizontal scroll */
+.data-table--scrollable .table-heading-content--compact {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+
+.data-table--scrollable .table-heading-label--compact {
+  -webkit-line-clamp: 3;
+  max-height: 3.5em;
+  font-size: 10px;
+  line-height: 1.2;
+  hyphens: auto;
+}
+
+.data-table--scrollable th .table-heading-content--compact svg {
+  align-self: flex-end;
+  flex-shrink: 0;
+}
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

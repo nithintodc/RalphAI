@@ -27,6 +27,10 @@ export const useConfigStore = create((set, get) => ({
   operatorName: '',
   setOperatorName: (operatorName) => set({ operatorName: String(operatorName || '') }),
 
+  // TODC account manager name on partnership reports.
+  accountManager: '',
+  setAccountManager: (accountManager) => set({ accountManager: String(accountManager || '') }),
+
   // DoorDash Merchant store ID (string) -> Uber Eats Store ID (string) for combined rows.
   ddToUeStoreMap: {},
   // Canonical combined store ID (UE mapped ID or DD ID) -> tag label (e.g. A/B).
@@ -55,7 +59,14 @@ export const useConfigStore = create((set, get) => ({
   },
 
   setUeDates: (preStart, preEnd, postStart, postEnd) => {
-    set({ uePreStart: preStart, uePreEnd: preEnd, uePostStart: postStart, uePostEnd: postEnd });
+    const updates = { uePreStart: preStart, uePreEnd: preEnd, uePostStart: postStart, uePostEnd: postEnd };
+    if (get().syncDates) {
+      updates.ddPreStart = preStart;
+      updates.ddPreEnd = preEnd;
+      updates.ddPostStart = postStart;
+      updates.ddPostEnd = postEnd;
+    }
+    set(updates);
   },
 
   setSyncDates: (v) => {

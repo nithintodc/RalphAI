@@ -3,13 +3,21 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useConfigStore } from '../../stores/configStore';
 import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
-import { getUniqueStores as getDdStores, getDateRange as getDdRange } from '../../lib/parsers/ddFinancial';
+import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
 import { getUniqueStores as getUeStores, getDateRange as getUeRange } from '../../lib/parsers/ueFinancial';
+import {
+  getDdUploadedDateRange,
+  getDdSalesStoreIds,
+  hasAnyDdSales,
+  suggestPrePostFromBounds,
+} from '../../lib/utils/uploadedDataBounds';
 import { parseDate, formatDateShort, dateToKey, parseSlashDateRange, formatSlashDateRange } from '../../lib/utils/dateUtils';
 import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
 import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
 import { buildDdStoreCatalog, buildUeStoreCatalog, buildSuggestedMapRows, mapRowsToStoreMap, mapRowsToTagMap } from '../../lib/utils/storeCatalog';
 import StoreMapEditor from '../../components/config/StoreMapEditor';
+import OperatorSelect from '../../components/config/OperatorSelect';
+import PlatformLogo from '../../components/ui/PlatformLogo';
 
 function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
   const preCanon = formatSlashDateRange(preStart, preEnd);
@@ -29,13 +37,6 @@ function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
   const preCount = getInclusiveDayCount(preParsed);
   const postCount = getInclusiveDayCount(postParsed);
 
-  useEffect(() => {
-    setPreInput(preCanon);
-  }, [preCanon]);
-  useEffect(() => {
-    setPostInput(postCanon);
-  }, [postCanon]);
-
   const commitPre = () => {
     const r = parseSlashDateRange(preInput);
     if (r) onApply(r.start, r.end, postStart, postEnd);
@@ -48,7 +49,7 @@ function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-full">
       <div className="flex flex-col gap-1">
         <label className="text-xs text-[var(--text-muted)]">Pre</label>
         <input
@@ -90,7 +91,7 @@ function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
 function SyncToggle({ synced, onToggle, label }) {
   return (
     <label
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border
+      className={`inline-flex w-fit max-w-full items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer border
         ${synced ? 'bg-[var(--accent-soft)] text-[var(--accent-text)] border-[var(--accent-border)]' : 'bg-[var(--surface-2)] text-[var(--text-muted)] border-[var(--border)]'}`}
     >
       <input
@@ -207,31 +208,89 @@ function DateExcluder({ label, dates, onChange }) {
 
 export default function ConfigScreen() {
   const config = useConfigStore();
+  const setDdDates = useConfigStore((s) => s.setDdDates);
+  const setUeDates = useConfigStore((s) => s.setUeDates);
+  const ddPreStart = useConfigStore((s) => s.ddPreStart);
+  const uePreStart = useConfigStore((s) => s.uePreStart);
+  const syncDates = useConfigStore((s) => s.syncDates);
   const dataStore = useDataStore();
   const { setScreen } = useUiStore();
+  const [analyzeError, setAnalyzeError] = useState('');
 
-  const ddStores = useMemo(() => dataStore.ddFinancial ? getDdStores(dataStore.ddFinancial) : [], [dataStore.ddFinancial]);
+  const hasDdFinancial = !!dataStore.ddFinancial?.length;
+  const hasDdSales = useMemo(() => hasAnyDdSales(dataStore.ddSales), [dataStore.ddSales]);
+  const hasDdPeriods = hasDdFinancial || hasDdSales;
+
+  const ddStores = useMemo(() => {
+    if (hasDdFinancial) return getDdStores(dataStore.ddFinancial);
+    if (hasDdSales) return getDdSalesStoreIds(dataStore.ddSales);
+    return [];
+  }, [hasDdFinancial, hasDdSales, dataStore.ddFinancial, dataStore.ddSales]);
+
   const ueStores = useMemo(() => dataStore.ueFinancial ? getUeStores(dataStore.ueFinancial) : [], [dataStore.ueFinancial]);
-  const ddRange = useMemo(() => dataStore.ddFinancial ? getDdRange(dataStore.ddFinancial) : {}, [dataStore.ddFinancial]);
+  const ddRange = useMemo(
+    () => getDdUploadedDateRange(dataStore.ddFinancial, dataStore.ddSales),
+    [dataStore.ddFinancial, dataStore.ddSales],
+  );
   const ueRange = useMemo(() => dataStore.ueFinancial ? getUeRange(dataStore.ueFinancial) : {}, [dataStore.ueFinancial]);
 
-  const hasDd = !!dataStore.ddFinancial;
-  const hasUe = !!dataStore.ueFinancial;
+  const hasDd = hasDdFinancial;
+  const hasUeFinancial = !!dataStore.ueFinancial?.length;
+  const hasUe = hasUeFinancial;
+  const hasUePeriods = hasUeFinancial;
+  const ueOnly = hasUePeriods && !hasDdPeriods;
+  const showUePeriodEditor = hasUePeriods && (ueOnly || !syncDates);
 
   const ddCatalog = useMemo(() => buildDdStoreCatalog(dataStore.ddFinancial), [dataStore.ddFinancial]);
   const ueCatalog = useMemo(() => buildUeStoreCatalog(dataStore.ueFinancial), [dataStore.ueFinancial]);
 
-  const [mapRows, setMapRows] = useState([]);
+  const suggestedMapRows = useMemo(() => {
+    if (!ddCatalog.length) return [];
+    return buildSuggestedMapRows(ddCatalog, ueCatalog, config.ddToUeStoreMap || {}, config.storeTagMap || {});
+  }, [ddCatalog, ueCatalog, config.ddToUeStoreMap, config.storeTagMap]);
+  const [editedMapRows, setEditedMapRows] = useState(null);
+  const mapRows = editedMapRows ?? suggestedMapRows;
 
   useEffect(() => {
-    if (!ddCatalog.length) return;
-    setMapRows((prev) => {
-      if (prev.length > 0) return prev;
-      return buildSuggestedMapRows(ddCatalog, ueCatalog, config.ddToUeStoreMap || {}, config.storeTagMap || {});
-    });
-  }, [ddCatalog, ueCatalog, config.ddToUeStoreMap, config.storeTagMap]);
+    if (!hasDdPeriods || ddPreStart || !ddRange.min || !ddRange.max) return;
+    const suggested = suggestPrePostFromBounds(ddRange);
+    if (!suggested) return;
+    setDdDates(
+      suggested.preStart,
+      suggested.preEnd,
+      suggested.postStart,
+      suggested.postEnd,
+    );
+  }, [hasDdPeriods, ddRange, ddPreStart, setDdDates]);
+
+  useEffect(() => {
+    if (!ueOnly || uePreStart || !ueRange.min || !ueRange.max) return;
+    const suggested = suggestPrePostFromBounds(ueRange);
+    if (!suggested) return;
+    setUeDates(
+      suggested.preStart,
+      suggested.preEnd,
+      suggested.postStart,
+      suggested.postEnd,
+    );
+  }, [ueOnly, ueRange, uePreStart, setUeDates]);
+
+  const canRunFullAnalysis = hasDd || hasUe;
+  const canAnalyze = config.isConfigured()
+    && !!config.operatorName?.trim()
+    && canRunFullAnalysis
+    && !dataStore.isProcessing;
 
   const handleAnalyze = () => {
+    setAnalyzeError('');
+    if (!config.isConfigured()) {
+      setAnalyzeError('Set Pre and Post date ranges for at least one platform.');
+      return;
+    }
+    if (!config.operatorName?.trim()) {
+      setAnalyzeError('Select an operator before running analysis.');
+      return;
+    }
     dataStore.setProcessing(true);
 
     try {
@@ -275,75 +334,126 @@ export default function ConfigScreen() {
       setScreen('dashboard');
     } catch (err) {
       console.error('Analysis error:', err);
+      setAnalyzeError(err?.message || String(err) || 'Analysis failed. Check the browser console for details.');
       dataStore.setProcessing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-4">
-      <div className="w-full max-w-[96vw] space-y-6">
-        <div className="text-center mb-6">
+    <div className="min-h-screen bg-[var(--bg)] p-4 sm:p-6">
+      <div className="w-full max-w-[96rem] mx-auto space-y-5 pb-12 min-w-0">
+        <div className="mb-2">
           <h1 className="text-xl font-bold text-[var(--text)]">Configure Analysis</h1>
-          <p className="text-sm text-[var(--text-muted)] mt-1">Set date ranges and exclusions for your analysis</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Select operator, set date ranges, and exclusions</p>
         </div>
 
-        {/* Date Ranges */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[var(--text)]">Analysis Periods</h3>
-            <SyncToggle
-              synced={config.syncDates}
-              onToggle={() => config.setSyncDates(!config.syncDates)}
-              label="Same dates for all platforms"
-            />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <div className="card min-w-0">
+            <h3 className="font-semibold text-[var(--text)] mb-3">Operator</h3>
+            <OperatorSelect required />
+            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+              <label htmlFor="account-manager" className="block text-xs text-[var(--text-muted)] mb-1.5">
+                Account Manager
+              </label>
+              <input
+                id="account-manager"
+                type="text"
+                value={config.accountManager}
+                onChange={(e) => config.setAccountManager(e.target.value)}
+                placeholder="Name shown on partnership reports"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+              />
+            </div>
           </div>
 
-          {hasDd && (
-            <div className="mb-4 p-4 rounded-lg bg-[var(--surface-2)]">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="platform-dot dd" />
-                <span className="text-sm font-medium text-[var(--text)]">DoorDash</span>
-                {ddRange.min && (
-                  <span className="text-[10px] text-[var(--text-subtle)] ml-auto">
-                    Data: {formatDateShort(ddRange.min)} — {formatDateShort(ddRange.max)}
-                  </span>
-                )}
-              </div>
-              <PeriodRangePair
-                preStart={config.ddPreStart}
-                preEnd={config.ddPreEnd}
-                postStart={config.ddPostStart}
-                postEnd={config.ddPostEnd}
-                onApply={config.setDdDates}
+          <div className="card min-w-0">
+            <div className="flex flex-col gap-3 mb-4">
+              <h3 className="font-semibold text-[var(--text)]">Analysis Periods</h3>
+              <SyncToggle
+                synced={config.syncDates}
+                onToggle={() => config.setSyncDates(!config.syncDates)}
+                label="Same dates for all platforms"
               />
             </div>
-          )}
 
-          {hasUe && !config.syncDates && (
-            <div className="p-4 rounded-lg bg-[var(--surface-2)]">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="platform-dot ue" />
-                <span className="text-sm font-medium text-[var(--text)]">UberEats</span>
-                {ueRange.min && (
-                  <span className="text-[10px] text-[var(--text-subtle)] ml-auto">
-                    Data: {formatDateShort(ueRange.min)} — {formatDateShort(ueRange.max)}
-                  </span>
-                )}
-              </div>
-              <PeriodRangePair
-                preStart={config.uePreStart}
-                preEnd={config.uePreEnd}
-                postStart={config.uePostStart}
-                postEnd={config.uePostEnd}
-                onApply={config.setUeDates}
-              />
+            {!hasDdPeriods && !hasUePeriods && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Upload DoorDash financial/sales or Uber Eats financial CSV to set analysis periods.
+              </p>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {hasDdPeriods && (
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0">
+                  <div className="flex flex-col gap-1 mb-3">
+                    <div className="flex items-center gap-2">
+                      <PlatformLogo platform="dd" size={18} />
+                      <span className="text-sm font-medium text-[var(--text)]">DoorDash</span>
+                    </div>
+                    {ddRange.min && (
+                      <span className="text-[10px] text-[var(--text-subtle)]">
+                        Data: {formatDateShort(ddRange.min)} — {formatDateShort(ddRange.max)}
+                        {hasDdSales && !hasDdFinancial ? ' · from sales export' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {hasDdSales && !hasDdFinancial && (
+                    <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mb-3">
+                      Sales ZIP only — date ranges come from your sales file. Upload <strong>Financial</strong> to run full analysis (Overview, Register, Buckets, etc.).
+                    </p>
+                  )}
+                  <PeriodRangePair
+                    key={`dd-${config.ddPreStart || ''}-${config.ddPreEnd || ''}-${config.ddPostStart || ''}-${config.ddPostEnd || ''}`}
+                    preStart={config.ddPreStart}
+                    preEnd={config.ddPreEnd}
+                    postStart={config.ddPostStart}
+                    postEnd={config.ddPostEnd}
+                    onApply={config.setDdDates}
+                  />
+                </div>
+              )}
+
+              {showUePeriodEditor && (
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0">
+                  <div className="flex flex-col gap-1 mb-3">
+                    <div className="flex items-center gap-2">
+                      <PlatformLogo platform="ue" size={18} />
+                      <span className="text-sm font-medium text-[var(--text)]">Uber Eats</span>
+                    </div>
+                    {ueRange.min && (
+                      <span className="text-[10px] text-[var(--text-subtle)]">
+                        Data: {formatDateShort(ueRange.min)} — {formatDateShort(ueRange.max)}
+                      </span>
+                    )}
+                  </div>
+                  {ueOnly && syncDates && (
+                    <p className="text-[10px] text-[var(--text-subtle)] mb-3">
+                      Uber Eats only — these dates are used for analysis (synced toggle applies when DoorDash is added later).
+                    </p>
+                  )}
+                  <PeriodRangePair
+                    key={`ue-${config.uePreStart || ''}-${config.uePreEnd || ''}-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
+                    preStart={config.uePreStart}
+                    preEnd={config.uePreEnd}
+                    postStart={config.uePostStart}
+                    postEnd={config.uePostEnd}
+                    onApply={setUeDates}
+                  />
+                </div>
+              )}
+
+              {hasUePeriods && !ueRange.min && (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 md:col-span-2">
+                  Uber Eats file is in memory but no order dates were parsed. Use the standard UE financial CSV (header on row 2: Store Name, Order date, …).
+                </p>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Store Exclusions */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <div className="card min-w-0">
+          <div className="flex flex-col gap-3 mb-4">
             <h3 className="font-semibold text-[var(--text)]">Exclude Stores</h3>
             <SyncToggle
               synced={config.syncStoreExclusions}
@@ -352,18 +462,18 @@ export default function ConfigScreen() {
             />
           </div>
           <div className="space-y-4">
-            {hasDd && (
+            {hasDdPeriods && (
               <StoreIdExcludeSelect
-                label={`DoorDash (${ddStores.length} store IDs detected)`}
+                label={`DoorDash (${ddStores.length} store IDs detected${hasDdSales && !hasDdFinancial ? ' · sales' : ''})`}
                 options={ddStores}
                 selected={config.ddExcludedStores}
                 onChange={config.setDdExcludedStores}
                 selectPrompt={ddStores.length ? 'Select a DoorDash store ID to exclude…' : 'No store IDs in file'}
               />
             )}
-            {hasUe && !config.syncStoreExclusions && (
+            {hasUePeriods && (ueOnly || !config.syncStoreExclusions) && (
               <StoreIdExcludeSelect
-                label={`UberEats (${ueStores.length} store IDs detected)`}
+                label={`Uber Eats (${ueStores.length} store IDs detected)`}
                 options={ueStores}
                 selected={config.ueExcludedStores}
                 onChange={config.setUeExcludedStores}
@@ -373,9 +483,8 @@ export default function ConfigScreen() {
           </div>
         </div>
 
-        {/* Date Exclusions */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
+        <div className="card min-w-0">
+          <div className="flex flex-col gap-3 mb-4">
             <h3 className="font-semibold text-[var(--text)]">Exclude Dates</h3>
             <SyncToggle
               synced={config.syncDateExclusions}
@@ -384,57 +493,76 @@ export default function ConfigScreen() {
             />
           </div>
           <div className="space-y-4">
-            {hasDd && (
+            {hasDdPeriods && (
               <DateExcluder
                 label="DoorDash"
                 dates={config.ddExcludedDates}
                 onChange={config.setDdExcludedDates}
               />
             )}
-            {hasUe && !config.syncDateExclusions && (
+            {hasUePeriods && (ueOnly || !config.syncDateExclusions) && (
               <DateExcluder
-                label="UberEats"
+                label="Uber Eats"
                 dates={config.ueExcludedDates}
                 onChange={config.setUeExcludedDates}
               />
             )}
           </div>
         </div>
+        </div>
 
-        {hasDd && hasUe && (
-          <div className="card">
+        <div className="space-y-2">
+          {analyzeError && (
+            <p className="text-sm text-[var(--negative)] bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {analyzeError}
+            </p>
+          )}
+          {!config.operatorName?.trim() && config.isConfigured() && canRunFullAnalysis && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select an operator above — Analyze stays disabled until you do.
+            </p>
+          )}
+          {config.isConfigured() && !canRunFullAnalysis && hasDdPeriods && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Periods are set from your sales upload. Upload <strong>Financial</strong> (DoorDash and/or Uber Eats) to enable Analyze.
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setScreen('upload')}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+              Back
+            </button>
+            <button
+              disabled={!canAnalyze}
+              onClick={handleAnalyze}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm transition-all
+                ${canAnalyze
+                  ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] cursor-pointer'
+                  : 'bg-[var(--surface-3)] text-[var(--text-subtle)] cursor-not-allowed'}`}
+            >
+              {dataStore.isProcessing ? 'Analyzing...' : 'Analyze'}
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {hasDd && hasUe && (
+        <div className="w-full max-w-[96rem] mx-auto pb-12 min-w-0">
+          <div className="card min-w-0">
             <h3 className="font-semibold text-[var(--text)] mb-2">Combined: DD ↔ UE store map</h3>
             <StoreMapEditor
               ddFinancial={dataStore.ddFinancial}
               ueFinancial={dataStore.ueFinancial}
               rows={mapRows}
-              setRows={setMapRows}
+              setRows={setEditedMapRows}
             />
           </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setScreen('upload')}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
-          >
-            <ChevronLeft size={16} />
-            Back
-          </button>
-          <button
-            disabled={!config.isConfigured() || dataStore.isProcessing}
-            onClick={handleAnalyze}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm transition-all
-              ${config.isConfigured()
-                ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] cursor-pointer'
-                : 'bg-[var(--surface-3)] text-[var(--text-subtle)] cursor-not-allowed'}`}
-          >
-            {dataStore.isProcessing ? 'Analyzing...' : 'Analyze'}
-            <ChevronRight size={16} />
-          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   Play,
   Cpu,
@@ -6,10 +6,10 @@ import {
   ShoppingBag,
   Megaphone,
   BarChart3,
-  Calendar,
   Skull,
   Activity,
 } from "lucide-react";
+import { agentRunRoute } from "../config/agentRoutes";
 
 const agents = [
   {
@@ -20,15 +20,25 @@ const agents = [
     status: "ready",
     color: "from-sky-500 to-cyan-700",
     inputs: [
-      "Operators (multi-select) from account directory CSV",
+      "Operators (multi-select) from Airtable account directory",
       "Always pulls both financial and marketing reports",
-      "DoorDash credentials auto-loaded from Account Information CSV",
+      "DoorDash credentials auto-loaded from Airtable Account Information",
     ],
     outputs: [
       "Downloaded report files under data/runs/data_run/",
       "Per-operator status: success | no_files | failed",
       "Run summary with selected file count per operator",
     ],
+  },
+  {
+    id: "the_super_app",
+    name: "The Super App",
+    desc: "Primary React analytics UI — Pre/Post, diagnostics, marketing, register, and Breakdown financial summary.",
+    icon: BarChart3,
+    status: "ready",
+    color: "from-brand-500 to-brand-700",
+    inputs: ["Financial and Marketing exports"],
+    outputs: ["React Interactive UI", "Breakdown — Financial Summary table"],
   },
   {
     id: "strategist",
@@ -38,8 +48,8 @@ const agents = [
     status: "ready",
     color: "from-violet-500 to-purple-700",
     inputs: [
-      "Operators (multi-select) from account directory CSV",
-      "DoorDash credentials auto-loaded from Account Information CSV",
+      "Operators (multi-select) from Airtable account directory",
+      "DoorDash credentials auto-loaded from Airtable Account Information",
       "Downloads 90-day financial + marketing reports per operator",
     ],
     outputs: [
@@ -56,8 +66,8 @@ const agents = [
     status: "ready",
     color: "from-emerald-500 to-teal-700",
     inputs: [
-      "Operators (multi-select) from account directory CSV",
-      "DoorDash credentials from Account Information CSV",
+      "Operators (multi-select) from Airtable account directory",
+      "DoorDash credentials from Airtable Account Information",
       "Runs full pipeline per operator in sequence (login → download → analytics)",
     ],
     outputs: [
@@ -74,8 +84,8 @@ const agents = [
     status: "ready",
     color: "from-red-500 to-red-800",
     inputs: [
-      "Operators (multi-select) from account directory CSV",
-      "DoorDash credentials auto-loaded from Account Information CSV",
+      "Operators (multi-select) from Airtable account directory",
+      "DoorDash credentials auto-loaded from Airtable Account Information",
       "Typing TODC in campaigns search (optional; on by default) then Active filter; bot still only ends names starting with TODC-",
     ],
     outputs: [
@@ -156,42 +166,14 @@ const agents = [
     ],
   },
   {
-    id: "monthly-reporter",
-    name: "Monthly Reporter",
-    desc: "Consolidated monthly KPI rollup and narrative for operators and stakeholders.",
-    icon: Calendar,
-    status: "idle",
-    color: "from-violet-500 to-indigo-700",
-    inputs: [
-      "Pre/Post date ranges (MM/DD/YYYY-MM/DD/YYYY), operator ID & name",
-      "dd-data.csv, ue-data.csv; optional MARKETING_*.csv (multi-upload, Streamlit-style)",
-      "Optional: exclude dates, DD/UE store ID filters",
-    ],
-    outputs: [
-      "Full Excel export + optional date-wise Excel (in-app download)",
-      "Preview tables in dashboard; artifacts under data/runs/monthly_reporter/",
-      "Google Drive upload when service-account JSON is configured",
-    ],
-  },
-  {
-    id: "the_super_app",
-    name: "The Super App",
-    desc: "Primary React frontend and Streamlit export API.",
-    icon: BarChart3,
-    status: "ready",
-    color: "from-brand-500 to-brand-700",
-    inputs: ["Financial and Marketing exports"],
-    outputs: ["React Interactive UI"],
-  },
-  {
     id: "app2_0",
     name: "App2.0 (Legacy)",
-    desc: "Legacy Python Streamlit dashboard for financial P&L rollups.",
+    desc: "Legacy Streamlit P&L — use The Super App → Breakdown for the financial summary table.",
     icon: BarChart3,
     status: "ready",
     color: "from-emerald-600 to-emerald-800",
     inputs: ["Financial and Marketing exports"],
-    outputs: ["Streamlit Interactive UI"],
+    outputs: ["Redirected to Super App Breakdown"],
   },
   {
     id: "app3_0",
@@ -202,26 +184,6 @@ const agents = [
     color: "from-teal-600 to-teal-800",
     inputs: ["Financial and Marketing exports"],
     outputs: ["Streamlit Interactive UI"],
-  },
-  {
-    id: "ralph_analyse",
-    name: "Ralph Analyse",
-    desc: "Supplemental analysis tools for DoorDash/UberEats comparison.",
-    icon: Activity,
-    status: "ready",
-    color: "from-blue-600 to-blue-800",
-    inputs: ["Financial and Marketing exports"],
-    outputs: ["Streamlit Interactive UI"],
-  },
-  {
-    id: "marketing_breakdown",
-    name: "Marketing Breakdown",
-    desc: "Dedicated Node.js application for analyzing marketing spend.",
-    icon: Megaphone,
-    status: "ready",
-    color: "from-orange-500 to-orange-700",
-    inputs: ["Marketing promotion data"],
-    outputs: ["Node.js Interactive UI"],
   },
   {
     id: "markup_app",
@@ -236,7 +198,6 @@ const agents = [
 ];
 
 export function AgentsPage() {
-  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -279,102 +240,28 @@ export function AgentsPage() {
               {a.desc}
             </p>
 
-            <div className="mt-auto pt-4 flex gap-2">
-              {a.id === "monthly-reporter" ? (
+            <div className="mt-auto flex gap-2 pt-4">
+              {agentRunRoute(a.id) ? (
                 <Link
-                  to="/agents/monthly-reporter"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                  to={agentRunRoute(a.id)!}
+                  className={[
+                    "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold text-white transition",
+                    a.id === "campaign-killer"
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-ink-900 hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400",
+                  ].join(" ")}
                 >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "marketingreco" ? (
-                <Link
-                  to="/agents/marketingreco"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "ralphai-offers" ? (
-                <Link
-                  to="/agents/offers"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "ralphai-ads" ? (
-                <Link
-                  to="/agents/ads"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "review" ? (
-                <Link
-                  to="/agents/campaign-review"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "data-run" ? (
-                <Link
-                  to="/agents/data-run"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "strategist" ? (
-                <Link
-                  to="/agents/strategist"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "health-check" ? (
-                <Link
-                  to="/agents/health-check"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
-              ) : a.id === "campaign-killer" ? (
-                <Link
-                  to="/agents/campaign-killer"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
-                >
-                  <Skull className="h-4 w-4" />
+                  {a.id === "campaign-killer" ? (
+                    <Skull className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
                   Run
                 </Link>
               ) : (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`/api/runs/launch/${a.id}`, { method: "POST" });
-                      if (!res.ok) throw new Error(await res.text());
-                      const data = await res.json();
-                      if (data.url) {
-                        // Small delay to let the underlying server boot before iframing
-                        setTimeout(() => {
-                          navigate(`/agents/embed?url=${encodeURIComponent(data.url)}&name=${encodeURIComponent(a.name)}`);
-                        }, 1000);
-                      }
-                    } catch (e: any) {
-                      alert(`Error launching agent: ${e.message}`);
-                    }
-                  }}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run App
-                </button>
+                <span className="inline-flex flex-1 items-center justify-center rounded-2xl bg-brand-50 px-4 py-2.5 text-sm font-medium text-ink-500">
+                  Coming soon
+                </span>
               )}
             </div>
           </article>

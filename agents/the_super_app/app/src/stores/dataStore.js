@@ -2,7 +2,10 @@ import { create } from 'zustand';
 
 const initialState = {
   ddFinancial: null,
+  ddFinancialError: null,
   ddMarketing: { promotion: null, sponsored: null },
+  /** Raw parsed CSV rows for marketing breakdown pivots (promotion file). */
+  ddMarketingRaw: { promotion: null, sponsored: null },
   ddSales: { byOrder: null, byTime: null, byStore: null },
   ddOps: { byOrder: null, byStore: null, byTime: null },
   ddProductMix: null,
@@ -22,9 +25,16 @@ export const useDataStore = create((set, get) => ({
   ...initialState,
 
   setDdFinancial: (data) => set({ ddFinancial: data }),
+  setDdFinancialError: (data) => set({ ddFinancialError: data }),
   setUeFinancial: (data) => set({ ueFinancial: data }),
   setDdMarketing: (type, data) => set((s) => ({
     ddMarketing: { ...s.ddMarketing, [type]: data },
+  })),
+  setDdMarketingRaw: (type, parsed, fileLabel) => set((s) => ({
+    ddMarketingRaw: {
+      ...s.ddMarketingRaw,
+      [type]: parsed ? { data: parsed.data, columns: parsed.columns, fileLabel } : null,
+    },
   })),
   setDdSales: (view, data) => set((s) => ({
     ddSales: { ...s.ddSales, [view]: data },

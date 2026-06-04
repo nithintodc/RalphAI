@@ -9,10 +9,10 @@ export default function DeltaPill({ value, label, subtle = false }) {
   const Icon = isNeutral ? Minus : isPositive ? TrendingUp : TrendingDown;
 
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium tnum ${color} ${subtle ? '' : bg}`}>
-      <Icon size={11} />
-      {(value >= 0 ? '+' : '') + value.toFixed(1)}%
-      {label && <span className="text-[var(--text-subtle)] font-normal ml-0.5">{label}</span>}
+    <span className={`inline-flex items-center gap-0.5 max-w-full px-1 py-0.5 rounded text-[10px] leading-tight font-medium tnum whitespace-nowrap ${color} ${subtle ? '' : bg}`}>
+      <Icon size={10} className="shrink-0" />
+      <span>{(value >= 0 ? '+' : '') + value.toFixed(1)}%</span>
+      {label && <span className="text-[var(--text-subtle)] font-normal">{label}</span>}
     </span>
   );
 }

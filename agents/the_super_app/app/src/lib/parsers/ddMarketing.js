@@ -24,9 +24,10 @@ export function normalizeDdPromotion(parsed) {
   const ordersCol = findCol(columns, ['Orders', 'orders']);
   const salesCol = findCol(columns, ['Sales', 'sales']);
   const spendCol = findCol(columns, [
+    'Marketing fees | (including any applicable taxes)',
+    'Marketing fees',
     'Customer discounts from marketing | (Funded by you)',
     'Customer discounts from marketing | (funded by you)',
-    'Customer discounts from marketing',
     'Spend',
   ]);
   const newCustCol = findCol(columns, ['New customers acquired', 'New Customers Acquired', 'new customers acquired']);

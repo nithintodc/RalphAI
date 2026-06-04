@@ -4,7 +4,7 @@ import { ArrowLeft, Play, Loader2 } from "lucide-react";
 import { OperatorAccountPicker } from "../components/OperatorAccountPicker";
 
 type RecoMode = "manual" | "auto";
-type ResultTab = "offers" | "ads";
+type ResultTab = "slots" | "offers" | "ads";
 type AdsSubTab = "upload" | "slots";
 
 /** Matches Excel "Ads" sheet / API `ads_upload_rows`. */
@@ -19,7 +19,7 @@ type AdsUploadRow = {
 export function MarketingRecoPage() {
   const [operatorId, setOperatorId] = useState("");
   const [mode, setMode] = useState<RecoMode>("manual");
-  const [financialFile, setFinancialFile] = useState<File | null>(null);
+  const [registerFile, setRegisterFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,6 +29,10 @@ export function MarketingRecoPage() {
   const [adsSubTab, setAdsSubTab] = useState<AdsSubTab>("upload");
   const campaigns = useMemo(() => (result?.recommended_campaigns as any[]) ?? [], [result]);
   const mappings = useMemo(() => (result?.campaign_mappings as any[]) ?? [], [result]);
+  const slotRecommendations = useMemo(
+    () => (result?.slot_recommendations as any[]) ?? [],
+    [result],
+  );
   const adsPlan = result?.ads_plan as
     | {
         store_id?: number;
@@ -69,7 +73,12 @@ export function MarketingRecoPage() {
   );
 
   useEffect(() => {
-    if (result?.run_id) setAdsSubTab("upload");
+    if (result?.run_id) {
+      setAdsSubTab("upload");
+      if ((result?.slot_recommendations as unknown[] | undefined)?.length) {
+        setResultTab("slots");
+      }
+    }
   }, [result?.run_id]);
 
   const adsStoreSummary = useMemo(() => {
@@ -100,8 +109,8 @@ export function MarketingRecoPage() {
       setError("Enter an Operator ID.");
       return;
     }
-    if (mode === "manual" && !financialFile) {
-      setError("Upload a FINANCIAL_DETAILED file (.zip or .csv) for Manual mode.");
+    if (mode === "manual" && !registerFile) {
+      setError("Upload a DoorDash register file (.xlsx, .xls, or .csv) for Manual mode.");
       return;
     }
     if (mode === "auto" && (!email.trim() || !password)) {
@@ -112,8 +121,8 @@ export function MarketingRecoPage() {
     const formData = new FormData();
     formData.append("operator_id", operatorId.trim());
     formData.append("mode", mode);
-    if (mode === "manual" && financialFile) {
-      formData.append("financial_file", financialFile);
+    if (mode === "manual" && registerFile) {
+      formData.append("register_file", registerFile);
     }
     if (mode === "auto") {
       formData.append("doordash_email", email.trim());
@@ -151,8 +160,10 @@ export function MarketingRecoPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">MarketingReco</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          Upload FINANCIAL_DETAILED (manual) or use Auto mode to build promotion mappings (Offers) and sponsored
-          listing slot plans (Ads) in one run.
+          Upload a DoorDash register Excel (manual) with per-store, per-day, per-slot AOV and profitability. The agent
+          suggests Ads when AOV &lt; $20 and profitability &gt; 75%, promos when AOV &gt; $20 (
+          <code className="text-xs">TODC-StoreID-$minSubtotal</code>
+          ), or no action otherwise. Auto mode still uses the legacy financial download pipeline.
         </p>
       </div>
 
@@ -181,12 +192,12 @@ export function MarketingRecoPage() {
 
         {mode === "manual" ? (
           <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-sm font-medium text-ink-700">FINANCIAL_DETAILED input (.zip or .csv)</span>
+            <span className="text-sm font-medium text-ink-700">DD register file (.xlsx, .xls, or .csv)</span>
             <input
               type="file"
-              accept=".zip,.csv"
+              accept=".xlsx,.xls,.csv"
               className="rounded-xl border border-brand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              onChange={(e) => setFinancialFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => setRegisterFile(e.target.files?.[0] ?? null)}
             />
           </label>
         ) : null}
@@ -224,15 +235,15 @@ export function MarketingRecoPage() {
               ) : null}
             </div>
             <p className="mt-2 text-sm text-ink-700">
-              Promotion recommendations: {campaigns.length} · Ads:{" "}
-              {adsPlan?.store_count != null ? `${adsPlan.store_count} stores` : "—"}, {adsUploadRows.length} upload
-              rows, {adsSlotRows.length} slot rows
+              Slot rows: {slotRecommendations.length} · Promos: {mappings.length} · Ads upload rows:{" "}
+              {adsUploadRows.length} ({adsSlotRows.length} qualifying slots)
             </p>
           </div>
 
           <div className="flex gap-2 border-b border-brand-100 pb-2">
             {(
               [
+                { id: "slots" as const, label: "By slot" },
                 { id: "offers" as const, label: "Offers" },
                 { id: "ads" as const, label: "Ads" },
               ] as const
@@ -252,11 +263,57 @@ export function MarketingRecoPage() {
             ))}
           </div>
 
-          {resultTab === "offers" ? (
+          {resultTab === "slots" ? (
+            <div className="brand-card rounded-[24px] p-5 overflow-x-auto">
+              <h3 className="font-display text-lg font-semibold text-ink-900">Slot recommendations</h3>
+              <p className="mt-1 text-sm text-ink-600">
+                Per store × day × daypart: AOV &lt; $20 and profitability &gt; 75% → Ads; AOV &lt; $20 and ≤ 75% → none;
+                AOV &gt; $20 → promo campaign.
+              </p>
+              {slotRecommendations.length > 0 ? (
+                <table className="mt-3 min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-brand-100 text-left text-ink-600">
+                      <th className="py-2 pr-3">Store</th>
+                      <th className="py-2 pr-3">Day</th>
+                      <th className="py-2 pr-3">Daypart</th>
+                      <th className="py-2 pr-3">Orders</th>
+                      <th className="py-2 pr-3">AOV</th>
+                      <th className="py-2 pr-3">Profit %</th>
+                      <th className="py-2 pr-3">Action</th>
+                      <th className="py-2 pr-3">Campaign</th>
+                      <th className="py-2 pr-3">Rationale</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slotRecommendations.map((row, idx) => (
+                      <tr key={`${row.store_id}-${row.day}-${row.daypart}-${idx}`} className="border-b border-brand-50">
+                        <td className="py-2 pr-3 text-ink-900">{row.store_id ?? "—"}</td>
+                        <td className="py-2 pr-3">{row.day ?? "—"}</td>
+                        <td className="py-2 pr-3">{row.daypart ?? "—"}</td>
+                        <td className="py-2 pr-3">{row.orders ?? "—"}</td>
+                        <td className="py-2 pr-3">
+                          {row.aov != null ? `$${Number(row.aov).toFixed(2)}` : "—"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {row.profitability_pct != null ? `${Number(row.profitability_pct).toFixed(1)}%` : "—"}
+                        </td>
+                        <td className="py-2 pr-3 font-medium capitalize">{row.action ?? "—"}</td>
+                        <td className="py-2 pr-3">{row.campaign_name || "—"}</td>
+                        <td className="py-2 pr-3 max-w-xs text-ink-600 text-xs">{row.rationale ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="mt-4 text-sm text-ink-600">No slot rows in this run.</p>
+              )}
+            </div>
+          ) : resultTab === "offers" ? (
             <div className="brand-card rounded-[24px] p-5 overflow-x-auto">
               <h3 className="font-display text-lg font-semibold text-ink-900">Promotions to keep</h3>
               <p className="mt-1 text-sm text-ink-600">
-                Store IDs from Campaign Mappings (offers setup): <strong>Store ID</strong> + optional DoorDash key.
+                Promo campaigns grouped by store and uplifted min subtotal (AOV × 1.2, rounded to $5).
               </p>
               <table className="mt-3 min-w-full text-sm">
                 <thead>
@@ -456,8 +513,7 @@ export function MarketingRecoPage() {
                 </table>
               ) : (
                 <p className="mt-4 text-sm text-ink-600">
-                  No ads slot table for this run. Use a full DoorDash FINANCIAL_DETAILED export (delivered orders with
-                  marketing columns) so slot metrics can be computed, or check that analysis produced a financial CSV.
+                  No ads slots for this run (no register rows with AOV &lt; $20 and profitability &gt; 75%).
                 </p>
               )}
             </div>

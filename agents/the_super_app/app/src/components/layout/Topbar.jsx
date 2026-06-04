@@ -7,6 +7,7 @@ import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';
 import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
 import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
 import DateFilterDropdown from './DateFilterDropdown';
+import PlatformLogo from '../ui/PlatformLogo';
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -164,7 +165,7 @@ function StoreFilterDropdown({
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer
               ${activeTab === 'dd' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
           >
-            <span className="platform-dot dd shrink-0" aria-hidden />
+            <PlatformLogo platform="dd" size={16} />
             DoorDash
           </button>
           <button
@@ -174,7 +175,7 @@ function StoreFilterDropdown({
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer
               ${activeTab === 'ue' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
           >
-            <span className="platform-dot ue shrink-0" aria-hidden />
+            <PlatformLogo platform="ue" size={16} />
             Uber Eats
           </button>
         </div>
@@ -308,8 +309,8 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
   }, [config, dataStore]);
 
   return (
-    <div className="sticky top-0 z-20 flex items-center gap-3 h-14 px-5 bg-[var(--surface)] border-b border-[var(--border)]">
-      <div className="font-semibold text-[var(--text)]">{title}</div>
+    <div className="sticky top-0 z-20 flex items-center gap-3 h-14 px-5 bg-[var(--surface)] border-b border-[var(--border)] min-w-0 overflow-x-hidden">
+      <div className="font-semibold text-[var(--text)] shrink-0">{title}</div>
       {crumb && (
         <>
           <ChevronRight size={14} className="text-[var(--text-subtle)]" />
@@ -317,7 +318,7 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
         </>
       )}
 
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0" />
 
       {/* Date Filter Chip */}
       <div className="relative">
@@ -330,7 +331,12 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
             }`}
         >
           <Calendar size={13} />
-          <span className="tnum font-medium">{periodLabel || 'Set dates'}</span>
+          <span
+            className="tnum font-medium max-w-[min(44vw,300px)] truncate"
+            title={periodLabel || 'Set dates'}
+          >
+            {periodLabel || 'Set dates'}
+          </span>
           <ChevronDown size={13} className={`transition-transform ${showDateFilter ? 'rotate-180' : ''}`} />
         </button>
         {showDateFilter && (

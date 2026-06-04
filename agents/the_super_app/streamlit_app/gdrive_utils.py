@@ -80,16 +80,23 @@ def _credentials_from_env() -> dict[str, Any] | None:
 def _resolve_service_account_path(credentials_path: str | Path | None) -> Path:
     """Prefer explicit path, then default filename, then any todc-marketing-*.json (App2.0 deploy pattern)."""
     app_dir = Path(__file__).parent
+    repo_root = app_dir.parents[2]
+    search_dirs = [
+        app_dir,
+        repo_root / "agents" / "deepdive" / "cloud_app",
+        repo_root / "agents" / "app2_0_savvy",
+    ]
     if credentials_path is not None:
         p = Path(credentials_path)
         if p.is_file():
             return p
-    default = app_dir / "todc-marketing-ad02212d4f16.json"
-    if default.is_file():
-        return default
-    matches = sorted(app_dir.glob("todc-marketing-*.json"))
-    if matches:
-        return matches[0]
+    for base in search_dirs:
+        default = base / "todc-marketing-ad02212d4f16.json"
+        if default.is_file():
+            return default
+        matches = sorted(base.glob("todc-marketing-*.json"))
+        if matches:
+            return matches[0]
     raise FileNotFoundError(
         "Google service-account credentials were not found.\n\n"
         "For Streamlit Cloud: Settings → Secrets with [gcp.service_account] "

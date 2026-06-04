@@ -18,24 +18,11 @@ import {
   startOfQuarter,
   subDays,
 } from 'date-fns';
-import { getDateRange as getDdDateRange } from '../parsers/ddFinancial';
-import { getDateRange as getUeDateRange } from '../parsers/ueFinancial';
+import { mergeAllUploadedBounds } from './uploadedDataBounds';
 
-/** Merge DD + UE financial row date ranges. */
-export function mergeUploadedDataBounds(ddFinancial, ueFinancial) {
-  const ranges = [];
-  if (ddFinancial?.length) {
-    const r = getDdDateRange(ddFinancial);
-    if (r.min && r.max) ranges.push({ min: r.min, max: r.max });
-  }
-  if (ueFinancial?.length) {
-    const r = getUeDateRange(ueFinancial);
-    if (r.min && r.max) ranges.push({ min: r.min, max: r.max });
-  }
-  if (!ranges.length) return { min: null, max: null };
-  const minT = Math.min(...ranges.map((r) => startOfDay(r.min).getTime()));
-  const maxT = Math.max(...ranges.map((r) => endOfDay(r.max).getTime()));
-  return { min: new Date(minT), max: new Date(maxT) };
+/** Merge DD + UE date ranges (financial and/or DoorDash sales exports). */
+export function mergeUploadedDataBounds(ddFinancial, ueFinancial, ddSales = null) {
+  return mergeAllUploadedBounds(ddFinancial, ueFinancial, ddSales);
 }
 
 /** Sunday 00:00:00 on or before `d` (local). */

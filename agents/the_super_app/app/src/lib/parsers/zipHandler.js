@@ -37,15 +37,66 @@ export function parseCsv(csvString) {
   return { data: rows, columns: Object.keys(rows[0] || {}) };
 }
 
+function normalizeUeHeaderCell(cell) {
+  return String(cell ?? '')
+    .replace(/\uFEFF/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** True when row is UE short header row (row 2 in standard exports). */
+export function isUeFinancialHeaderRow(fields) {
+  if (!fields?.length) return false;
+  const norms = fields.map(normalizeUeHeaderCell);
+  const storeName = norms[0] || '';
+  if (storeName !== 'store name') return false;
+  return norms.includes('order date') && norms.some((n) => n.includes('sales') && n.includes('excl'));
+}
+
+/**
+ * UberEats financial CSV: row 1 = long descriptions, row 2 = column names, row 3+ = data.
+ * Also skips optional banner rows (e.g. "[N more lines]") before the header row.
+ */
+export function parseUeFinancialCsv(csvString) {
+  const parsed = Papa.parse(csvString, {
+    header: false,
+    skipEmptyLines: true,
+    dynamicTyping: false,
+  });
+  const matrix = Array.isArray(parsed.data) ? parsed.data : [];
+  let headerIdx = matrix.findIndex((row) => isUeFinancialHeaderRow(row));
+  if (headerIdx < 0 && matrix.length >= 2) {
+    headerIdx = 1;
+  }
+  if (headerIdx < 0 || headerIdx >= matrix.length) {
+    return { data: [], columns: [] };
+  }
+
+  const columns = matrix[headerIdx].map((h) => String(h ?? '').trim());
+  const data = [];
+  for (let i = headerIdx + 1; i < matrix.length; i += 1) {
+    const fields = matrix[i];
+    if (!fields?.length) continue;
+    const row = {};
+    for (let j = 0; j < columns.length; j += 1) {
+      const key = columns[j];
+      if (!key) continue;
+      const v = fields[j];
+      row[key] = typeof v === 'string' ? v.trim() : v ?? '';
+    }
+    data.push(row);
+  }
+  return { data, columns };
+}
+
 export async function processUploadedFile(file) {
   const type = detectFileType(file.name);
   if (type === 'unknown') return { type, error: 'Unrecognized file format' };
 
   if (type === 'ue_financial') {
     const text = await file.text();
-    const firstNl = text.indexOf('\n');
-    const cleaned = firstNl >= 0 ? text.slice(firstNl + 1) : text;
-    const parsed = parseCsv(cleaned);
+    const parsed = parseUeFinancialCsv(text);
     return { type, data: parsed };
   }
 
@@ -54,7 +105,7 @@ export async function processUploadedFile(file) {
   for (const [filename, entry] of Object.entries(zip.files)) {
     if (entry.dir || !filename.toLowerCase().endsWith('.csv')) continue;
     const lower = filename.toLowerCase();
-    if (type === 'dd_financial' && !lower.includes('financial_detailed')) {
+    if (type === 'dd_financial' && lower.includes('financial_simplified')) {
       continue;
     }
     const content = await entry.async('string');

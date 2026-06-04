@@ -1,12 +1,14 @@
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import { useConfigStore } from '../../stores/configStore';
 
 const SCREEN_META = {
   overview: { title: 'Overview', crumb: 'Dashboard' },
   compare: { title: 'Pre vs Post', crumb: 'All metrics' },
+  breakdown: { title: 'Breakdown', crumb: 'Financial summary' },
   diagnostics: { title: 'Diagnostics', crumb: 'Sales decomposition' },
   stores: { title: 'Stores', crumb: 'All stores' },
-  map: { title: 'Store Map', crumb: 'Account locations · live from Airtable' },
+  map: { title: 'Store Map', crumb: 'Operator stores · live from Airtable' },
   abComparison: { title: 'A/B Comparison', crumb: 'Tagged store groups' },
   storeDetail: { title: 'Store Detail', crumb: '' },
   slots: { title: 'Slots & Heatmap', crumb: 'Time-of-day analysis' },
@@ -14,17 +16,21 @@ const SCREEN_META = {
   marketing: { title: 'Marketing', crumb: 'Corp vs TODC · Pre / Post / YoY' },
   operations: { title: 'Operations', crumb: 'Quality metrics' },
   productMix: { title: 'Product Mix', crumb: 'Item performance' },
-  app2DateWise: { title: 'Date × day-part', crumb: 'App 2.0 · Post period detail' },
-  app2Bucketing: { title: 'AITF bucketing', crumb: 'App 2.0 · Store × period rollups' },
+  register: { title: 'Register', crumb: 'Layer 1 · store × day × slot · weekday avg' },
 };
 
 export default function Shell({ active, setActive, periodLabel, onExport, isExporting, children }) {
   const meta = SCREEN_META[active] || SCREEN_META.overview;
+  const operatorName = useConfigStore((s) => s.operatorName) || 'Operator';
+  const isMapView = active === 'map';
 
   return (
-    <div className="flex min-h-screen relative">
-      <Sidebar active={active} setActive={setActive} />
-      <div className="flex-1" style={{ marginLeft: 'var(--sidebar-w)' }}>
+    <div className="superapp-shell flex min-h-screen relative min-w-0 max-w-full w-full overflow-x-hidden">
+      <Sidebar active={active} setActive={setActive} operatorName={operatorName} />
+      <div
+        className="superapp-main flex flex-1 flex-col min-w-0 min-h-0 transition-[margin] duration-300 ease-in-out"
+        style={{ marginLeft: 'var(--sidebar-w)' }}
+      >
         <Topbar
           title={meta.title}
           crumb={meta.crumb}
@@ -32,7 +38,13 @@ export default function Shell({ active, setActive, periodLabel, onExport, isExpo
           onExport={onExport}
           isExporting={isExporting}
         />
-        <main className="p-6 w-full">
+        <main
+          className={
+            isMapView
+              ? 'flex flex-1 flex-col min-h-0 w-full min-w-0 p-0 overflow-hidden'
+              : 'p-6 w-full min-w-0 overflow-x-hidden'
+          }
+        >
           {children}
         </main>
       </div>

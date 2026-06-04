@@ -10,10 +10,21 @@ from pathlib import Path
 import sys
 
 REPORTING_ROOT = Path(__file__).resolve().parents[1] / "agents" / "reporting_browser_use"
-if str(REPORTING_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPORTING_ROOT))
+ROOT = Path(__file__).resolve().parents[1]
+CWD = str(Path.cwd().resolve())
+# Repo-root and cwd `agents/` shadow reporting_browser_use/agents/.
+sys.path = [p for p in sys.path if p not in (str(ROOT), CWD, "")]
+sys.path.insert(0, str(REPORTING_ROOT))
 
-from agents.doordash_agent import _discover_downloads
+try:
+    from agents.doordash_agent import _discover_downloads
+except ModuleNotFoundError as exc:
+    import pytest
+
+    pytest.skip(
+        f"reporting_browser_use doordash_agent unavailable in this environment: {exc}",
+        allow_module_level=True,
+    )
 
 
 def _write_zip(path: Path, member_name: str) -> None:

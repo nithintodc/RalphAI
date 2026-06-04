@@ -44,6 +44,69 @@ const METRIC_PATTERNS = [
   [/count/i, 1],
 ];
 
+const ERROR_CHARGE_ORDER = [
+  /total\s*error\s*charge/i,
+  /error\s*charge/i,
+];
+
+const PMIX_DATE_ORDER = [
+  /^start\s*date$/i,
+  /^end\s*date$/i,
+  /order\s*date/i,
+  /business\s*date/i,
+];
+
+/** Normalized store key on product-mix rows (merchant id when known). */
+export const PMIX_STORE_KEY = '__pmixStoreKey';
+export const PMIX_STORE_LABEL = '__pmixStoreLabel';
+
+const MERCHANT_ID_IN_STORE_NAME = /\((\d{1,6})[-\s]/;
+
+/**
+ * Add merchant-aligned store keys for product-mix pivots.
+ * Column headers use merchant id; full store name is kept for tooltips.
+ */
+export function normalizeProductMixStoreRows(rows, columns, ddStoreIdToMerchant = new Map()) {
+  if (!rows?.length) return { rows: [], storeCol: null, labelByKey: new Map() };
+
+  const storeIdCol = pickColumnByRegexOrder(columns, STORE_ID_ORDER);
+  const storeNameCol = pickColumnByRegexOrder(columns, [/^store\s*name$/i]);
+  if (!storeIdCol && !storeNameCol) return { rows, storeCol: null, labelByKey: new Map() };
+
+  const labelByKey = new Map();
+  const out = rows.map((row) => {
+    const ddId = storeIdCol ? String(row[storeIdCol] ?? '').trim() : '';
+    const name = storeNameCol ? String(row[storeNameCol] ?? '').trim() : '';
+    const fromName = name.match(MERCHANT_ID_IN_STORE_NAME)?.[1];
+    const merchant = (ddId && ddStoreIdToMerchant.get(ddId)) || fromName || ddId || name || '—';
+    const label = name || merchant;
+    labelByKey.set(merchant, label);
+    return { ...row, [PMIX_STORE_KEY]: merchant, [PMIX_STORE_LABEL]: label };
+  });
+
+  return { rows: out, storeCol: PMIX_STORE_KEY, labelByKey };
+}
+
+export function pickProductMixDateColumn(columns) {
+  for (const re of PMIX_DATE_ORDER) {
+    for (const col of columns) {
+      if (re.test(String(col || '').trim())) return col;
+    }
+  }
+  return pickDateColumn(columns);
+}
+
+/** Product-mix export often has report Start/End ranges, not daily order dates. */
+export function isCoarseProductMixDates(rows, dateCol) {
+  if (!dateCol || !rows?.length) return true;
+  const values = new Set();
+  for (const r of rows) {
+    const v = String(r[dateCol] ?? '').trim();
+    if (v) values.add(v);
+  }
+  return values.size <= 8 && rows.length > values.size * 5;
+}
+
 /** First column matching the first matching regex (order = priority). */
 export function pickColumnByRegexOrder(columns, regexList) {
   if (!columns?.length) return null;
@@ -61,6 +124,10 @@ export function pickStoreColumn(columns) {
 
 export function pickProductColumn(columns) {
   return pickColumnByRegexOrder(columns, PRODUCT_ORDER);
+}
+
+export function pickErrorChargeColumn(columns) {
+  return pickColumnByRegexOrder(columns, ERROR_CHARGE_ORDER);
 }
 
 const CATEGORY_ORDER = [
@@ -430,8 +497,8 @@ export function pivotRowColValue(rows, rowKey, colKey, valueKey, { maxCols = 28,
 }
 
 /** Store × product (or item) matrix; top products by volume as columns + Other. */
-export function pivotStoreByProduct(rows, columns, { maxProductCols = 28 } = {}) {
-  const storeCol = pickStoreColumn(columns);
+export function pivotStoreByProduct(rows, columns, { maxProductCols = 28, storeCol: storeColOverride } = {}) {
+  const storeCol = storeColOverride || pickStoreColumn(columns);
   const productCol = pickProductColumn(columns);
   if (!storeCol || !productCol) {
     return { storeCol, productCol, valueCol: null, rowStores: [], colProducts: [], matrix: [] };
@@ -452,8 +519,8 @@ export function pivotStoreByProduct(rows, columns, { maxProductCols = 28 } = {})
 }
 
 /** Product × store matrix: products as rows, top stores by volume as columns + Other. */
-export function pivotProductByStore(rows, columns, { maxStoreCols = 28 } = {}) {
-  const storeCol = pickStoreColumn(columns);
+export function pivotProductByStore(rows, columns, { maxStoreCols = 28, storeCol: storeColOverride } = {}) {
+  const storeCol = storeColOverride || pickStoreColumn(columns);
   const productCol = pickProductColumn(columns);
   if (!storeCol || !productCol) {
     return { storeCol, productCol, valueCol: null, rowProducts: [], colStores: [], matrix: [] };

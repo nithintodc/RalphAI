@@ -45,8 +45,12 @@ export default function DateFilterDropdown({ onClose, onApply }) {
   const config = useConfigStore();
   const ddFinancial = useDataStore((s) => s.ddFinancial);
   const ueFinancial = useDataStore((s) => s.ueFinancial);
+  const ddSales = useDataStore((s) => s.ddSales);
 
-  const bounds = useMemo(() => mergeUploadedDataBounds(ddFinancial, ueFinancial), [ddFinancial, ueFinancial]);
+  const bounds = useMemo(
+    () => mergeUploadedDataBounds(ddFinancial, ueFinancial, ddSales),
+    [ddFinancial, ueFinancial, ddSales],
+  );
   const hasBounds = !!(bounds.min && bounds.max);
 
   const quarterOpts = useMemo(() => listQuarterOptions(bounds), [bounds]);

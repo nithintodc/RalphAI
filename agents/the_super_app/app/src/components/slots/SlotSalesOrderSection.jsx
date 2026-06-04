@@ -1,0 +1,166 @@
+import DataTable from '../ui/DataTable';
+import { fmt } from '../../lib/utils/formatters';
+
+function renderCell(kind, v) {
+  if (v == null || Number.isNaN(v)) return '—';
+  if (kind === 'pct') return fmt.pct(v);
+  if (kind === 'int') return fmt.int(v);
+  if (kind === 'num2') return fmt.usd2(v).replace('$', '');
+  return String(v);
+}
+
+const CUSTOMER_ITEM_COLS = [
+  { key: 'orders', label: 'Orders', kind: 'int' },
+  { key: 'newCount', label: 'New', kind: 'int' },
+  { key: 'newPct', label: 'New %', kind: 'pct' },
+  { key: 'repeatCount', label: 'Repeat', kind: 'int' },
+  { key: 'repeatPct', label: 'Repeat %', kind: 'pct' },
+  { key: 'unknownCount', label: 'Unknown', kind: 'int' },
+  { key: 'unknownPct', label: 'Unknown %', kind: 'pct' },
+  { key: 'totalItems', label: 'Total items', kind: 'int' },
+  { key: 'avgItemsPerOrder', label: 'Avg items / order', kind: 'num2' },
+];
+
+const DASHPASS_COLS = [
+  { key: 'orders', label: 'Orders', kind: 'int' },
+  { key: 'dashPassCount', label: 'DashPass', kind: 'int' },
+  { key: 'dashPassPct', label: 'DashPass %', kind: 'pct' },
+  { key: 'nonDashPassCount', label: 'Non-DashPass', kind: 'int' },
+  { key: 'nonDashPassPct', label: 'Non-DashPass %', kind: 'pct' },
+];
+
+const ORDER_VOLUME_COLS = [
+  { key: 'orders', label: 'Orders', kind: 'int' },
+];
+
+function buildColumns(rowKey, rowLabel, metricCols) {
+  return [
+    {
+      key: rowKey,
+      label: rowLabel,
+      sortable: true,
+      render: (v) => <span className="font-medium">{v}</span>,
+    },
+    ...metricCols.map((c) => ({
+      key: c.key,
+      label: c.label,
+      align: 'right',
+      sortable: true,
+      render: (v) => renderCell(c.kind, v),
+    })),
+  ];
+}
+
+function PeriodTable({ title, data, rowKey, rowLabel, metricCols }) {
+  if (!data?.length) {
+    return (
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">{title}</h4>
+        <p className="text-xs text-[var(--text-subtle)]">No orders in this period for the selected window.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">{title}</h4>
+      <DataTable columns={buildColumns(rowKey, rowLabel, metricCols)} data={data} />
+    </div>
+  );
+}
+
+function BreakdownBlock({ title, analysis, rowKey, rowLabel, dataKey, metricCols }) {
+  return (
+    <div className="space-y-4">
+      <h4 className="text-sm font-semibold text-[var(--text)]">{title}</h4>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <PeriodTable title="Pre" data={analysis.pre?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} />
+        <PeriodTable title="Post" data={analysis.post?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} />
+      </div>
+    </div>
+  );
+}
+
+export default function SlotSalesOrderSection({ analysis, platformLabel, timeFieldLabel = 'Order placed time' }) {
+  if (!analysis) return null;
+
+  const showCustomerItems = analysis.hasCustomerType || analysis.hasItemCount;
+  const breakdownCols = showCustomerItems ? CUSTOMER_ITEM_COLS : ORDER_VOLUME_COLS;
+
+  return (
+    <div className="space-y-8 pt-2 border-t border-[var(--border)]">
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-1">
+          {showCustomerItems ? 'Sales by Order' : 'Order volume'} — slot analytics ({platformLabel})
+        </h3>
+        <p className="text-[11px] text-[var(--text-subtle)] leading-relaxed max-w-3xl">
+          Dayparts from <strong>{timeFieldLabel}</strong>.
+          {showCustomerItems && (
+            <> Customer type, item counts, and DashPass mix come from the SALES_BY_ORDER export when those columns are present.</>
+          )}
+        </p>
+      </div>
+
+      <div className="space-y-6">
+        <h4 className="text-sm font-semibold text-[var(--text)] border-b border-[var(--border)] pb-2">
+          {showCustomerItems ? 'Customer mix & items' : 'Order volume'}
+        </h4>
+        <BreakdownBlock
+          title="By slot"
+          analysis={analysis}
+          rowKey="slot"
+          rowLabel="Slot"
+          dataKey="slot"
+          metricCols={breakdownCols}
+        />
+        <BreakdownBlock
+          title="By day"
+          analysis={analysis}
+          rowKey="day"
+          rowLabel="Day"
+          dataKey="day"
+          metricCols={breakdownCols}
+        />
+        <BreakdownBlock
+          title="By day × slot"
+          analysis={analysis}
+          rowKey="label"
+          rowLabel="Day · Slot"
+          dataKey="daySlot"
+          metricCols={breakdownCols}
+        />
+      </div>
+
+      {analysis.hasDashPass && (
+        <div className="space-y-6">
+          <h4 className="text-sm font-semibold text-[var(--text)] border-b border-[var(--border)] pb-2">
+            DashPass mix
+          </h4>
+          <BreakdownBlock
+            title="By slot"
+            analysis={analysis}
+            rowKey="slot"
+            rowLabel="Slot"
+            dataKey="slot"
+            metricCols={DASHPASS_COLS}
+          />
+          <BreakdownBlock
+            title="By day"
+            analysis={analysis}
+            rowKey="day"
+            rowLabel="Day"
+            dataKey="day"
+            metricCols={DASHPASS_COLS}
+          />
+          <BreakdownBlock
+            title="By day × slot"
+            analysis={analysis}
+            rowKey="label"
+            rowLabel="Day · Slot"
+            dataKey="daySlot"
+            metricCols={DASHPASS_COLS}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

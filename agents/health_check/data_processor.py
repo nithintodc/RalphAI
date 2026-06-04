@@ -301,6 +301,7 @@ def build_campaigns_csv(
         self_serve_col = _resolve_col(df, ["Is self serve campaign"])
 
         for _, row in df.iterrows():
+            discount = abs(_safe_num(row, discount_col))
             campaign_rows.append({
                 "Campaign Type": "Promo",
                 "Campaign Name": _safe_val(row, name_col),
@@ -310,10 +311,7 @@ def build_campaigns_csv(
                 "Store Name": _safe_val(row, store_name_col),
                 "Orders": _safe_num(row, orders_col),
                 "Sales": _safe_num(row, sales_col),
-                "Mkt Spend": _safe_num(row, mkt_fee_col),
-                "Customer Discount": _safe_num(row, discount_col),
-                "ROAS": _safe_num(row, roas_col),
-                "AOV": _safe_num(row, aov_col),
+                "Spend": discount,
                 "Start Date": _safe_val(row, start_col),
                 "End Date": _safe_val(row, end_col),
             })
@@ -341,6 +339,7 @@ def build_campaigns_csv(
         self_serve_col = _resolve_col(df, ["Is self serve campaign"])
 
         for _, row in df.iterrows():
+            spend = abs(_safe_num(row, spend_col))
             campaign_rows.append({
                 "Campaign Type": "Ads",
                 "Campaign Name": _safe_val(row, name_col),
@@ -350,10 +349,7 @@ def build_campaigns_csv(
                 "Store Name": _safe_val(row, store_name_col),
                 "Orders": _safe_num(row, orders_col),
                 "Sales": _safe_num(row, sales_col),
-                "Mkt Spend": _safe_num(row, spend_col),
-                "Customer Discount": 0,
-                "ROAS": _safe_num(row, roas_col),
-                "AOV": _safe_num(row, aov_col),
+                "Spend": spend,
                 "Start Date": _safe_val(row, start_col),
                 "End Date": _safe_val(row, end_col),
             })
@@ -368,34 +364,46 @@ def build_campaigns_csv(
         logger.warning("No named campaigns found in marketing data")
         return None
 
-    num_cols = ["Orders", "Sales", "Mkt Spend", "Customer Discount", "ROAS", "AOV"]
-    for c in num_cols:
+    for c in ("Orders", "Sales", "Spend"):
         raw_df[c] = pd.to_numeric(raw_df[c], errors="coerce").fillna(0)
 
-    group_keys = ["Campaign Type", "Campaign Name", "Promotion Type", "Self Serve",
-                  "Store ID", "Store Name", "Start Date", "End Date"]
-    agg = raw_df.groupby(group_keys, dropna=False).agg(
+    from agents.health_check.campaign_wow import CAMPAIGN_METRICS, derive_campaign_metrics
+
+    group_keys = [
+        "Campaign Type",
+        "Campaign Name",
+        "Promotion Type",
+        "Self Serve",
+        "Store ID",
+        "Store Name",
+    ]
+    summed = raw_df.groupby(group_keys, dropna=False).agg(
         Orders=("Orders", "sum"),
         Sales=("Sales", "sum"),
-        **{"Mkt Spend": ("Mkt Spend", "sum")},
-        **{"Customer Discount": ("Customer Discount", "sum")},
+        Spend=("Spend", "sum"),
     ).reset_index()
 
-    agg["AOV"] = (agg["Sales"] / agg["Orders"].replace(0, float("nan"))).round(2)
-    agg["ROAS"] = (agg["Sales"] / agg["Mkt Spend"].replace(0, float("nan"))).round(2)
-    agg["Orders"] = agg["Orders"].astype(int)
-    agg["Sales"] = agg["Sales"].round(2)
-    agg["Mkt Spend"] = agg["Mkt Spend"].round(2)
-    agg["Customer Discount"] = agg["Customer Discount"].round(2)
-    agg["AOV"] = agg["AOV"].fillna(0)
-    agg["ROAS"] = agg["ROAS"].fillna(0)
+    metric_rows = []
+    for _, row in summed.iterrows():
+        base = {k: row[k] for k in group_keys}
+        base.update(
+            derive_campaign_metrics(row["Orders"], row["Sales"], row["Spend"]),
+        )
+        metric_rows.append(base)
+
+    agg = pd.DataFrame(metric_rows)
     agg["Campaign Owner"] = agg["Self Serve"].apply(_campaign_owner)
+    agg["Orders"] = pd.to_numeric(agg["Orders"], errors="coerce").fillna(0).astype(int)
 
     col_order = [
-        "Campaign Type", "Campaign Name", "Promotion Type", "Self Serve",
+        "Campaign Type",
+        "Campaign Name",
+        "Promotion Type",
+        "Self Serve",
         "Campaign Owner",
-        "Store ID", "Store Name", "Orders", "Sales", "Mkt Spend",
-        "Customer Discount", "AOV", "ROAS", "Start Date", "End Date",
+        "Store ID",
+        "Store Name",
+        *CAMPAIGN_METRICS,
     ]
     agg = agg[col_order]
 
@@ -405,135 +413,11 @@ def build_campaigns_csv(
     return output_path
 
 
-def build_campaigns_wow_csv(
-    week1_campaigns_csv: Path,
-    week2_campaigns_csv: Path,
-    week1_start: date,
-    week1_end: date,
-    week2_start: date,
-    week2_end: date,
-    output_path: Path,
-) -> Optional[Path]:
-    """
-    Build WoW campaigns file for campaigns active in both weeks.
+def build_campaigns_wow_csv(*args, **kwargs):
+    """Backward-compatible alias — see ``campaign_wow.build_campaigns_wow_csv``."""
+    from agents.health_check.campaign_wow import build_campaigns_wow_csv as _build
 
-    Active logic:
-      - campaign_start <= week_end
-      - campaign_end >= week_start
-    Empty campaign end date is treated as 12/31/2099.
-    """
-    w1 = pd.read_csv(week1_campaigns_csv)
-    w2 = pd.read_csv(week2_campaigns_csv)
-    if w1.empty or w2.empty:
-        return None
-
-    key_cols = [
-        "Campaign Type",
-        "Campaign Name",
-        "Promotion Type",
-        "Self Serve",
-        "Campaign Owner",
-        "Store ID",
-        "Store Name",
-        "Start Date",
-        "End Date",
-    ]
-
-    for k in key_cols:
-        if k not in w1.columns:
-            w1[k] = ""
-        if k not in w2.columns:
-            w2[k] = ""
-
-    metric_cols = ["Orders", "Sales", "Mkt Spend", "Customer Discount", "AOV", "ROAS"]
-    for m in metric_cols:
-        if m not in w1.columns:
-            w1[m] = 0
-        if m not in w2.columns:
-            w2[m] = 0
-
-    w1["Start Date Parsed"] = w1["Start Date"].apply(_parse_mmddyyyy)
-    w2["Start Date Parsed"] = w2["Start Date"].apply(_parse_mmddyyyy)
-    w1["End Date Parsed"] = w1["End Date"].apply(_parse_mmddyyyy)
-    w2["End Date Parsed"] = w2["End Date"].apply(_parse_mmddyyyy)
-
-    far_future = date(2099, 12, 31)
-    w1["End Date Parsed"] = w1["End Date Parsed"].fillna(far_future)
-    w2["End Date Parsed"] = w2["End Date Parsed"].fillna(far_future)
-
-    w1_active = w1[
-        (w1["Start Date Parsed"].isna() | (w1["Start Date Parsed"] <= week1_end))
-        & (w1["End Date Parsed"] >= week1_start)
-    ].copy()
-    w2_active = w2[
-        (w2["Start Date Parsed"].isna() | (w2["Start Date Parsed"] <= week2_end))
-        & (w2["End Date Parsed"] >= week2_start)
-    ].copy()
-
-    if w1_active.empty or w2_active.empty:
-        return None
-
-    merged = w2_active.merge(
-        w1_active,
-        on=key_cols,
-        how="inner",
-        suffixes=("_week2", "_week1"),
-    )
-    if merged.empty:
-        return None
-
-    w1_label = f"{week1_start.month}/{week1_start.day}-{week1_end.month}/{week1_end.day}"
-    w2_label = f"{week2_start.month}/{week2_start.day}-{week2_end.month}/{week2_end.day}"
-
-    rows = []
-    for _, row in merged.iterrows():
-        out = {k: row.get(k, "") for k in key_cols}
-        sales_delta = 0.0
-        roas_delta = 0.0
-        for m in metric_cols:
-            v2 = float(pd.to_numeric(row.get(f"{m}_week2"), errors="coerce") or 0)
-            v1 = float(pd.to_numeric(row.get(f"{m}_week1"), errors="coerce") or 0)
-            d = round(v2 - v1, 2)
-            p = round(d / abs(v1) * 100, 1) if v1 != 0 else None
-            if m == "Sales":
-                sales_delta = d
-            elif m == "ROAS":
-                roas_delta = d
-            out[f"{m} ({w2_label})"] = round(v2, 2)
-            out[f"{m} ({w1_label})"] = round(v1, 2)
-            out[f"{m} Delta"] = d
-            out[f"{m} % Change"] = p
-
-        if sales_delta > 0 and roas_delta > 0:
-            out["Status"] = "Improving"
-            out["Reason"] = "Sales up and ROAS up"
-            out["Needs Review"] = "No"
-        elif sales_delta < 0 and roas_delta < 0:
-            out["Status"] = "Declining"
-            out["Reason"] = "Sales down and ROAS down"
-            out["Needs Review"] = "Yes"
-        elif sales_delta > 0 and roas_delta < 0:
-            out["Status"] = "Flat"
-            out["Reason"] = "Sales up but ROAS down"
-            out["Needs Review"] = "Yes"
-        elif sales_delta < 0 and roas_delta > 0:
-            out["Status"] = "Flat"
-            out["Reason"] = "Sales down but ROAS up"
-            out["Needs Review"] = "Yes"
-        else:
-            out["Status"] = "Flat"
-            out["Reason"] = "Mixed or unchanged trend"
-            out["Needs Review"] = "No"
-        rows.append(out)
-
-    if not rows:
-        return None
-
-    result = pd.DataFrame(rows)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(output_path, index=False)
-    logger.info("Campaign WoW CSV written: %s (%d rows)", output_path, len(result))
-    return output_path
+    return _build(*args, **kwargs)
 
 
 def build_weekly_csv(

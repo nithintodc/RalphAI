@@ -1,6 +1,9 @@
+import { differenceInCalendarDays } from 'date-fns';
 import { safeDivide, round, growthPct } from '../utils/safeMath';
+import { dateToKey, percentSpotlightCount } from '../utils/dateUtils';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
 import { classifyOrder, sumPromoDiscountsFromRows } from './buckets';
+import { buildSlotAnalysis, DAY_NAMES } from './slots';
 
 export function decomposeSalesChange(preOrders, postOrders, preAov, postAov) {
   const ordersEffect = (postOrders - preOrders) * preAov;
@@ -339,5 +342,215 @@ export function getTopMovers(storeData, count = 5) {
   return {
     up: sorted.slice(0, count),
     down: sorted.slice(-count).reverse(),
+  };
+}
+
+/** Top/bottom growth rows (stores, slots, etc.) — 10% rounded up. */
+export function getGrowthSpotlight(rows, idKey = 'storeId', pct = 0.1) {
+  if (!rows?.length) return { stars: [], declining: [], count: 0 };
+  const n = percentSpotlightCount(rows.length, pct);
+  const sorted = [...rows].sort((a, b) => (b.sales_growth_pct || 0) - (a.sales_growth_pct || 0));
+  const stars = sorted.slice(0, n).map((r) => ({ ...r, storeId: r[idKey] ?? r.storeId }));
+  const starIds = new Set(stars.map((s) => s.storeId));
+  const declining = sorted.filter((s) => !starIds.has(s[idKey] ?? s.storeId)).slice(-n).reverse()
+    .map((r) => ({ ...r, storeId: r[idKey] ?? r.storeId }));
+  return { stars, declining, count: n };
+}
+
+export function getStarAndDecliningStores(storeData, pct = 0.1) {
+  return getGrowthSpotlight(storeData, 'storeId', pct);
+}
+
+function orderSalesRow(row, platform) {
+  if (platform === 'ue') return row.sales || 0;
+  if (!row.transactionType || row.transactionType === 'Order') return row.subtotal || 0;
+  return 0;
+}
+
+function aggregateDailySalesPlatform(financial, platform, start, end, excludedDates = []) {
+  let rows = filterByDateRange(financial || [], 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  const byDate = new Map();
+  for (const row of rows) {
+    const sales = orderSalesRow(row, platform);
+    if (!sales) continue;
+    const key = dateToKey(row.date);
+    if (!key) continue;
+    byDate.set(key, (byDate.get(key) || 0) + sales);
+  }
+  return [...byDate.entries()].map(([dateKey, sales]) => ({
+    date: rowDateFromKey(dateKey),
+    dateKey,
+    sales: round(sales),
+  }));
+}
+
+/** Daily sales extremes for DD, UE, or combined (sum both platforms by date). */
+export function getPlatformDailyExtremes(financialOrPair, platform, start, end, excludedDates = [], pct = 0.1) {
+  if (!start || !end) return { top: [], low: [], dayCount: 0 };
+
+  let daily;
+  if (platform === 'combined') {
+    const { ddFinancial, ueFinancial, ddExcludedDates = [], ueExcludedDates = [] } = financialOrPair || {};
+    const byKey = new Map();
+    for (const d of aggregateDailySalesPlatform(ddFinancial, 'dd', start, end, ddExcludedDates)) {
+      byKey.set(d.dateKey, (byKey.get(d.dateKey) || 0) + d.sales);
+    }
+    for (const d of aggregateDailySalesPlatform(ueFinancial, 'ue', start, end, ueExcludedDates)) {
+      byKey.set(d.dateKey, (byKey.get(d.dateKey) || 0) + d.sales);
+    }
+    daily = [...byKey.entries()].map(([dateKey, sales]) => ({
+      date: rowDateFromKey(dateKey),
+      dateKey,
+      sales: round(sales),
+    }));
+  } else {
+    daily = aggregateDailySalesPlatform(financialOrPair, platform, start, end, excludedDates);
+  }
+
+  const days = differenceInCalendarDays(end, start) + 1;
+  const n = percentSpotlightCount(days, pct);
+  if (!daily.length) return { top: [], low: [], dayCount: n };
+  const sorted = [...daily].sort((a, b) => b.sales - a.sales);
+  return {
+    top: sorted.slice(0, n),
+    low: sorted.slice(-n).reverse(),
+    dayCount: n,
+  };
+}
+
+/** Slot dayparts with highest / lowest Pre→Post sales growth. */
+export function getSlotSpotlight(rawData, config, platform) {
+  if (!rawData?.length) return { stars: [], declining: [], count: 0 };
+  const prefix = platform === 'ue' ? 'ue' : 'dd';
+  const preStart = config[`${prefix}PreStart`];
+  const preEnd = config[`${prefix}PreEnd`];
+  const postStart = config[`${prefix}PostStart`];
+  const postEnd = config[`${prefix}PostEnd`];
+  if (!preStart || !postStart) return { stars: [], declining: [], count: 0 };
+
+  const analysis = buildSlotAnalysis(rawData, {
+    preStart,
+    preEnd,
+    postStart,
+    postEnd,
+    excludedDates: config[`${prefix}ExcludedDates`] || [],
+    platform,
+  });
+  const rows = (analysis.salesPrePost || []).map((r) => ({
+    slot: r.slot,
+    sales_growth_pct: r.growthPct,
+  }));
+  return getGrowthSpotlight(rows, 'slot');
+}
+
+/** Best / worst weekdays by sales in a period (top & bottom 2 when data exists). */
+export function getWeekdaySpotlight(financial, platform, start, end, excludedDates = [], ueFinancial = null) {
+  if (!start || !end) return { top: [], low: [] };
+
+  const byDow = Object.fromEntries(DAY_NAMES.map((d) => [d, 0]));
+  const addRows = (rows, plat) => {
+    for (const row of rows) {
+      const sales = orderSalesRow(row, plat);
+      if (!sales || !row.date) continue;
+      const dow = DAY_NAMES[(row.date.getDay() + 6) % 7];
+      if (dow) byDow[dow] += sales;
+    }
+  };
+
+  if (platform === 'combined') {
+    let ddRows = filterByDateRange(financial || [], 'date', start, end);
+    ddRows = filterExcludedDates(ddRows, 'date', excludedDates);
+    addRows(ddRows, 'dd');
+    let ueRows = filterByDateRange(ueFinancial || [], 'date', start, end);
+    ueRows = filterExcludedDates(ueRows, 'date', excludedDates);
+    addRows(ueRows, 'ue');
+  } else {
+    if (!financial?.length) return { top: [], low: [] };
+    let rows = filterByDateRange(financial, 'date', start, end);
+    rows = filterExcludedDates(rows, 'date', excludedDates);
+    addRows(rows, platform);
+  }
+
+  const entries = DAY_NAMES.map((day) => ({ day, sales: round(byDow[day] || 0) })).filter((e) => e.sales > 0);
+  if (!entries.length) return { top: [], low: [] };
+  const sorted = [...entries].sort((a, b) => b.sales - a.sales);
+  const n = Math.min(2, sorted.length);
+  return {
+    top: sorted.slice(0, n),
+    low: sorted.slice(-n).reverse(),
+  };
+}
+
+function aggregateDailySalesByStore(ddFinancial, storeId, start, end, excludedDates = []) {
+  let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  rows = rows.filter((r) => String(r.storeId) === String(storeId));
+  rows = rows.filter((r) => !r.transactionType || r.transactionType === 'Order');
+
+  const byDate = new Map();
+  for (const row of rows) {
+    const key = dateToKey(row.date);
+    if (!key) continue;
+    byDate.set(key, (byDate.get(key) || 0) + (row.subtotal || 0));
+  }
+  return [...byDate.entries()].map(([dateKey, sales]) => ({
+    date: rowDateFromKey(dateKey),
+    dateKey,
+    sales: round(sales),
+  }));
+}
+
+/** Daily sales summed across ALL stores in a period. */
+function aggregateDailySalesAllStores(ddFinancial, start, end, excludedDates = []) {
+  let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  rows = rows.filter((r) => !r.transactionType || r.transactionType === 'Order');
+
+  const byDate = new Map();
+  for (const row of rows) {
+    const key = dateToKey(row.date);
+    if (!key) continue;
+    byDate.set(key, (byDate.get(key) || 0) + (row.subtotal || 0));
+  }
+  return [...byDate.entries()].map(([dateKey, sales]) => ({
+    date: rowDateFromKey(dateKey),
+    dateKey,
+    sales: round(sales),
+  }));
+}
+
+/** Top/low sales days across ALL stores combined for one period (10% of days, rounded up). */
+export function getAllStoresDailyExtremes(ddFinancial, start, end, excludedDates = [], pct = 0.1) {
+  if (!start || !end) return { top: [], low: [], dayCount: 0 };
+  const days = differenceInCalendarDays(end, start) + 1;
+  const n = percentSpotlightCount(days, pct);
+  const daily = aggregateDailySalesAllStores(ddFinancial, start, end, excludedDates);
+  if (!daily.length) return { top: [], low: [], dayCount: n };
+  const sorted = [...daily].sort((a, b) => b.sales - a.sales);
+  return {
+    top: sorted.slice(0, n),
+    low: sorted.slice(-n).reverse(),
+    dayCount: n,
+  };
+}
+
+function rowDateFromKey(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Top/low sales days for one store in a period (10% of days, rounded up). */
+export function getDailySalesExtremes(ddFinancial, storeId, start, end, excludedDates = [], pct = 0.1) {
+  if (!start || !end) return { top: [], low: [], dayCount: 0 };
+  const days = differenceInCalendarDays(end, start) + 1;
+  const n = percentSpotlightCount(days, pct);
+  const daily = aggregateDailySalesByStore(ddFinancial, storeId, start, end, excludedDates);
+  if (!daily.length) return { top: [], low: [], dayCount: n };
+  const sorted = [...daily].sort((a, b) => b.sales - a.sales);
+  return {
+    top: sorted.slice(0, n),
+    low: sorted.slice(-n).reverse(),
+    dayCount: n,
   };
 }

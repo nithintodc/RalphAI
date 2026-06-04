@@ -32,8 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from shared.config.settings import account_information_csv_path
-from shared.utils.account_directory import load_account_operators_csv
+from shared.utils.account_directory import load_account_operators
 from shared.utils.slack_client import post_message, slack_notification_channel
 
 from .killer import KillResult, kill_campaigns_for_operator
@@ -113,11 +112,16 @@ class Operator:
 
 
 def _load_operators(selected_ids: list[str] | None = None) -> list[Operator]:
-    """Load operators from CSV. If selected_ids given, filter to those only."""
-    csv_path = account_information_csv_path()
-    rows, warning = load_account_operators_csv(csv_path)
+    """Load operators from Airtable. If selected_ids given, filter to those only."""
+    try:
+        rows, warning = load_account_operators()
+    except Exception as exc:
+        log.error("Account directory error: %s", exc)
+        return []
     if warning:
-        log.error("Account directory error: %s", warning)
+        log.warning("Account directory: %s", warning)
+    if not rows:
+        log.error("No operators in Airtable account directory.")
         return []
 
     operators: list[Operator] = []
@@ -208,7 +212,8 @@ async def run_async(
     count_error = sum(1 for r in results if r["status"] == "error")
 
     summary = {
-        "status": "completed",
+        # "success" keeps the run index consistent with every other agent's status vocab.
+        "status": "success",
         "timestamp": datetime.now().isoformat(),
         "total_operators": len(operators),
         "total_campaigns_ended": total_ended,

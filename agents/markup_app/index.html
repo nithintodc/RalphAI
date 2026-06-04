@@ -348,6 +348,52 @@
       border-top: 1px solid var(--gray-300);
     }
 
+    .pnl-scenarios-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .pnl-scenario {
+      border: 1px solid var(--gray-300);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--white);
+      min-width: 0;
+    }
+    .pnl-scenario-header {
+      background: linear-gradient(135deg, var(--green), var(--green-light));
+      color: white;
+      padding: 10px 14px;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pnl-scenario-header .material-icons { font-size: 20px; }
+    .pnl-scenario-body { padding: 0; overflow-x: auto; }
+    .pnl-scenario-body .pnl-table { font-size: 12px; }
+    .pnl-scenario-body .pnl-table thead th { font-size: 10px; padding: 8px 10px; }
+    .pnl-scenario-body .pnl-table td { padding: 6px 10px; }
+    .pnl-scenario-body .pnl-table input { max-width: 88px; font-size: 12px; }
+    .pnl-scenario-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+    .add-scenario-btn {
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 2px dashed var(--gray-300);
+      background: var(--white);
+      font-family: 'Roboto', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--gray-600);
+    }
+    .add-scenario-btn:hover { border-color: var(--green-light); background: var(--green-bg); color: var(--green); }
+
     .remove-tab-btn {
       background: none;
       border: none;
@@ -366,6 +412,7 @@
     @media (max-width: 900px) {
       .comparison-grid { grid-template-columns: 1fr; }
       .vs-divider { flex-direction: row; padding-top: 0; padding: 8px 0; }
+      .pnl-scenarios-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 600px) {
       .header { padding: 12px 16px; }
@@ -499,26 +546,13 @@
     </div>
 
     <div class="card">
-      <div class="pnl-tabs" id="pnl-tabs">
-        <button class="pnl-tab active" data-tab="0">
-          <span class="material-icons">local_shipping</span>
-          AVG Order TODC
-        </button>
-        <button class="pnl-tab" data-tab="1">
-          <span class="material-icons">business</span>
-          AVG Order Corp
-        </button>
-        <button class="pnl-tab" data-tab="2">
-          <span class="material-icons">store</span>
-          Business
-        </button>
-        <button class="pnl-tab add-tab" id="add-scenario-btn">
+      <div class="pnl-scenarios-grid" id="pnl-scenarios"></div>
+      <div class="pnl-scenario-actions">
+        <button type="button" class="add-scenario-btn" id="add-scenario-btn">
           <span class="material-icons">add_circle_outline</span>
           Add Scenario
         </button>
       </div>
-
-      <div id="pnl-content"></div>
     </div>
   </div>
 </div>
@@ -555,7 +589,7 @@ function calcSection1() {
     scenarios[i].fpPct = newFP;
     scenarios[i].laborPct = newLabor;
   });
-  if (scenarios.length > 0) renderPnl(activeTab);
+  if (scenarios.length > 0) renderAllPnls();
 }
 
 [instorePrice, instoreFP, instoreLabor, markupPct].forEach(el =>
@@ -569,7 +603,9 @@ const scenarios = [
   { name: 'Business', icon: 'store', sales: 139746, mktgFee: 0, promoSpend: 10000, commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00, fpPct: 20.47, laborPct: 18.02 },
 ];
 
-let activeTab = 0;
+function pnlPanelRoot(tabIdx) {
+  return document.querySelector('[data-scenario="' + tabIdx + '"]');
+}
 
 function fmt(v, isBig) {
   if (isBig && Math.abs(v) >= 1000) return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -578,8 +614,7 @@ function fmt(v, isBig) {
 
 function pct(v) { return v.toFixed(2) + '%'; }
 
-function renderPnl(tabIdx) {
-  const s = scenarios[tabIdx];
+function calcPnlValues(s) {
   const sales = s.sales;
   const mktgFee = s.mktgFee;
   const promoSpend = s.promoSpend;
@@ -592,139 +627,165 @@ function renderPnl(tabIdx) {
   const local = reflected * (s.localPct / 100);
   const margin = sales - mktgFee - commission - fp - labor - rent - opnad - local - promoSpend;
   const isBig = sales >= 1000;
+  return { sales, mktgFee, promoSpend, reflected, commission, fp, labor, rent, opnad, local, margin, isBig, s };
+}
 
-  const content = document.getElementById('pnl-content');
-  content.innerHTML = `
+function refreshPnlComputed(tabIdx) {
+  const c = calcPnlValues(scenarios[tabIdx]);
+  const root = pnlPanelRoot(tabIdx);
+  if (!root) return;
+  const set = (key, html) => {
+    const el = root.querySelector('[data-pnl="' + key + '"]');
+    if (el) el.innerHTML = html;
+  };
+  set('mktgPct', c.sales > 0 ? pct(c.mktgFee / c.sales * 100) : '0.00%');
+  set('promoPct', c.sales > 0 ? pct(c.promoSpend / c.sales * 100) : '0.00%');
+  set('reflectedVal', fmt(c.reflected, c.isBig));
+  set('reflectedPct', c.sales > 0 ? pct(c.reflected / c.sales * 100) : '0.00%');
+  set('commissionVal', fmt(c.commission, c.isBig));
+  set('fpVal', fmt(c.fp, c.isBig));
+  set('fpPct', pct(c.s.fpPct) + ' <span style="font-size:10px;color:var(--gray-600)">of Sales</span>');
+  set('laborVal', fmt(c.labor, c.isBig));
+  set('laborPct', pct(c.s.laborPct) + ' <span style="font-size:10px;color:var(--gray-600)">of Sales</span>');
+  set('rentVal', fmt(c.rent, c.isBig));
+  set('opnadVal', fmt(c.opnad, c.isBig));
+  set('localVal', fmt(c.local, c.isBig));
+  set('marginVal', fmt(c.margin, c.isBig));
+  set('marginPct', c.sales > 0 ? pct(c.margin / c.sales * 100) : '0.00%');
+  const marginEl = root.querySelector('[data-pnl="marginVal"]');
+  if (marginEl) marginEl.style.color = c.margin >= 0 ? 'var(--green)' : 'red';
+}
+
+function commitPnlInput(tabIdx, inp) {
+  const field = inp.dataset.field;
+  if (!field) return;
+  const val = parseFloat(inp.value);
+  scenarios[tabIdx][field] = Number.isFinite(val) ? val : 0;
+}
+
+function bindPnlInputs(tabIdx) {
+  const root = pnlPanelRoot(tabIdx);
+  if (!root) return;
+  root.querySelectorAll('input[data-field]').forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitPnlInput(tabIdx, inp);
+        refreshPnlComputed(tabIdx);
+        inp.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        inp.value = scenarios[tabIdx][inp.dataset.field];
+        inp.blur();
+      }
+    });
+    inp.addEventListener('blur', () => {
+      commitPnlInput(tabIdx, inp);
+      refreshPnlComputed(tabIdx);
+    });
+  });
+}
+
+function pnlTableHtml(tabIdx) {
+  const s = scenarios[tabIdx];
+  const c = calcPnlValues(s);
+  return `
     <table class="pnl-table">
       <thead>
         <tr>
-          <th style="width:40%">Line Item</th>
-          <th style="width:30%">Value</th>
-          <th style="width:30%">% of Sales</th>
+          <th style="width:42%">Line Item</th>
+          <th style="width:29%">Value</th>
+          <th style="width:29%">% of Sales</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:var(--green)">point_of_sale</span> Sales</div></td>
-          <td><div class="dollar-input"><input type="number" value="${s.sales}" data-field="sales" step="0.01" /></div></td>
+          <td><div class="dollar-input"><input type="text" inputmode="decimal" value="${s.sales}" data-field="sales" /></div></td>
           <td class="pct-cell">100.00%</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:var(--orange)">campaign</span> Marketing Fee</div></td>
-          <td><div class="dollar-input"><input type="number" value="${s.mktgFee}" data-field="mktgFee" step="0.01" /></div></td>
-          <td class="pct-cell">${sales > 0 ? pct(mktgFee / sales * 100) : '0.00%'}</td>
+          <td><div class="dollar-input"><input type="text" inputmode="decimal" value="${s.mktgFee}" data-field="mktgFee" /></div></td>
+          <td class="pct-cell" data-pnl="mktgPct">${c.sales > 0 ? pct(c.mktgFee / c.sales * 100) : '0.00%'}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:var(--doordash-red)">local_offer</span> Promo Spend</div></td>
-          <td><div class="dollar-input"><input type="number" value="${s.promoSpend}" data-field="promoSpend" step="0.01" /></div></td>
-          <td class="pct-cell">${sales > 0 ? pct(promoSpend / sales * 100) : '0.00%'}</td>
+          <td><div class="dollar-input"><input type="text" inputmode="decimal" value="${s.promoSpend}" data-field="promoSpend" /></div></td>
+          <td class="pct-cell" data-pnl="promoPct">${c.sales > 0 ? pct(c.promoSpend / c.sales * 100) : '0.00%'}</td>
         </tr>
         <tr class="subtotal-row">
           <td><div class="row-label"><span class="material-icons" style="color:var(--green)">arrow_forward</span> Reflected to QSR</div></td>
-          <td class="computed-cell">${fmt(reflected, isBig)}</td>
-          <td class="pct-cell">${sales > 0 ? pct(reflected / sales * 100) : '0.00%'}</td>
+          <td class="computed-cell" data-pnl="reflectedVal">${fmt(c.reflected, c.isBig)}</td>
+          <td class="pct-cell" data-pnl="reflectedPct">${c.sales > 0 ? pct(c.reflected / c.sales * 100) : '0.00%'}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:var(--doordash-red)">percent</span> 3PO Commission</div></td>
-          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.commissionPct}" data-field="commissionPct" step="0.1" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
-          <td class="computed-cell">${fmt(commission, isBig)}</td>
+          <td style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="text" inputmode="decimal" value="${s.commissionPct}" data-field="commissionPct" style="max-width:56px" /><span style="font-size:11px;color:var(--gray-600)">% Reflected</span></td>
+          <td class="computed-cell" data-pnl="commissionVal">${fmt(c.commission, c.isBig)}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:#8D6E63">restaurant</span> Food & Paper</div></td>
-          <td class="computed-cell">${fmt(fp, isBig)}</td>
-          <td class="pct-cell" style="color:var(--orange)">${pct(s.fpPct)} <span style="font-size:10px;color:var(--gray-600)">of Sales</span></td>
+          <td class="computed-cell" data-pnl="fpVal">${fmt(c.fp, c.isBig)}</td>
+          <td class="pct-cell" data-pnl="fpPct" style="color:var(--orange)">${pct(s.fpPct)}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:#5C6BC0">engineering</span> Labor</div></td>
-          <td class="computed-cell">${fmt(labor, isBig)}</td>
-          <td class="pct-cell" style="color:var(--orange)">${pct(s.laborPct)} <span style="font-size:10px;color:var(--gray-600)">of Sales</span></td>
+          <td class="computed-cell" data-pnl="laborVal">${fmt(c.labor, c.isBig)}</td>
+          <td class="pct-cell" data-pnl="laborPct" style="color:var(--orange)">${pct(s.laborPct)}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:#78909C">home_work</span> Rent & Royalties</div></td>
-          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.rentPct}" data-field="rentPct" step="0.1" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
-          <td class="computed-cell">${fmt(rent, isBig)}</td>
+          <td style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="text" inputmode="decimal" value="${s.rentPct}" data-field="rentPct" style="max-width:56px" /><span style="font-size:11px;color:var(--gray-600)">% Reflected</span></td>
+          <td class="computed-cell" data-pnl="rentVal">${fmt(c.rent, c.isBig)}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:#26A69A">tv</span> OPNAD C-Rate</div></td>
-          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.opnadPct}" data-field="opnadPct" step="0.01" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
-          <td class="computed-cell">${fmt(opnad, isBig)}</td>
+          <td style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="text" inputmode="decimal" value="${s.opnadPct}" data-field="opnadPct" style="max-width:56px" /><span style="font-size:11px;color:var(--gray-600)">% Reflected</span></td>
+          <td class="computed-cell" data-pnl="opnadVal">${fmt(c.opnad, c.isBig)}</td>
         </tr>
         <tr>
           <td><div class="row-label"><span class="material-icons" style="color:#AB47BC">location_on</span> Local C-Rate</div></td>
-          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.localPct}" data-field="localPct" step="0.01" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
-          <td class="computed-cell">${fmt(local, isBig)}</td>
+          <td style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="text" inputmode="decimal" value="${s.localPct}" data-field="localPct" style="max-width:56px" /><span style="font-size:11px;color:var(--gray-600)">% Reflected</span></td>
+          <td class="computed-cell" data-pnl="localVal">${fmt(c.local, c.isBig)}</td>
         </tr>
         <tr class="total-row">
           <td><div class="row-label"><span class="material-icons" style="color:var(--green)">savings</span> Contribution Margin</div></td>
-          <td class="computed-cell" style="color:${margin >= 0 ? 'var(--green)' : 'red'}">${fmt(margin, isBig)}</td>
-          <td class="pct-cell">${sales > 0 ? pct(margin / sales * 100) : '0.00%'}</td>
+          <td class="computed-cell" data-pnl="marginVal" style="color:${c.margin >= 0 ? 'var(--green)' : 'red'}">${fmt(c.margin, c.isBig)}</td>
+          <td class="pct-cell" data-pnl="marginPct">${c.sales > 0 ? pct(c.margin / c.sales * 100) : '0.00%'}</td>
         </tr>
       </tbody>
     </table>
   `;
-
-  // Bind inputs
-  content.querySelectorAll('input').forEach(inp => {
-    inp.addEventListener('input', () => {
-      const field = inp.dataset.field;
-      scenarios[tabIdx][field] = parseFloat(inp.value) || 0;
-      renderPnl(tabIdx);
-    });
-  });
 }
 
-function renderTabs() {
-  const tabsEl = document.getElementById('pnl-tabs');
-  tabsEl.innerHTML = '';
-  scenarios.forEach((s, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'pnl-tab' + (i === activeTab ? ' active' : '');
-    btn.dataset.tab = i;
-    btn.innerHTML = `<span class="material-icons">${s.icon}</span>${s.name}${scenarios.length > 1 ? '<button class="remove-tab-btn" data-remove="' + i + '">&times;</button>' : ''}`;
-    btn.addEventListener('click', (e) => {
-      if (e.target.classList.contains('remove-tab-btn')) return;
-      activeTab = i;
-      renderTabs();
-      renderPnl(i);
-    });
-    tabsEl.appendChild(btn);
-  });
-
-  // Add button
-  const addBtn = document.createElement('button');
-  addBtn.className = 'pnl-tab add-tab';
-  addBtn.innerHTML = '<span class="material-icons">add_circle_outline</span>Add Scenario';
-  addBtn.addEventListener('click', () => {
-    const name = prompt('Scenario name:', 'New Scenario');
-    if (!name) return;
-    scenarios.push({
-      name, icon: 'calculate', sales: 0, mktgFee: 0, promoSpend: 0,
-      commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00,
-      fpPct: scenarios[0].fpPct, laborPct: scenarios[0].laborPct
-    });
-    activeTab = scenarios.length - 1;
-    renderTabs();
-    renderPnl(activeTab);
-  });
-  tabsEl.appendChild(addBtn);
-
-  // Remove handlers
-  tabsEl.querySelectorAll('.remove-tab-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const idx = parseInt(btn.dataset.remove);
-      if (scenarios.length <= 1) return;
-      scenarios.splice(idx, 1);
-      if (activeTab >= scenarios.length) activeTab = scenarios.length - 1;
-      renderTabs();
-      renderPnl(activeTab);
-    });
-  });
+function renderAllPnls() {
+  const grid = document.getElementById('pnl-scenarios');
+  grid.innerHTML = scenarios.map((s, i) => `
+    <div class="pnl-scenario" data-scenario="${i}">
+      <div class="pnl-scenario-header">
+        <span class="material-icons">${s.icon}</span>
+        ${s.name}
+      </div>
+      <div class="pnl-scenario-body">${pnlTableHtml(i)}</div>
+    </div>
+  `).join('');
+  scenarios.forEach((_, i) => bindPnlInputs(i));
 }
+
+document.getElementById('add-scenario-btn').addEventListener('click', () => {
+  const name = prompt('Scenario name:', 'New Scenario');
+  if (!name) return;
+  scenarios.push({
+    name, icon: 'calculate', sales: 0, mktgFee: 0, promoSpend: 0,
+    commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00,
+    fpPct: scenarios[0].fpPct, laborPct: scenarios[0].laborPct
+  });
+  renderAllPnls();
+});
 
 // Init
-renderTabs();
-renderPnl(0);
+renderAllPnls();
 </script>
 </body>
 </html>

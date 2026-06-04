@@ -7,7 +7,7 @@ export default function SummaryKpiStrip({ summary, compact = false, hint = 'Post
   if (!summary?.length) return null;
 
   return (
-    <div className={`grid gap-2 ${compact ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5' : 'grid-cols-5 gap-4'}`}>
+    <div className={`grid min-w-0 gap-2 sm:gap-3 ${compact ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'}`}>
       {kpis.map((k) => (
         <KpiCard
           key={k.id}

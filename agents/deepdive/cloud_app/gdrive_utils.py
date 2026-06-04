@@ -659,6 +659,44 @@ class GoogleDriveManager:
         except Exception as e:
             return {'error': str(e)}
 
+    def convert_html_to_google_doc(self, html_path, subfolder_name="outputs", doc_name="Report"):
+        """
+        Upload HTML and convert to a native Google Doc (preserves tables and inline images).
+        """
+        html_path = Path(html_path)
+        if not html_path.exists():
+            raise FileNotFoundError(f"HTML file not found: {html_path}")
+
+        try:
+            folder_id = self._get_flat_upload_folder(subfolder_name)
+        except Exception as e:
+            err_str = str(e)
+            if 'teamDriveHierarchyTooDeep' in err_str or 'hierarchy' in err_str.lower():
+                folder_id = self.get_shared_drive_root_folder_id(prefer_shallow=True)
+            else:
+                raise
+
+        file_metadata = {
+            'name': doc_name,
+            'mimeType': 'application/vnd.google-apps.document',
+            'parents': [folder_id],
+        }
+        media = MediaFileUpload(str(html_path), mimetype='text/html', resumable=True)
+        doc_file = self.service.files().create(
+            body=file_metadata,
+            media_body=media,
+            supportsAllDrives=True,
+            fields='id, name, webViewLink',
+        ).execute()
+        doc_id = doc_file.get('id')
+        web_view_link = doc_file.get('webViewLink') or f"https://docs.google.com/document/d/{doc_id}/edit"
+        return {
+            'file_id': doc_id,
+            'file_name': doc_file.get('name', doc_name),
+            'webViewLink': web_view_link,
+            'folder_name': subfolder_name,
+        }
+
 
 def get_drive_manager():
     """

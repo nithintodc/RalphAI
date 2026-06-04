@@ -5,7 +5,6 @@ import { AgentsPage } from "./pages/AgentsPage";
 import { RunsPage } from "./pages/RunsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LogsPage } from "./pages/LogsPage";
-import { MonthlyReporterPage } from "./pages/MonthlyReporterPage";
 import { MarketingRecoPage } from "./pages/MarketingRecoPage";
 import { OffersPage } from "./pages/OffersPage";
 import { AdsPage } from "./pages/AdsPage";
@@ -15,7 +14,8 @@ import { StrategistPage } from "./pages/StrategistPage";
 import { CampaignKillerPage } from "./pages/CampaignKillerPage";
 import { HealthCheckPage } from "./pages/HealthCheckPage";
 import { JobsPage } from "./pages/JobsPage";
-import { AgentIframePage } from "./pages/AgentIframePage";
+import { InternalAppPage } from "./pages/InternalAppPage";
+import { StoreMapPage } from "./pages/StoreMapPage";
 
 export default function App() {
   return (
@@ -23,8 +23,14 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/agents" element={<AgentsPage />} />
-        <Route path="/agents/embed" element={<AgentIframePage />} />
-        <Route path="/agents/monthly-reporter" element={<MonthlyReporterPage />} />
+        <Route path="/store-map" element={<StoreMapPage />} />
+        <Route path="/agents/the-super-app" element={<InternalAppPage />} />
+        <Route path="/agents/markup-app" element={<InternalAppPage />} />
+        <Route path="/agents/embed" element={<Navigate to="/agents" replace />} />
+        <Route
+          path="/agents/monthly-reporter"
+          element={<Navigate to="/agents/the-super-app?tab=breakdown" replace />}
+        />
         <Route path="/agents/marketingreco" element={<MarketingRecoPage />} />
         <Route path="/agents/campaign-review" element={<CampaignReviewPage />} />
         <Route path="/agents/offers" element={<OffersPage />} />

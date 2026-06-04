@@ -39,13 +39,6 @@ try:
 except ImportError:
     pass
 
-from agents.deepdive.cloud_app.marketing_upload_layout import (  # noqa: E402
-    write_marketing_csvs_to_work_dir,
-)
-from agents.deepdive.cloud_app.ralph_runner import (  # noqa: E402
-    ReportInputs,
-    generate_monthly_report_bundle,
-)
 from agents.deepdive.agent import run as run_deepdive  # noqa: E402
 from agents.marketingreco.agent import run as run_marketingreco  # noqa: E402
 from agents.campaign_review.agent import run as run_campaign_review  # noqa: E402
@@ -55,16 +48,16 @@ from agents.strategist.agent import run as run_strategist  # noqa: E402
 from agents.health_check.agent import run_health_check  # noqa: E402
 from agents.campaign_killer.agent import run_async as run_campaign_killer_async  # noqa: E402
 from agents.campaign_analyser.agent import run as run_campaign_analyser  # noqa: E402
+from api.internal_apps import register_internal_apps  # noqa: E402
+from api.super_app_export import router as super_app_export_router  # noqa: E402
+from api.super_app_slack import router as super_app_slack_router  # noqa: E402
 from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows  # noqa: E402
-from shared.config.settings import (  # noqa: E402
-    account_information_csv_path,
-    marketingreco_reporting_root,
-)
-from shared.utils.account_directory import load_account_operators_csv  # noqa: E402
+from shared.config.settings import marketingreco_reporting_root  # noqa: E402
 from shared.utils.airtable_directory import (  # noqa: E402
     get_accounts as airtable_get_accounts,
     load_account_operators_airtable,
 )
+from shared.utils.airtable_locations import get_locations as airtable_get_locations  # noqa: E402
 from shared.utils.slack_client import notify as slack_notify  # noqa: E402
 
 RUNS_BASE = ROOT / "data" / "runs" / "monthly_reporter"
@@ -83,6 +76,10 @@ DATA_RUNS_BASE = ROOT / "data" / "runs" / "data_run"
 DATA_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="RalphAI API", version="0.1.0")
+app.include_router(super_app_export_router)
+app.include_router(super_app_export_router, prefix="/api")
+app.include_router(super_app_slack_router)
+app.include_router(super_app_slack_router, prefix="/api")
 
 _ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 _origins = [o.strip() for o in _ALLOWED_ORIGINS.split(",") if o.strip()] if _ALLOWED_ORIGINS else [
@@ -108,7 +105,7 @@ def _validate_run_id(run_id: str) -> str:
     return run_id
 
 
-_ALL_RUN_BASES = [RUNS_BASE, DD_RUNS_BASE, MRK_RUNS_BASE, CR_RUNS_BASE, DATA_RUNS_BASE]
+_ALL_RUN_BASES = [RUNS_BASE, DD_RUNS_BASE, MRK_RUNS_BASE, CR_RUNS_BASE, DATA_RUNS_BASE, CA_RUNS_BASE]
 
 
 def _find_run_dir(run_id: str) -> Path:
@@ -137,23 +134,14 @@ def _read_upload_file(uploaded_file: BinaryIO) -> bytes:
 @app.get("/api/account-directory")
 def get_account_directory():
     """
-    Unique operators from ``Business Name (original)`` with DoorDash login/password for dashboard autofill.
-    Fetched live from the Airtable Enterprise DB on every run; falls back to the
-    ``ACCOUNT_INFORMATION_CSV`` file (defaults to repo-root ``accounts.csv``) if Airtable is unavailable.
+    Unique operators from Airtable ``Business Name (original)`` with DoorDash login/password
+    for dashboard operator pickers (Health Check, etc.).
     """
     try:
         operators, warning = load_account_operators_airtable()
         return {"source": "airtable", "operators": operators, "warning": warning}
     except Exception as e:
-        path = account_information_csv_path()
-        operators, warning = load_account_operators_csv(path)
-        csv_warning = f"Airtable unavailable ({e}); using CSV fallback." + (f" {warning}" if warning else "")
-        return {
-            "source": "csv",
-            "path": str(path),
-            "operators": operators,
-            "warning": csv_warning,
-        }
+        raise HTTPException(503, f"Could not load operators from Airtable: {e}") from e
 
 
 @app.get("/api/airtable/accounts")
@@ -164,6 +152,16 @@ def get_airtable_accounts(refresh: bool = False):
     """
     try:
         return airtable_get_accounts(force_refresh=refresh)
+    except Exception as e:
+        raise HTTPException(503, str(e))
+
+
+@app.get("/api/super-app/locations")
+def get_super_app_locations(operator: str = "", refresh: bool = False):
+    """Geocoded store pins for the Super App map, optionally filtered by operator."""
+    try:
+        op = operator.strip() or None
+        return airtable_get_locations(operator=op, force_refresh=refresh)
     except Exception as e:
         raise HTTPException(503, str(e))
 
@@ -232,9 +230,14 @@ def _notify_export(kind: str, run_id: str, filename: str) -> None:
         pass
 
 
+_INDEX_LOCK = threading.Lock()
+
+
 def _append_index(rec: dict) -> None:
-    with INDEX_PATH.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, default=str) + "\n")
+    # Lock so concurrent runs can't interleave writes and corrupt index lines.
+    with _INDEX_LOCK:
+        with INDEX_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, default=str) + "\n")
     _notify_run(rec)
 
 
@@ -352,6 +355,42 @@ def _write_marketingreco_campaigns_excel(path: Path, result: dict) -> None:
             wsr.cell(row=r, column=3, value=row["bid_strategy"])
             wsr.cell(row=r, column=4, value=row["budget"])
             wsr.cell(row=r, column=5, value=row["campaign_name"])
+
+    slot_recs = result.get("slot_recommendations") or []
+    if slot_recs:
+        wsrg = wb.create_sheet("Register slots")
+        rgh = [
+            "Store ID",
+            "Day",
+            "Daypart",
+            "Orders",
+            "Sales",
+            "Payouts",
+            "AOV",
+            "Profitability %",
+            "Action",
+            "Min subtotal",
+            "Slot tag",
+            "Campaign name",
+            "Rationale",
+        ]
+        for idx, h in enumerate(rgh, start=1):
+            cell = wsrg.cell(row=1, column=idx, value=h)
+            cell.font = Font(bold=True)
+        for r, row in enumerate(slot_recs, start=2):
+            wsrg.cell(row=r, column=1, value=row.get("store_id"))
+            wsrg.cell(row=r, column=2, value=row.get("day"))
+            wsrg.cell(row=r, column=3, value=row.get("daypart"))
+            wsrg.cell(row=r, column=4, value=row.get("orders"))
+            wsrg.cell(row=r, column=5, value=row.get("sales"))
+            wsrg.cell(row=r, column=6, value=row.get("payouts"))
+            wsrg.cell(row=r, column=7, value=row.get("aov"))
+            wsrg.cell(row=r, column=8, value=row.get("profitability_pct"))
+            wsrg.cell(row=r, column=9, value=row.get("action"))
+            wsrg.cell(row=r, column=10, value=row.get("min_subtotal"))
+            wsrg.cell(row=r, column=11, value=row.get("slot_tag"))
+            wsrg.cell(row=r, column=12, value=row.get("campaign_name"))
+            wsrg.cell(row=r, column=13, value=row.get("rationale"))
 
     campaigns = ads_plan.get("campaigns") or []
     if campaigns:
@@ -701,6 +740,7 @@ def post_campaign_analyser(
 def post_marketingreco(
     operator_id: str = Form(...),
     mode: str = Form("manual"),
+    register_file: Optional[UploadFile] = File(None),
     financial_file: Optional[UploadFile] = File(None),
     doordash_email: str = Form(""),
     doordash_password: str = Form(""),
@@ -713,20 +753,33 @@ def post_marketingreco(
         kwargs: dict = {}
 
         if mode_norm == "manual":
-            if not financial_file or not financial_file.filename:
-                raise HTTPException(400, "Manual mode requires FINANCIAL_DETAILED file (.zip or .csv).")
-            if not (
-                financial_file.filename.lower().endswith(".zip")
-                or financial_file.filename.lower().endswith(".csv")
-            ):
-                raise HTTPException(400, "financial_file must be .zip or .csv")
-            raw = _read_upload_file(financial_file.file)
-            if not raw:
-                raise HTTPException(400, "financial_file is empty.")
-            in_path = work / Path(financial_file.filename).name
-            in_path.write_bytes(raw)
-            kwargs["financial_report_path"] = str(in_path)
-            kwargs["reporting_root"] = str(marketingreco_reporting_root())
+            reg_fn = (register_file.filename or "").lower() if register_file else ""
+            fin_fn = (financial_file.filename or "").lower() if financial_file else ""
+            if register_file and register_file.filename:
+                if not reg_fn.endswith((".xlsx", ".xls", ".csv")):
+                    raise HTTPException(400, "register_file must be .xlsx, .xls, or .csv")
+                raw = _read_upload_file(register_file.file)
+                if not raw:
+                    raise HTTPException(400, "register_file is empty.")
+                in_path = work / Path(register_file.filename).name
+                in_path.write_bytes(raw)
+                kwargs["register_report_path"] = str(in_path)
+                kwargs["reporting_root"] = str(marketingreco_reporting_root())
+            elif financial_file and financial_file.filename:
+                if not (fin_fn.endswith(".zip") or fin_fn.endswith(".csv")):
+                    raise HTTPException(400, "financial_file must be .zip or .csv")
+                raw = _read_upload_file(financial_file.file)
+                if not raw:
+                    raise HTTPException(400, "financial_file is empty.")
+                in_path = work / Path(financial_file.filename).name
+                in_path.write_bytes(raw)
+                kwargs["financial_report_path"] = str(in_path)
+                kwargs["reporting_root"] = str(marketingreco_reporting_root())
+            else:
+                raise HTTPException(
+                    400,
+                    "Manual mode requires a DD register file (.xlsx, .xls, .csv) or legacy FINANCIAL_DETAILED (.zip, .csv).",
+                )
         elif mode_norm == "auto":
             if not doordash_email.strip() or not doordash_password:
                 raise HTTPException(400, "Auto mode requires doordash_email and doordash_password.")
@@ -1351,184 +1404,30 @@ def post_health_check(
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/runs/monthly-reporter")
-def post_monthly_reporter(
-    pre_range: str = Form(..., description="MM/DD/YYYY-MM/DD/YYYY"),
-    post_range: str = Form(...),
-    operator_id: str = Form(""),
-    operator_name: str = Form(""),
-    excluded_dates: str = Form(""),
-    dd_store_ids: str = Form(""),
-    ue_store_ids: str = Form(""),
-    dd_file: Optional[UploadFile] = File(
-        None,
-        description="Optional DoorDash financial CSV (saved as dd-data.csv when provided).",
-    ),
-    ue_file: Optional[UploadFile] = File(
-        None,
-        description="Optional UberEats financial CSV (saved as ue-data.csv when provided).",
-    ),
-    marketing_files: Optional[List[UploadFile]] = File(
-        None,
-        description="Optional: multiple MARKETING_*.csv (Streamlit file_upload_screen behavior)",
-    ),
-):
-    run_id = str(uuid.uuid4())
-    t0 = datetime.now(timezone.utc)
-    work = Path(tempfile.mkdtemp(prefix=f"mr_{run_id[:8]}_"))
+@app.get("/api/healthcheck/wow-viz")
+def get_healthcheck_wow_viz(path: str):
+    """Serve a WoW bucket-analysis HTML produced by the Health Check agent.
 
+    Serves ``register_wow_report.html`` or ``wow_buckets.html`` under ``data/healthcheck``,
+    so the absolute paths returned in the health-check result can be opened
+    from the dashboard without exposing arbitrary files.
+    """
+    healthcheck_root = (ROOT / "data" / "healthcheck").resolve()
     try:
-        # Streamlit parity: financial + marketing files are optional; only Pre/Post dates are required.
-        if dd_file and dd_file.filename:
-            raw = _read_upload_file(dd_file.file)
-            if raw:
-                (work / "dd-data.csv").write_bytes(raw)
-        if ue_file and ue_file.filename:
-            raw = _read_upload_file(ue_file.file)
-            if raw:
-                (work / "ue-data.csv").write_bytes(raw)
-
-        # Marketing CSVs — same layout as Streamlit `file_upload_screen` (marketing_data/marketing_*).
-        mkt_pairs: list[tuple[str, bytes]] = []
-        if marketing_files:
-            for uf in marketing_files:
-                if uf.filename:
-                    raw = _read_upload_file(uf.file)
-                    if raw:
-                        mkt_pairs.append((uf.filename, raw))
-        if mkt_pairs:
-            write_marketing_csvs_to_work_dir(work, mkt_pairs)
-
-        inputs = ReportInputs(
-            pre_range=pre_range.strip(),
-            post_range=post_range.strip(),
-            excluded_dates_text=excluded_dates.strip(),
-            operator_name=operator_name.strip(),
-            dd_store_ids_text=dd_store_ids.strip(),
-            ue_store_ids_text=ue_store_ids.strip(),
+        target = Path(path).resolve()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(400, "Invalid path.") from exc
+    if target.name not in ("wow_buckets.html", "register_wow_report.html") or not target.is_relative_to(
+        healthcheck_root
+    ):
+        raise HTTPException(
+            400,
+            "Path must be register_wow_report.html or wow_buckets.html under data/healthcheck.",
         )
+    if not target.is_file():
+        raise HTTPException(404, "WoW viz not found — run the health check first.")
+    return FileResponse(target, media_type="text/html")
 
-        bundle = generate_monthly_report_bundle(inputs, data_root=work)
-
-        out_dir = RUNS_BASE / run_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        full_name = bundle["filename"]
-        (out_dir / full_name).write_bytes(bundle["excel_bytes"])
-
-        date_name = bundle.get("date_export_filename")
-        if bundle.get("date_export_bytes") and date_name:
-            (out_dir / date_name).write_bytes(bundle["date_export_bytes"])  # type: ignore[index]
-
-        bucketing_name = bundle.get("bucketing_export_filename")
-        if bundle.get("bucketing_export_bytes") and bucketing_name:
-            (out_dir / bucketing_name).write_bytes(bundle["bucketing_export_bytes"])  # type: ignore[index]
-
-        preview = {"tables": bundle.get("tables") or {}, "summary_text": bundle.get("summary_text")}
-        (out_dir / "preview.json").write_text(json.dumps(preview, default=str), encoding="utf-8")
-
-        # --- Inject DeepDive JSON Generation ---
-        import pandas as pd
-        deepdive_datasets = {}
-        if (work / "dd-data.csv").exists():
-            from agents.deepdive.data_loader import _parse_numeric_cols
-            try:
-                df = pd.read_csv(work / "dd-data.csv", low_memory=False)
-                deepdive_datasets["financial_detailed"] = _parse_numeric_cols(df)
-            except Exception:
-                pass
-        
-        for csv_path in work.rglob("*.csv"):
-            if csv_path.name == "dd-data.csv": continue
-            from agents.deepdive.data_loader import _classify_csv, _parse_numeric_cols
-            cat = _classify_csv(csv_path.name)
-            if cat != "unknown" and cat not in deepdive_datasets:
-                try:
-                    df = pd.read_csv(csv_path, low_memory=False)
-                    deepdive_datasets[cat] = _parse_numeric_cols(df)
-                except Exception:
-                    pass
-        
-        from agents.deepdive.data_loader import _apply_store_id_mapping
-        deepdive_datasets = _apply_store_id_mapping(deepdive_datasets)
-
-        from agents.deepdive.analyzer import analyze
-        from agents.deepdive.agent import _to_legacy_deepdive_report
-        
-        actual_operator_id = operator_id.strip() or operator_name.strip() or "operator"
-        deepdive_json_bytes = None
-        if deepdive_datasets:
-            analysis = analyze(deepdive_datasets, actual_operator_id)
-            legacy_report = _to_legacy_deepdive_report(analysis, actual_operator_id)
-            deepdive_json_bytes = json.dumps(legacy_report.model_dump(), default=str).encode("utf-8")
-            (out_dir / "deepdive.json").write_bytes(deepdive_json_bytes)
-        # ---------------------------------------
-
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-
-        meta = {
-            "run_id": run_id,
-            "agent": "monthly_reporter",
-            "operator_id": operator_id.strip() or "—",
-            "operator_name": operator_name.strip(),
-            "status": "success",
-            "started": t0.isoformat(),
-            "duration_s": round(duration_s, 2),
-            "summary_text": bundle.get("summary_text"),
-            "full_report_filename": full_name,
-            "date_export_filename": date_name if bundle.get("date_export_bytes") else None,
-            "bucketing_export_filename": bucketing_name if bundle.get("bucketing_export_bytes") else None,
-        }
-        (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "monthly_reporter",
-                "operator": operator_id.strip() or operator_name.strip() or "—",
-                "status": "success",
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
-        )
-
-        return JSONResponse(
-            {
-                "run_id": run_id,
-                "summary_text": bundle.get("summary_text"),
-                "preview": preview,
-                "downloads": {
-                    "full": f"/api/runs/{run_id}/download/full",
-                    "date": f"/api/runs/{run_id}/download/date"
-                    if bundle.get("date_export_bytes")
-                    else None,
-                    "bucketing": f"/api/runs/{run_id}/download/bucketing"
-                    if bundle.get("bucketing_export_bytes")
-                    else None,
-                    "deepdive": f"/api/runs/{run_id}/download/deepdive"
-                    if deepdive_json_bytes
-                    else None,
-                },
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "monthly_reporter",
-                "operator": operator_id.strip() or "—",
-                "status": "failed",
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s)}s",
-                "error": str(e),
-            }
-        )
-        raise HTTPException(500, str(e)) from e
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
 @app.get("/api/runs/{run_id}/download/deepdive")
 def download_deepdive_json(run_id: str):
@@ -1628,11 +1527,12 @@ AGENT_REGISTRY: list[dict] = [
         "id": "marketingreco",
         "name": "MarketingReco",
         "category": "analysis",
-        "description": "Generate marketing campaign recommendations from financial data",
+        "description": "Campaign recommendations from DD register (manual) or financial download (auto/legacy)",
         "inputs": [
             {"name": "operator_id", "type": "string", "required": True},
             {"name": "mode", "type": "select", "required": True, "options": ["manual", "auto"]},
-            {"name": "financial_file", "type": "file", "required": False, "description": "FINANCIAL_DETAILED CSV/zip (manual mode)"},
+            {"name": "register_file", "type": "file", "required": False, "description": "DD register Excel/CSV (manual mode, preferred)"},
+            {"name": "financial_file", "type": "file", "required": False, "description": "Legacy FINANCIAL_DETAILED CSV/zip (manual mode)"},
             {"name": "doordash_email", "type": "string", "required": False, "description": "DoorDash login (auto mode)"},
             {"name": "doordash_password", "type": "password", "required": False, "description": "DoorDash password (auto mode)"},
         ],
@@ -1747,30 +1647,10 @@ AGENT_REGISTRY: list[dict] = [
         ],
     },
     {
-        "id": "monthly_reporter",
-        "name": "Monthly Reporter",
-        "category": "analysis",
-        "description": "Monthly KPI rollup report with pre/post period comparison",
-        "inputs": [
-            {"name": "pre_range", "type": "string", "required": True, "description": "MM/DD/YYYY-MM/DD/YYYY"},
-            {"name": "post_range", "type": "string", "required": True, "description": "MM/DD/YYYY-MM/DD/YYYY"},
-            {"name": "operator_id", "type": "string", "required": False},
-            {"name": "operator_name", "type": "string", "required": False},
-            {"name": "dd_file", "type": "file", "required": False, "description": "DoorDash financial CSV"},
-            {"name": "ue_file", "type": "file", "required": False, "description": "UberEats financial CSV"},
-            {"name": "marketing_files", "type": "file[]", "required": False},
-        ],
-        "outputs": [
-            {"name": "full_report", "type": "file", "description": "Excel workbook"},
-            {"name": "date_export", "type": "file"},
-            {"name": "bucketing_export", "type": "file"},
-        ],
-    },
-    {
         "id": "the_super_app",
         "name": "The Super App",
         "category": "analysis",
-        "description": "Primary React frontend and Streamlit export API.",
+        "description": "Primary React analytics UI with Breakdown financial summary (replaces Monthly Reporter).",
         "inputs": [],
         "outputs": [],
     },
@@ -1778,7 +1658,7 @@ AGENT_REGISTRY: list[dict] = [
         "id": "app2_0",
         "name": "App2.0 (Legacy)",
         "category": "analysis",
-        "description": "Legacy Python Streamlit dashboard for financial P&L rollups.",
+        "description": "Legacy Streamlit P&L — use The Super App Breakdown for financial summary.",
         "inputs": [],
         "outputs": [],
     },
@@ -1787,22 +1667,6 @@ AGENT_REGISTRY: list[dict] = [
         "name": "App3.0 (Legacy)",
         "category": "analysis",
         "description": "Cloud-ready Streamlit app with comparison engine.",
-        "inputs": [],
-        "outputs": [],
-    },
-    {
-        "id": "ralph_analyse",
-        "name": "Ralph Analyse",
-        "category": "analysis",
-        "description": "Supplemental analysis tools for DoorDash/UberEats comparison.",
-        "inputs": [],
-        "outputs": [],
-    },
-    {
-        "id": "marketing_breakdown",
-        "name": "Marketing Breakdown",
-        "category": "analysis",
-        "description": "Dedicated Node.js application for analyzing marketing spend.",
         "inputs": [],
         "outputs": [],
     },
@@ -1846,7 +1710,8 @@ def launch_agent_app(agent_id: str):
         if not url:
             raise ValueError("Agent did not return a valid URL in its response.")
             
-        return {"status": "success", "message": f"Agent {agent_id} launched.", "pid": res.get("pid"), "url": url}
+        # the_super_app returns "frontend_pid" instead of "pid"
+        return {"status": "success", "message": f"Agent {agent_id} launched.", "pid": res.get("pid") or res.get("frontend_pid"), "url": url}
     except Exception as e:
         raise HTTPException(500, f"Failed to launch agent: {e}")
 
@@ -2021,8 +1886,6 @@ def run_job(job_id: str):
             )
         elif agent_id == "deepdive":
             result = {"status": "error", "message": "DeepDive requires file uploads — run from the agent page."}
-        elif agent_id == "monthly_reporter":
-            result = {"status": "error", "message": "Monthly Reporter requires file uploads — run from the agent page."}
         else:
             result = {"status": "error", "message": f"Agent '{agent_id}' requires parameters not supported by jobs yet. Use the agent page."}
 
@@ -2046,6 +1909,13 @@ def run_job(job_id: str):
         target["last_status"] = "failed"
         _write_jobs(jobs)
         raise HTTPException(500, str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+# Internal agent UIs (same-origin static bundles)
+# ---------------------------------------------------------------------------
+
+register_internal_apps(app)
 
 
 # ---------------------------------------------------------------------------
