@@ -68,32 +68,12 @@ else
   ok "Service account exists"
 fi
 
-for ROLE in \
-  roles/run.admin \
-  roles/artifactregistry.admin \
-  roles/cloudbuild.builds.editor \
-  roles/iam.serviceAccountUser \
-  roles/storage.admin \
-  roles/secretmanager.admin; do
-  gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
-    --member="serviceAccount:${DEPLOY_SA_EMAIL}" \
-    --role="$ROLE" \
-    --quiet >/dev/null 2>&1 || true
-done
-ok "IAM roles bound to deploy SA"
+# Extra CI permissions: scripts/gcp-fix-ci-permissions.sh
+GCP_PROJECT_ID="$GCP_PROJECT_ID" DEPLOY_SA_NAME="$DEPLOY_SA_NAME" \
+  "$ROOT/scripts/gcp-fix-ci-permissions.sh"
+ok "Deploy SA + Cloud Build CI permissions"
 
-# Cloud Build default SA can push images
 PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" --format='value(projectNumber)')"
-CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
-gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
-  --member="serviceAccount:${CB_SA}" \
-  --role="roles/artifactregistry.writer" \
-  --quiet >/dev/null 2>&1 || true
-gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
-  --member="serviceAccount:${CB_SA}" \
-  --role="roles/run.admin" \
-  --quiet >/dev/null 2>&1 || true
-ok "Cloud Build SA can push images and deploy Run"
 
 step "Secret Manager (create if missing)"
 ensure_secret() {
@@ -175,7 +155,8 @@ echo
 echo "  Fill any empty secrets in GCP Console → Secret Manager, e.g.:"
 echo "    echo -n 'pat...' | gcloud secrets versions add AIRTABLE_PAT --data-file=-"
 echo
-echo "  Then push to main — workflow: .github/workflows/deploy-ralphai.yml"
+echo "  Then: ./deploy.sh --deploy-only   OR   git push origin main (CI workflow)"
+echo "  Workflow: .github/workflows/deploy-ralphai.yml"
 echo "  Service name: ${SERVICE_NAME}"
 echo "  Image: ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${SERVICE_NAME}:<git-sha>"
 echo

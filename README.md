@@ -243,11 +243,12 @@ export SA_JSON=agents/the_super_app/streamlit_app/todc-marketing-XXXX.json
 Quick start:
 
 ```bash
-export GCP_PROJECT_ID=your-project-id
-./scripts/gcp-bootstrap.sh
-# Add GitHub secrets GCP_PROJECT_ID, GCP_REGION, GCP_SA_KEY (see doc)
-git push origin main
+gcloud auth login
+./deploy.sh
+# Add GitHub secrets (printed at end), then: git push origin main
 ```
+
+Details: **[docs/DEPLOY_PATH_A.md](docs/DEPLOY_PATH_A.md)**
 
 Deploy the workspace API and React dashboard to existing Cloud Run **`todc-reporting-app`** (`todc-marketing`, `us-central1`). Each CI deploy replaces the service image; prior revisions remain for rollback.
 
