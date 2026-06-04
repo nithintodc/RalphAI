@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Literal
 
-from shared.config.settings import data_root
+from shared.config.settings import data_root, marketingreco_reporting_root
 from shared.models.campaign import RecommendedCampaign
 from shared.models.report import DeepDiveReport, MarketingPlan
 from shared.utils.date_helpers import utc_now_iso
@@ -20,6 +20,13 @@ from .approval_handler import apply_command
 from .plan_generator import generate_plan
 
 MarketingRecoMode = Literal["deepdive", "manual", "auto"]
+
+
+def _reporting_subprocess_env(reporting_root: Path) -> dict[str, str]:
+    """Ensure ``python -c`` subprocesses resolve ``agents.*`` to the reporting tree, not repo ``agents/``."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(reporting_root.resolve())
+    return env
 
 
 def _deepdive_path(operator_id: str) -> Path:
@@ -240,7 +247,7 @@ else:
         else:
             with zipfile.ZipFile(temp_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 zf.write(financial_report_path, arcname="FINANCIAL_DETAILED_upload.csv")
-        env = os.environ.copy()
+        env = _reporting_subprocess_env(reporting_root)
         env["FINANCIAL_REPORT_ZIP"] = str(temp_zip)
         proc = subprocess.run(
             [sys.executable, "-c", script],
@@ -313,7 +320,7 @@ def _run_auto_mode(
     main_py = root / "main.py"
     if not main_py.is_file():
         raise FileNotFoundError(f"reporting workflow not found: {main_py}")
-    env = os.environ.copy()
+    env = _reporting_subprocess_env(root)
     env["DOORDASH_EMAIL"] = doordash_email
     env["DOORDASH_PASSWORD"] = doordash_password
     script = """
@@ -418,11 +425,13 @@ def run(
     financial_report_path: str | None = None,
     doordash_email: str | None = None,
     doordash_password: str | None = None,
-    reporting_root: str = "Reporting-browser-use-claude-code",
+    reporting_root: str | None = None,
     operator_profile: dict[str, Any] | None = None,
     budget_cap: float | None = None,
     campaign_history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if reporting_root is None:
+        reporting_root = str(marketingreco_reporting_root())
     if mode == "manual":
         if not financial_report_path:
             raise ValueError("manual mode requires financial_report_path (FINANCIAL_DETAILED zip/csv)")

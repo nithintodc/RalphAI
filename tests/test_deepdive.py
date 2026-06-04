@@ -4,14 +4,14 @@ from agents.deepdive.agent import run
 
 
 def test_deepdive_run_structure():
-    """Legacy test — still works with no data."""
+    """Legacy test - still works with no data."""
     out = run(operator_id="test_op")
     assert out["operator_id"] == "test_op" or out.get("status") == "no_data"
 
 
 def test_deepdive_triarch_real_data():
-    """Run against real zips in data/data/TriArch if present."""
-    triarch = Path(__file__).resolve().parents[1] / "data" / "data" / "TriArch"
+    """Run against real zips in data/TriArch if present."""
+    triarch = Path(__file__).resolve().parents[1] / "data" / "TriArch"
     if not triarch.exists() or not list(triarch.glob("*.zip")):
         return  # Skip if no data present
 

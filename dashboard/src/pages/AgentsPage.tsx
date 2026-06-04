@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Play,
   Cpu,
@@ -7,6 +7,8 @@ import {
   Megaphone,
   BarChart3,
   Calendar,
+  Skull,
+  Activity,
 } from "lucide-react";
 
 const agents = [
@@ -29,21 +31,57 @@ const agents = [
     ],
   },
   {
-    id: "deepdive",
-    name: "DeepDive",
-    desc: "Ingest and analyze 90-day DoorDash data; output structured report.",
-    icon: BarChart3,
-    status: "idle",
-    color: "from-brand-500 to-brand-700",
+    id: "strategist",
+    name: "Strategist",
+    desc: "Logs into each operator's DoorDash portal, downloads 90-day reports, and generates ads + promo marketing plans.",
+    icon: Bot,
+    status: "ready",
+    color: "from-violet-500 to-purple-700",
     inputs: [
-      "operator_id (TODC registry)",
-      "DoorDash exports: financial, sponsored listings, promotions",
-      "Optional: date_range (defaults to last 90 days)",
+      "Operators (multi-select) from account directory CSV",
+      "DoorDash credentials auto-loaded from Account Information CSV",
+      "Downloads 90-day financial + marketing reports per operator",
     ],
     outputs: [
-      "deepdive.json — order_breakdown, revenue_metrics",
-      "top_items, promo_performance, ads_performance",
-      "anomalies[], recommendations_seed for downstream LLM",
+      "90days/<operator_email>/ads.csv — ads campaign plan",
+      "90days/<operator_email>/promo.csv — promo campaign plan",
+      "Per-operator status: success | failed | skipped",
+    ],
+  },
+  {
+    id: "health-check",
+    name: "Health Check",
+    desc: "One combined DoorDash export per operator for the last two Mon–Sun weeks; splits into weekly CSVs and WoW (prior vs latest completed week).",
+    icon: Activity,
+    status: "ready",
+    color: "from-emerald-500 to-teal-700",
+    inputs: [
+      "Operators (multi-select) from account directory CSV",
+      "DoorDash credentials from Account Information CSV",
+      "Runs full pipeline per operator in sequence (login → download → analytics)",
+    ],
+    outputs: [
+      "data/healthcheck/<operator>/rawdata, /operatorlevel, /WoW",
+      "data/healthcheck/<run_timestamp>/full_WoW — combined selected-operator WoW",
+      "full_WoW/master_wow_analysis.csv and summary_wow.csv",
+    ],
+  },
+  {
+    id: "campaign-killer",
+    name: "Campaign Killer",
+    desc: "Ends active DoorDash campaigns named TODC-*: login → Campaigns → Active + Apply → row menu → End campaign → confirm → Technical issue reason → End campaign.",
+    icon: Skull,
+    status: "ready",
+    color: "from-red-500 to-red-800",
+    inputs: [
+      "Operators (multi-select) from account directory CSV",
+      "DoorDash credentials auto-loaded from Account Information CSV",
+      "Typing TODC in campaigns search (optional; on by default) then Active filter; bot still only ends names starting with TODC-",
+    ],
+    outputs: [
+      "Per-operator: campaigns ended count + names",
+      "Status: success | login_failed | partial | error",
+      "JSON report under data/runs/campaign_killer/",
     ],
   },
   {
@@ -135,9 +173,70 @@ const agents = [
       "Google Drive upload when service-account JSON is configured",
     ],
   },
+  {
+    id: "the_super_app",
+    name: "The Super App",
+    desc: "Primary React frontend and Streamlit export API.",
+    icon: BarChart3,
+    status: "ready",
+    color: "from-brand-500 to-brand-700",
+    inputs: ["Financial and Marketing exports"],
+    outputs: ["React Interactive UI"],
+  },
+  {
+    id: "app2_0",
+    name: "App2.0 (Legacy)",
+    desc: "Legacy Python Streamlit dashboard for financial P&L rollups.",
+    icon: BarChart3,
+    status: "ready",
+    color: "from-emerald-600 to-emerald-800",
+    inputs: ["Financial and Marketing exports"],
+    outputs: ["Streamlit Interactive UI"],
+  },
+  {
+    id: "app3_0",
+    name: "App3.0 (Legacy)",
+    desc: "Cloud-ready Streamlit app with comparison engine.",
+    icon: BarChart3,
+    status: "ready",
+    color: "from-teal-600 to-teal-800",
+    inputs: ["Financial and Marketing exports"],
+    outputs: ["Streamlit Interactive UI"],
+  },
+  {
+    id: "ralph_analyse",
+    name: "Ralph Analyse",
+    desc: "Supplemental analysis tools for DoorDash/UberEats comparison.",
+    icon: Activity,
+    status: "ready",
+    color: "from-blue-600 to-blue-800",
+    inputs: ["Financial and Marketing exports"],
+    outputs: ["Streamlit Interactive UI"],
+  },
+  {
+    id: "marketing_breakdown",
+    name: "Marketing Breakdown",
+    desc: "Dedicated Node.js application for analyzing marketing spend.",
+    icon: Megaphone,
+    status: "ready",
+    color: "from-orange-500 to-orange-700",
+    inputs: ["Marketing promotion data"],
+    outputs: ["Node.js Interactive UI"],
+  },
+  {
+    id: "markup_app",
+    name: "Markup App",
+    desc: "Static markup viewing HTTP server.",
+    icon: Cpu,
+    status: "ready",
+    color: "from-slate-600 to-slate-800",
+    inputs: ["Static HTML/Assets"],
+    outputs: ["HTTP Server UI"],
+  },
 ];
 
 export function AgentsPage() {
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -189,14 +288,6 @@ export function AgentsPage() {
                   <Play className="h-4 w-4" />
                   Run
                 </Link>
-              ) : a.id === "deepdive" ? (
-                <Link
-                  to="/agents/deepdive"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </Link>
               ) : a.id === "marketingreco" ? (
                 <Link
                   to="/agents/marketingreco"
@@ -237,13 +328,52 @@ export function AgentsPage() {
                   <Play className="h-4 w-4" />
                   Run
                 </Link>
-              ) : (
-                <button
-                  type="button"
+              ) : a.id === "strategist" ? (
+                <Link
+                  to="/agents/strategist"
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
                 >
                   <Play className="h-4 w-4" />
                   Run
+                </Link>
+              ) : a.id === "health-check" ? (
+                <Link
+                  to="/agents/health-check"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : a.id === "campaign-killer" ? (
+                <Link
+                  to="/agents/campaign-killer"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+                >
+                  <Skull className="h-4 w-4" />
+                  Run
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/runs/launch/${a.id}`, { method: "POST" });
+                      if (!res.ok) throw new Error(await res.text());
+                      const data = await res.json();
+                      if (data.url) {
+                        // Small delay to let the underlying server boot before iframing
+                        setTimeout(() => {
+                          navigate(`/agents/embed?url=${encodeURIComponent(data.url)}&name=${encodeURIComponent(a.name)}`);
+                        }, 1000);
+                      }
+                    } catch (e: any) {
+                      alert(`Error launching agent: ${e.message}`);
+                    }
+                  }}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
+                >
+                  <Play className="h-4 w-4" />
+                  Run App
                 </button>
               )}
             </div>

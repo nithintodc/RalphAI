@@ -1,0 +1,20 @@
+[server]
+# Allow large CSV uploads (DoorDash/UberEats financial + marketing).
+# Values are in MB. Set to 10GB for very large files.
+maxUploadSize = 10240
+# WebSocket message cap (also MB). Must be >= maxUploadSize for big uploader payloads.
+maxMessageSize = 10240
+
+[client]
+showSidebarNavigation = false
+
+[runner]
+magicEnabled = false
+
+[theme]
+# TODC brand theme – warm orange accent, clean white background
+base = "light"
+primaryColor = "#E8792B"
+backgroundColor = "#FAFAFA"
+secondaryBackgroundColor = "#F3F0EB"
+textColor = "#1E1E1E"

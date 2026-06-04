@@ -1,23 +1,26 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
-  Bot,
+  Grid2x2,
   History,
   ScrollText,
   Calendar,
+  Settings,
+  Skull,
+  Activity,
+  Briefcase,
 } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/agents", label: "Agents", icon: Bot },
-  { to: "/agents/deepdive", label: "DeepDive", icon: Bot },
-  { to: "/agents/marketingreco", label: "MarketingReco", icon: Bot },
-  { to: "/agents/offers", label: "Offers", icon: Bot },
-  { to: "/agents/ads", label: "Ads", icon: Bot },
-  { to: "/agents/data-run", label: "Data Run", icon: Bot },
+  { to: "/agents", label: "Agents", icon: Grid2x2 },
+  { to: "/agents/health-check", label: "Health Check", icon: Activity },
+  { to: "/agents/campaign-killer", label: "Campaign Killer", icon: Skull },
   { to: "/agents/monthly-reporter", label: "Monthly Report", icon: Calendar },
+  { to: "/jobs", label: "Jobs", icon: Briefcase },
   { to: "/runs", label: "Runs", icon: History },
   { to: "/logs", label: "Logs", icon: ScrollText },
+  { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function Sidebar() {

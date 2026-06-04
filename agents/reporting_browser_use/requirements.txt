@@ -1,0 +1,19 @@
+# Browser automation (LLM-driven)
+browser-use>=0.1.0
+
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Google Sheets push (google_pusher_agent)
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+
+# HTTP (slack_agent)
+requests>=2.31.0
+
+# Environment & config
+python-dotenv>=1.0.0
+
+# GCP Cloud Logging (optional, for cloud deployment)
+# google-cloud-logging>=3.8.0
+# google-cloud-secret-manager>=2.16.0

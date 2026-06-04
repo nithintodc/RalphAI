@@ -32,7 +32,7 @@ This is the immediate pending task list for shipping the current RalphAI iterati
 ## P2 - Documentation and Release Readiness
 
 - [ ] Update `README.md` quick-start to include new pages and agent workflows.
-- [ ] Sync `planning.md` with current architecture changes (DeepDive metrics + Ads planner).
+- [ ] Keep `README.md` in sync with architecture changes (DeepDive metrics + Ads planner).
 - [ ] Decide whether to keep both `tasks.md` and `tasks.MD`; consolidate to one canonical task file.
 - [ ] Prepare release checklist: env vars, run commands, smoke tests, and rollback notes.
 # RalphAI - Task List

@@ -11,27 +11,38 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
+from datetime import date as date_type
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import BinaryIO, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.monthly_reporter.cloud_app.marketing_upload_layout import (  # noqa: E402
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
+from agents.deepdive.cloud_app.marketing_upload_layout import (  # noqa: E402
     write_marketing_csvs_to_work_dir,
 )
-from agents.monthly_reporter.cloud_app.ralph_runner import (  # noqa: E402
+from agents.deepdive.cloud_app.ralph_runner import (  # noqa: E402
     ReportInputs,
     generate_monthly_report_bundle,
 )
@@ -40,9 +51,21 @@ from agents.marketingreco.agent import run as run_marketingreco  # noqa: E402
 from agents.campaign_review.agent import run as run_campaign_review  # noqa: E402
 from agents.campaign_review.agent import to_json_safe as campaign_review_to_json_safe  # noqa: E402
 from agents.data_run.agent import run as run_data_run  # noqa: E402
+from agents.strategist.agent import run as run_strategist  # noqa: E402
+from agents.health_check.agent import run_health_check  # noqa: E402
+from agents.campaign_killer.agent import run_async as run_campaign_killer_async  # noqa: E402
+from agents.campaign_analyser.agent import run as run_campaign_analyser  # noqa: E402
 from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows  # noqa: E402
-from shared.config.settings import account_information_csv_path  # noqa: E402
+from shared.config.settings import (  # noqa: E402
+    account_information_csv_path,
+    marketingreco_reporting_root,
+)
 from shared.utils.account_directory import load_account_operators_csv  # noqa: E402
+from shared.utils.airtable_directory import (  # noqa: E402
+    get_accounts as airtable_get_accounts,
+    load_account_operators_airtable,
+)
+from shared.utils.slack_client import notify as slack_notify  # noqa: E402
 
 RUNS_BASE = ROOT / "data" / "runs" / "monthly_reporter"
 RUNS_BASE.mkdir(parents=True, exist_ok=True)
@@ -50,6 +73,8 @@ INDEX_PATH = RUNS_BASE / "index.jsonl"
 
 DD_RUNS_BASE = ROOT / "data" / "runs" / "deepdive"
 DD_RUNS_BASE.mkdir(parents=True, exist_ok=True)
+CA_RUNS_BASE = ROOT / "data" / "runs" / "campaign_analyser"
+CA_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 MRK_RUNS_BASE = ROOT / "data" / "runs" / "marketingreco"
 MRK_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 CR_RUNS_BASE = ROOT / "data" / "runs" / "campaign_review"
@@ -58,33 +83,159 @@ DATA_RUNS_BASE = ROOT / "data" / "runs" / "data_run"
 DATA_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="RalphAI API", version="0.1.0")
+
+_ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
+_origins = [o.strip() for o in _ALLOWED_ORIGINS.split(",") if o.strip()] if _ALLOWED_ORIGINS else [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _validate_run_id(run_id: str) -> str:
+    if not _UUID_RE.match(run_id):
+        raise HTTPException(400, "Invalid run ID")
+    return run_id
+
+
+_ALL_RUN_BASES = [RUNS_BASE, DD_RUNS_BASE, MRK_RUNS_BASE, CR_RUNS_BASE, DATA_RUNS_BASE]
+
+
+def _find_run_dir(run_id: str) -> Path:
+    _validate_run_id(run_id)
+    for base in _ALL_RUN_BASES:
+        meta = base / run_id / "meta.json"
+        if meta.is_file():
+            return base / run_id
+    raise HTTPException(404, "Run not found")
+
+
+def _safe_child_file(base: Path, filename: str, fallback: str = "report.xlsx") -> Path:
+    safe_name = Path(filename or fallback).name
+    path = (base / safe_name).resolve()
+    base_resolved = base.resolve()
+    if base_resolved not in path.parents:
+        raise HTTPException(400, "Invalid file path")
+    return path
+
+
+def _read_upload_file(uploaded_file: BinaryIO) -> bytes:
+    uploaded_file.seek(0)
+    return uploaded_file.read()
 
 
 @app.get("/api/account-directory")
 def get_account_directory():
     """
     Unique operators from ``Business Name (original)`` with DoorDash login/password for dashboard autofill.
-    Configure path via ``ACCOUNT_INFORMATION_CSV`` (defaults to repo-root ``Account Information-McDonalds.csv``).
+    Fetched live from the Airtable Enterprise DB on every run; falls back to the
+    ``ACCOUNT_INFORMATION_CSV`` file (defaults to repo-root ``accounts.csv``) if Airtable is unavailable.
     """
-    path = account_information_csv_path()
-    operators, warning = load_account_operators_csv(path)
-    return {
-        "path": str(path),
-        "operators": operators,
-        "warning": warning,
-    }
+    try:
+        operators, warning = load_account_operators_airtable()
+        return {"source": "airtable", "operators": operators, "warning": warning}
+    except Exception as e:
+        path = account_information_csv_path()
+        operators, warning = load_account_operators_csv(path)
+        csv_warning = f"Airtable unavailable ({e}); using CSV fallback." + (f" {warning}" if warning else "")
+        return {
+            "source": "csv",
+            "path": str(path),
+            "operators": operators,
+            "warning": csv_warning,
+        }
+
+
+@app.get("/api/airtable/accounts")
+def get_airtable_accounts(refresh: bool = False):
+    """
+    Full Enterprise DB directory: accounts (unique ``Business Name (original)``)
+    → stores (``Account Name``) with address, login credentials, store IDs, status, etc.
+    """
+    try:
+        return airtable_get_accounts(force_refresh=refresh)
+    except Exception as e:
+        raise HTTPException(503, str(e))
+
+
+@app.on_event("startup")
+def _prefetch_airtable_directory() -> None:
+    """Fetch the Airtable Enterprise DB once at app start (non-fatal on failure)."""
+
+    def _fetch() -> None:
+        try:
+            directory = airtable_get_accounts()
+            print(
+                f"[airtable] Loaded {directory['total_accounts']} accounts / "
+                f"{directory['total_stores']} stores (source: {directory['source']})"
+            )
+        except Exception as e:
+            print(f"[airtable] Directory prefetch failed: {e}")
+
+    threading.Thread(target=_fetch, name="airtable-prefetch", daemon=True).start()
+
+
+def _slack_status_emoji(status: str) -> str:
+    s = (status or "").strip().lower()
+    if s in ("success", "completed"):
+        return ":white_check_mark:"
+    if s in ("failed", "error"):
+        return ":x:"
+    if s in ("running", "pending"):
+        return ":hourglass_flowing_sand:"
+    return ":information_source:"
+
+
+def _notify_run(rec: dict) -> None:
+    """Send a Slack webhook update summarizing a run/operation from its index record."""
+    try:
+        agent = _friendly_agent_name(str(rec.get("agent") or ""))
+        operator = str(rec.get("operator") or "—")
+        status = str(rec.get("status") or "unknown")
+        duration = str(rec.get("duration") or "").strip()
+        run_id = str(rec.get("id") or "")
+        parts = [
+            f"{_slack_status_emoji(status)} *RalphAI · {agent}*",
+            f"Status: *{status}*",
+            f"Operator: {operator}",
+        ]
+        if duration:
+            parts.append(f"Duration: {duration}")
+        if run_id:
+            parts.append(f"Run: `{run_id}`")
+        error = str(rec.get("error") or "").strip()
+        if error:
+            parts.append(f"Error: {error[:300]}")
+        slack_notify(" · ".join(parts))
+    except Exception:
+        # Notifications are best-effort and must never break a run.
+        pass
+
+
+def _notify_export(kind: str, run_id: str, filename: str) -> None:
+    """Send a Slack webhook update when an export/report file is downloaded."""
+    try:
+        slack_notify(
+            f":outbox_tray: *RalphAI · Export* · {kind} · `{filename}` · Run: `{run_id}`"
+        )
+    except Exception:
+        pass
 
 
 def _append_index(rec: dict) -> None:
     with INDEX_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, default=str) + "\n")
+    _notify_run(rec)
 
 
 def _prepare_ads_rows_file(input_path: Path, work_dir: Path) -> Path:
@@ -287,6 +438,10 @@ def _friendly_agent_name(agent: str) -> str:
         "marketingreco": "MarketingReco",
         "campaign_review": "Campaign Review",
         "data_run": "Data Run",
+        "strategist": "Strategist",
+        "health_check": "Health Check",
+        "campaign_killer": "Campaign Killer",
+        "campaign_analyser": "Campaign Analyser",
         "monthly_reporter": "Monthly Reporter",
         "offers": "RalphAI Offers",
         "ads": "RalphAI Ads",
@@ -338,19 +493,13 @@ def list_runs() -> list[dict]:
 
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: str) -> dict:
-    # Try monthly_reporter first
-    meta_path = RUNS_BASE / run_id / "meta.json"
-    if not meta_path.is_file():
-        # Try deepdive
-        meta_path = DD_RUNS_BASE / run_id / "meta.json"
-        
-    if not meta_path.is_file():
-        raise HTTPException(404, "Run not found")
-    return json.loads(meta_path.read_text(encoding="utf-8"))
+    run_dir = _find_run_dir(run_id)
+    return json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
 
 
 @app.get("/api/runs/{run_id}/preview")
 def get_preview(run_id: str) -> dict:
+    _validate_run_id(run_id)
     p = RUNS_BASE / run_id / "preview.json"
     if not p.is_file():
         raise HTTPException(404, "Preview not found")
@@ -359,20 +508,23 @@ def get_preview(run_id: str) -> dict:
 
 @app.get("/api/runs/{run_id}/download/full")
 def download_full(run_id: str):
+    _validate_run_id(run_id)
     folder = RUNS_BASE / run_id
     meta_path = folder / "meta.json"
     if not meta_path.is_file():
         raise HTTPException(404, "Run not found")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     fn = meta.get("full_report_filename") or "report.xlsx"
-    path = folder / fn
+    path = _safe_child_file(folder, fn)
     if not path.is_file():
         raise HTTPException(404, "File missing")
-    return FileResponse(path, filename=fn, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    _notify_export("Monthly Reporter — Full report", run_id, path.name)
+    return FileResponse(path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/api/runs/{run_id}/download/date")
 def download_date(run_id: str):
+    _validate_run_id(run_id)
     folder = RUNS_BASE / run_id
     meta_path = folder / "meta.json"
     if not meta_path.is_file():
@@ -381,14 +533,33 @@ def download_date(run_id: str):
     fn = meta.get("date_export_filename")
     if not fn:
         raise HTTPException(404, "Date export not available for this run")
-    path = folder / fn
+    path = _safe_child_file(folder, fn)
     if not path.is_file():
         raise HTTPException(404, "File missing")
-    return FileResponse(path, filename=fn, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    _notify_export("Monthly Reporter — Date export", run_id, path.name)
+    return FileResponse(path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.get("/api/runs/{run_id}/download/bucketing")
+def download_bucketing(run_id: str):
+    _validate_run_id(run_id)
+    folder = RUNS_BASE / run_id
+    meta_path = folder / "meta.json"
+    if not meta_path.is_file():
+        raise HTTPException(404, "Run not found")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    fn = meta.get("bucketing_export_filename")
+    if not fn:
+        raise HTTPException(404, "Bucketing export not available for this run")
+    path = _safe_child_file(folder, fn)
+    if not path.is_file():
+        raise HTTPException(404, "File missing")
+    _notify_export("Monthly Reporter — Bucketing export", run_id, path.name)
+    return FileResponse(path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.post("/api/runs/deepdive")
-async def post_deepdive(
+def post_deepdive(
     operator_id: str = Form(...),
     zip_files: Optional[List[UploadFile]] = File(
         None,
@@ -409,7 +580,7 @@ async def post_deepdive(
                 continue
             if not filename.lower().endswith(".zip"):
                 raise HTTPException(400, f"Invalid file '{filename}'. Only .zip files are allowed.")
-            raw = await uploaded.read()
+            raw = _read_upload_file(uploaded.file)
             if not raw:
                 continue
             safe_name = Path(filename).name
@@ -471,14 +642,63 @@ async def post_deepdive(
 
 @app.get("/api/runs/deepdive/{run_id}/report")
 def get_deepdive_report(run_id: str):
+    _validate_run_id(run_id)
     path = DD_RUNS_BASE / run_id / "report.html"
     if not path.is_file():
         raise HTTPException(404, "Report not found")
     return FileResponse(path)
 
 
+@app.post("/api/runs/campaign-analyser")
+def post_campaign_analyser(
+    operator_id: str = Form(""),
+    financial_csv: UploadFile = File(..., description="FINANCIAL_DETAILED_TRANSACTIONS_*.csv"),
+    marketing_csv: UploadFile = File(..., description="MARKETING_PROMOTION_*.csv"),
+    campaigns_csv: UploadFile = File(..., description="Campaign plan CSV (Slot Tags 1-42)"),
+):
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+    try:
+        fin_raw = _read_upload_file(financial_csv.file)
+        mkt_raw = _read_upload_file(marketing_csv.file)
+        camp_raw = _read_upload_file(campaigns_csv.file)
+        if not fin_raw or not mkt_raw or not camp_raw:
+            raise HTTPException(400, "All three CSVs (financial, marketing, campaigns) are required.")
+
+        out_dir = CA_RUNS_BASE / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        res = run_campaign_analyser(
+            financial_csv=fin_raw,
+            marketing_csv=mkt_raw,
+            campaigns_csv=camp_raw,
+            operator_id=operator_id,
+            output_dir=out_dir,
+        )
+
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        meta = {"run_id": run_id, **res}
+        (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "campaign_analyser",
+                "operator": operator_id,
+                "status": res.get("status", "success"),
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            }
+        )
+        return JSONResponse(meta)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @app.post("/api/runs/marketingreco")
-async def post_marketingreco(
+def post_marketingreco(
     operator_id: str = Form(...),
     mode: str = Form("manual"),
     financial_file: Optional[UploadFile] = File(None),
@@ -500,19 +720,19 @@ async def post_marketingreco(
                 or financial_file.filename.lower().endswith(".csv")
             ):
                 raise HTTPException(400, "financial_file must be .zip or .csv")
-            raw = await financial_file.read()
+            raw = _read_upload_file(financial_file.file)
             if not raw:
                 raise HTTPException(400, "financial_file is empty.")
             in_path = work / Path(financial_file.filename).name
             in_path.write_bytes(raw)
             kwargs["financial_report_path"] = str(in_path)
-            kwargs["reporting_root"] = str(ROOT / "Reporting-browser-use-claude-code")
+            kwargs["reporting_root"] = str(marketingreco_reporting_root())
         elif mode_norm == "auto":
             if not doordash_email.strip() or not doordash_password:
                 raise HTTPException(400, "Auto mode requires doordash_email and doordash_password.")
             kwargs["doordash_email"] = doordash_email.strip()
             kwargs["doordash_password"] = doordash_password
-            kwargs["reporting_root"] = str(ROOT / "Reporting-browser-use-claude-code")
+            kwargs["reporting_root"] = str(marketingreco_reporting_root())
         else:
             raise HTTPException(400, "mode must be 'manual' or 'auto'")
 
@@ -564,7 +784,7 @@ async def post_marketingreco(
 
 
 @app.post("/api/runs/offers")
-async def post_offers(
+def post_offers(
     operator_id: str = Form(...),
     mode: str = Form("manual"),
     campaign_mappings_file: Optional[UploadFile] = File(None),
@@ -576,7 +796,7 @@ async def post_offers(
     work = Path(tempfile.mkdtemp(prefix=f"offers_{run_id[:8]}_"))
     try:
         mode_norm = mode.strip().lower()
-        reporting_root = ROOT / "Reporting-browser-use-claude-code"
+        reporting_root = marketingreco_reporting_root()
         env = os.environ.copy()
         if not doordash_email.strip() or not doordash_password:
             raise HTTPException(400, "Offers mode requires doordash_email and doordash_password.")
@@ -616,7 +836,7 @@ async def post_offers(
 
 
 @app.post("/api/runs/ads")
-async def post_ads(
+def post_ads(
     operator_id: str = Form(...),
     mode: str = Form("manual"),
     ads_sheet_file: Optional[UploadFile] = File(None),
@@ -637,7 +857,7 @@ async def post_ads(
     work = Path(tempfile.mkdtemp(prefix=f"ads_{run_id[:8]}_"))
     try:
         mode_norm = mode.strip().lower()
-        reporting_root = ROOT / "Reporting-browser-use-claude-code"
+        reporting_root = marketingreco_reporting_root()
         if mode_norm not in ("manual", "auto"):
             raise HTTPException(400, "mode must be 'manual' or 'auto'")
         if not doordash_email.strip() or not doordash_password:
@@ -646,6 +866,9 @@ async def post_ads(
         env = os.environ.copy()
         env["DOORDASH_EMAIL"] = doordash_email.strip()
         env["DOORDASH_PASSWORD"] = doordash_password
+        # Subprocess ``python -c`` resolves ``agents`` from PYTHONPATH; prefer reporting tree over repo ``agents/``.
+        env_reporting = dict(env)
+        env_reporting["PYTHONPATH"] = str(reporting_root)
 
         rows_file: str | None = None
 
@@ -663,7 +886,7 @@ async def post_ads(
             ):
                 raise HTTPException(400, "ads_sheet_file must be .csv or an Excel file")
 
-            raw = await ads_sheet_file.read()
+            raw = _read_upload_file(ads_sheet_file.file)
             if not raw:
                 raise HTTPException(400, "ads_sheet_file is empty.")
 
@@ -694,11 +917,12 @@ asyncio.run(_main())
             subprocess.run(
                 [sys.executable, "-c", script],
                 cwd=str(reporting_root),
-                env=env,
+                env=env_reporting,
                 check=True,
             )
         elif mode_norm == "auto":
             env["RALPH_AI_ROOT"] = str(ROOT)
+            env_reporting["RALPH_AI_ROOT"] = str(ROOT)
             ads_auto_script = """
 import asyncio
 import os
@@ -822,7 +1046,7 @@ asyncio.run(_main())
             subprocess.run(
                 [sys.executable, "-c", ads_auto_script],
                 cwd=str(reporting_root),
-                env=env,
+                env=env_reporting,
                 check=True,
             )
 
@@ -858,9 +1082,11 @@ asyncio.run(_main())
 
 @app.get("/api/runs/marketingreco/{run_id}/download/campaigns")
 def download_marketingreco_campaigns(run_id: str):
+    _validate_run_id(run_id)
     path = MRK_RUNS_BASE / run_id / "marketingreco_campaigns.xlsx"
     if not path.is_file():
         raise HTTPException(404, "Campaign table not found")
+    _notify_export("MarketingReco — Campaigns Excel", run_id, path.name)
     return FileResponse(
         path,
         filename=path.name,
@@ -869,7 +1095,7 @@ def download_marketingreco_campaigns(run_id: str):
 
 
 @app.post("/api/runs/campaign-review")
-async def post_campaign_review(
+def post_campaign_review(
     operator_id: str = Form(...),
     mode: str = Form("auto"),
     marketing_files: Optional[List[UploadFile]] = File(None),
@@ -893,7 +1119,7 @@ async def post_campaign_review(
             for uf in marketing_files:
                 if not uf.filename:
                     continue
-                raw = await uf.read()
+                raw = _read_upload_file(uf.file)
                 if not raw:
                     continue
                 p = work / Path(uf.filename).name
@@ -950,7 +1176,7 @@ async def post_campaign_review(
 
 
 @app.post("/api/runs/data-run")
-async def post_data_run(
+def post_data_run(
     operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
 ):
     run_id = str(uuid.uuid4())
@@ -975,7 +1201,7 @@ async def post_data_run(
 
         result = run_data_run(
             operator_ids=parsed_ids,
-            reporting_root=str(ROOT / "Reporting-browser-use-claude-code"),
+            reporting_root=str(marketingreco_reporting_root()),
         )
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
@@ -1004,8 +1230,129 @@ async def post_data_run(
         raise HTTPException(500, str(e))
 
 
+@app.post("/api/runs/strategist")
+def post_strategist(
+    operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
+):
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+    try:
+        raw = (operator_ids or "").strip()
+        if not raw:
+            raise HTTPException(400, "Select at least one operator.")
+        parsed_ids: list[str]
+        if raw.startswith("["):
+            try:
+                as_json = json.loads(raw)
+                if not isinstance(as_json, list):
+                    raise ValueError
+                parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
+            except Exception as exc:
+                raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
+        else:
+            parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
+        if not parsed_ids:
+            raise HTTPException(400, "Select at least one operator.")
+
+        result = run_strategist(operator_ids=parsed_ids)
+
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "strategist",
+                "operator": f"{len(parsed_ids)} selected",
+                "status": "success",
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            }
+        )
+        return JSONResponse(
+            {
+                "status": "success",
+                "run_id": run_id,
+                "selected_operator_count": len(parsed_ids),
+                **result,
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/runs/health-check")
+def post_health_check(
+    operator_emails: str = Form(
+        "",
+        description='JSON array of DoorDash login emails, e.g. ["a@x.com"]. Required when filtering operators.',
+    ),
+    weeks: int = Form(2, description="Deprecated — ignored; always last 2 completed weeks."),
+    operator: str = Form("", description="Optional substring filter when operator_emails is empty."),
+    skip_download: str = Form("false", description="true to use existing operator-level weekly CSVs only."),
+    reference_date: str = Form("", description="Optional YYYY-MM-DD for testing (defaults to today)."),
+):
+    """
+    Weekly health check: one combined browser download per operator (last two Mon–Sun),
+    split into weekly CSVs, merged WoW sheets under ``wow/``.
+    """
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+    try:
+        ref: date_type | None = None
+        raw = (reference_date or "").strip()
+        if raw:
+            ref = datetime.strptime(raw, "%Y-%m-%d").date()
+        wb = max(2, int(weeks or 2))
+        skip_dl = (skip_download or "").strip().lower() in ("1", "true", "yes", "on")
+
+        emails_arg: list[str] | None = None
+        filter_arg: str | None = None
+        raw_emails = (operator_emails or "").strip()
+        if raw_emails:
+            try:
+                parsed = json.loads(raw_emails)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(400, "operator_emails must be a JSON array of strings.") from exc
+            if not isinstance(parsed, list):
+                raise HTTPException(400, "operator_emails must be a JSON array.")
+            emails_arg = [str(x).strip() for x in parsed if str(x).strip()]
+            if not emails_arg:
+                raise HTTPException(400, "Select at least one operator (operator_emails is empty).")
+        else:
+            filter_arg = (operator or "").strip() or None
+
+        result = run_health_check(
+            weeks_back=wb,
+            operator_filter=filter_arg,
+            operator_emails=emails_arg,
+            reference_date=ref,
+            skip_download=skip_dl,
+        )
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        if emails_arg is not None:
+            op_label = f"{len(emails_arg)} selected ({result.get('operators_processed', '?')} in CSV)"
+        else:
+            op_label = (operator or "").strip() or "all operators"
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "health_check",
+                "operator": op_label,
+                "status": result.get("status", "unknown"),
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            }
+        )
+        return JSONResponse({"run_id": run_id, **result})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @app.post("/api/runs/monthly-reporter")
-async def post_monthly_reporter(
+def post_monthly_reporter(
     pre_range: str = Form(..., description="MM/DD/YYYY-MM/DD/YYYY"),
     post_range: str = Form(...),
     operator_id: str = Form(""),
@@ -1033,11 +1380,11 @@ async def post_monthly_reporter(
     try:
         # Streamlit parity: financial + marketing files are optional; only Pre/Post dates are required.
         if dd_file and dd_file.filename:
-            raw = await dd_file.read()
+            raw = _read_upload_file(dd_file.file)
             if raw:
                 (work / "dd-data.csv").write_bytes(raw)
         if ue_file and ue_file.filename:
-            raw = await ue_file.read()
+            raw = _read_upload_file(ue_file.file)
             if raw:
                 (work / "ue-data.csv").write_bytes(raw)
 
@@ -1046,7 +1393,7 @@ async def post_monthly_reporter(
         if marketing_files:
             for uf in marketing_files:
                 if uf.filename:
-                    raw = await uf.read()
+                    raw = _read_upload_file(uf.file)
                     if raw:
                         mkt_pairs.append((uf.filename, raw))
         if mkt_pairs:
@@ -1073,8 +1420,49 @@ async def post_monthly_reporter(
         if bundle.get("date_export_bytes") and date_name:
             (out_dir / date_name).write_bytes(bundle["date_export_bytes"])  # type: ignore[index]
 
+        bucketing_name = bundle.get("bucketing_export_filename")
+        if bundle.get("bucketing_export_bytes") and bucketing_name:
+            (out_dir / bucketing_name).write_bytes(bundle["bucketing_export_bytes"])  # type: ignore[index]
+
         preview = {"tables": bundle.get("tables") or {}, "summary_text": bundle.get("summary_text")}
         (out_dir / "preview.json").write_text(json.dumps(preview, default=str), encoding="utf-8")
+
+        # --- Inject DeepDive JSON Generation ---
+        import pandas as pd
+        deepdive_datasets = {}
+        if (work / "dd-data.csv").exists():
+            from agents.deepdive.data_loader import _parse_numeric_cols
+            try:
+                df = pd.read_csv(work / "dd-data.csv", low_memory=False)
+                deepdive_datasets["financial_detailed"] = _parse_numeric_cols(df)
+            except Exception:
+                pass
+        
+        for csv_path in work.rglob("*.csv"):
+            if csv_path.name == "dd-data.csv": continue
+            from agents.deepdive.data_loader import _classify_csv, _parse_numeric_cols
+            cat = _classify_csv(csv_path.name)
+            if cat != "unknown" and cat not in deepdive_datasets:
+                try:
+                    df = pd.read_csv(csv_path, low_memory=False)
+                    deepdive_datasets[cat] = _parse_numeric_cols(df)
+                except Exception:
+                    pass
+        
+        from agents.deepdive.data_loader import _apply_store_id_mapping
+        deepdive_datasets = _apply_store_id_mapping(deepdive_datasets)
+
+        from agents.deepdive.analyzer import analyze
+        from agents.deepdive.agent import _to_legacy_deepdive_report
+        
+        actual_operator_id = operator_id.strip() or operator_name.strip() or "operator"
+        deepdive_json_bytes = None
+        if deepdive_datasets:
+            analysis = analyze(deepdive_datasets, actual_operator_id)
+            legacy_report = _to_legacy_deepdive_report(analysis, actual_operator_id)
+            deepdive_json_bytes = json.dumps(legacy_report.model_dump(), default=str).encode("utf-8")
+            (out_dir / "deepdive.json").write_bytes(deepdive_json_bytes)
+        # ---------------------------------------
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
 
@@ -1089,6 +1477,7 @@ async def post_monthly_reporter(
             "summary_text": bundle.get("summary_text"),
             "full_report_filename": full_name,
             "date_export_filename": date_name if bundle.get("date_export_bytes") else None,
+            "bucketing_export_filename": bucketing_name if bundle.get("bucketing_export_bytes") else None,
         }
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
@@ -1113,6 +1502,12 @@ async def post_monthly_reporter(
                     "date": f"/api/runs/{run_id}/download/date"
                     if bundle.get("date_export_bytes")
                     else None,
+                    "bucketing": f"/api/runs/{run_id}/download/bucketing"
+                    if bundle.get("bucketing_export_bytes")
+                    else None,
+                    "deepdive": f"/api/runs/{run_id}/download/deepdive"
+                    if deepdive_json_bytes
+                    else None,
                 },
             }
         )
@@ -1134,3 +1529,538 @@ async def post_monthly_reporter(
         raise HTTPException(500, str(e)) from e
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+@app.get("/api/runs/{run_id}/download/deepdive")
+def download_deepdive_json(run_id: str):
+    _validate_run_id(run_id)
+    out_dir = RUNS_BASE / run_id
+    if not out_dir.is_dir():
+        raise HTTPException(404, "Run not found")
+    path = out_dir / "deepdive.json"
+    if not path.is_file():
+        raise HTTPException(404, "DeepDive JSON not generated for this run")
+    _notify_export("Monthly Reporter — DeepDive JSON", run_id, path.name)
+    return FileResponse(
+        path,
+        media_type="application/json",
+        filename="deepdive.json",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Campaign Killer
+# ---------------------------------------------------------------------------
+
+@app.post("/api/runs/campaign-killer")
+async def post_campaign_killer(
+    operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
+    headless: str = Form("false", description="Run browser headless (default false, same as Ads/Offers)"),
+    search_todc: str = Form(
+        "true",
+        description="Type TODC in the campaigns table search before Active filter (default true)",
+    ),
+):
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+    try:
+        raw = (operator_ids or "").strip()
+        if not raw:
+            raise HTTPException(400, "Select at least one operator.")
+
+        parsed_ids: list[str]
+        if raw.startswith("["):
+            try:
+                as_json = json.loads(raw)
+                if not isinstance(as_json, list):
+                    raise ValueError
+                parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
+            except Exception as exc:
+                raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
+        else:
+            parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
+
+        if not parsed_ids:
+            raise HTTPException(400, "Select at least one operator.")
+
+        is_headless = headless.strip().lower() in ("1", "true", "yes")
+        do_search_todc = search_todc.strip().lower() not in ("0", "false", "no")
+        result = await run_campaign_killer_async(
+            operator_ids=parsed_ids, headless=is_headless, search_todc=do_search_todc
+        )
+
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "campaign_killer",
+                "operator": f"{len(parsed_ids)} operator(s)",
+                "status": result.get("status", "unknown"),
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            }
+        )
+
+        return JSONResponse({"run_id": run_id, **result})
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "campaign_killer",
+                "operator": "—",
+                "status": "failed",
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s)}s",
+                "error": str(e),
+            }
+        )
+        raise HTTPException(500, str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+# Agent registry (variable contracts)
+# ---------------------------------------------------------------------------
+
+AGENT_REGISTRY: list[dict] = [
+    {
+        "id": "marketingreco",
+        "name": "MarketingReco",
+        "category": "analysis",
+        "description": "Generate marketing campaign recommendations from financial data",
+        "inputs": [
+            {"name": "operator_id", "type": "string", "required": True},
+            {"name": "mode", "type": "select", "required": True, "options": ["manual", "auto"]},
+            {"name": "financial_file", "type": "file", "required": False, "description": "FINANCIAL_DETAILED CSV/zip (manual mode)"},
+            {"name": "doordash_email", "type": "string", "required": False, "description": "DoorDash login (auto mode)"},
+            {"name": "doordash_password", "type": "password", "required": False, "description": "DoorDash password (auto mode)"},
+        ],
+        "outputs": [
+            {"name": "campaigns_excel", "type": "file", "description": "Campaign mappings Excel"},
+            {"name": "recommended_campaigns", "type": "json", "description": "Campaign recommendations"},
+        ],
+    },
+    {
+        "id": "offers",
+        "name": "RalphAI Offers",
+        "category": "execution",
+        "description": "Complete Reporting pipeline: download + analysis + campaign execution",
+        "inputs": [
+            {"name": "operator_id", "type": "string", "required": True},
+            {"name": "doordash_email", "type": "string", "required": True},
+            {"name": "doordash_password", "type": "password", "required": True},
+        ],
+        "outputs": [
+            {"name": "status", "type": "string"},
+        ],
+    },
+    {
+        "id": "ads",
+        "name": "RalphAI Ads",
+        "category": "execution",
+        "description": "Sponsored listing automation (manual sheet or auto-generate from financial data)",
+        "inputs": [
+            {"name": "operator_id", "type": "string", "required": True},
+            {"name": "mode", "type": "select", "required": True, "options": ["manual", "auto"]},
+            {"name": "doordash_email", "type": "string", "required": True},
+            {"name": "doordash_password", "type": "password", "required": True},
+            {"name": "ads_sheet_file", "type": "file", "required": False, "description": "Ads sheet (manual mode)"},
+        ],
+        "outputs": [{"name": "status", "type": "string"}],
+    },
+    {
+        "id": "campaign_review",
+        "name": "Campaign Review",
+        "category": "analysis",
+        "description": "Post-campaign performance review comparing pre/post metrics",
+        "inputs": [
+            {"name": "operator_id", "type": "string", "required": True},
+            {"name": "mode", "type": "select", "required": True, "options": ["auto", "manual"]},
+            {"name": "marketing_files", "type": "file[]", "required": False, "description": "Marketing CSVs (manual)"},
+            {"name": "data_dir", "type": "string", "required": False, "description": "Existing data dir (auto)"},
+        ],
+        "outputs": [
+            {"name": "campaign_reviews", "type": "json"},
+        ],
+    },
+    {
+        "id": "data_run",
+        "name": "Data Run",
+        "category": "data",
+        "description": "Sequential browser download for multiple operators (last 3 months)",
+        "inputs": [
+            {"name": "operator_ids", "type": "string[]", "required": True, "description": "Operator IDs to pull data for"},
+        ],
+        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
+    },
+    {
+        "id": "strategist",
+        "name": "Strategist",
+        "category": "analysis",
+        "description": "90-day report generation + full combined analysis for selected operators",
+        "inputs": [
+            {"name": "operator_ids", "type": "string[]", "required": True},
+        ],
+        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
+    },
+    {
+        "id": "health_check",
+        "name": "Health Check",
+        "category": "data",
+        "description": "Weekly data pull with WoW analysis across operators",
+        "inputs": [
+            {"name": "weeks", "type": "number", "required": False, "description": "Weeks of data (default 2)"},
+            {"name": "operator", "type": "string", "required": False, "description": "Filter by operator"},
+            {"name": "skip_download", "type": "boolean", "required": False},
+            {"name": "reference_date", "type": "date", "required": False},
+        ],
+        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
+    },
+    {
+        "id": "campaign_killer",
+        "name": "Campaign Killer",
+        "category": "execution",
+        "description": "End active TODC-* campaigns (Active filter, row menu, confirm, feedback modal)",
+        "inputs": [
+            {"name": "operator_ids", "type": "string[]", "required": True},
+            {"name": "headless", "type": "boolean", "required": False},
+            {"name": "search_todc", "type": "boolean", "required": False, "description": "Table search TODC before filter (default true)"},
+        ],
+        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
+    },
+    {
+        "id": "campaign_analyser",
+        "name": "Campaign Analyser",
+        "category": "analysis",
+        "description": "42-slot (6 time-slots × 7 days) campaign fire/no-fire diagnosis with zero-fire reasons",
+        "inputs": [
+            {"name": "financial_csv", "type": "file", "required": True, "description": "FINANCIAL_DETAILED_TRANSACTIONS_*.csv"},
+            {"name": "marketing_csv", "type": "file", "required": True, "description": "MARKETING_PROMOTION_*.csv"},
+            {"name": "campaigns_csv", "type": "file", "required": True, "description": "Campaign plan CSV (Slot Tags 1-42)"},
+            {"name": "operator_id", "type": "string", "required": False},
+        ],
+        "outputs": [
+            {"name": "campaign_summary", "type": "json"},
+            {"name": "zero_fire", "type": "json"},
+            {"name": "slot_perf", "type": "json"},
+        ],
+    },
+    {
+        "id": "monthly_reporter",
+        "name": "Monthly Reporter",
+        "category": "analysis",
+        "description": "Monthly KPI rollup report with pre/post period comparison",
+        "inputs": [
+            {"name": "pre_range", "type": "string", "required": True, "description": "MM/DD/YYYY-MM/DD/YYYY"},
+            {"name": "post_range", "type": "string", "required": True, "description": "MM/DD/YYYY-MM/DD/YYYY"},
+            {"name": "operator_id", "type": "string", "required": False},
+            {"name": "operator_name", "type": "string", "required": False},
+            {"name": "dd_file", "type": "file", "required": False, "description": "DoorDash financial CSV"},
+            {"name": "ue_file", "type": "file", "required": False, "description": "UberEats financial CSV"},
+            {"name": "marketing_files", "type": "file[]", "required": False},
+        ],
+        "outputs": [
+            {"name": "full_report", "type": "file", "description": "Excel workbook"},
+            {"name": "date_export", "type": "file"},
+            {"name": "bucketing_export", "type": "file"},
+        ],
+    },
+    {
+        "id": "the_super_app",
+        "name": "The Super App",
+        "category": "analysis",
+        "description": "Primary React frontend and Streamlit export API.",
+        "inputs": [],
+        "outputs": [],
+    },
+    {
+        "id": "app2_0",
+        "name": "App2.0 (Legacy)",
+        "category": "analysis",
+        "description": "Legacy Python Streamlit dashboard for financial P&L rollups.",
+        "inputs": [],
+        "outputs": [],
+    },
+    {
+        "id": "app3_0",
+        "name": "App3.0 (Legacy)",
+        "category": "analysis",
+        "description": "Cloud-ready Streamlit app with comparison engine.",
+        "inputs": [],
+        "outputs": [],
+    },
+    {
+        "id": "ralph_analyse",
+        "name": "Ralph Analyse",
+        "category": "analysis",
+        "description": "Supplemental analysis tools for DoorDash/UberEats comparison.",
+        "inputs": [],
+        "outputs": [],
+    },
+    {
+        "id": "marketing_breakdown",
+        "name": "Marketing Breakdown",
+        "category": "analysis",
+        "description": "Dedicated Node.js application for analyzing marketing spend.",
+        "inputs": [],
+        "outputs": [],
+    },
+    {
+        "id": "markup_app",
+        "name": "Markup App",
+        "category": "analysis",
+        "description": "Static markup viewing HTTP server.",
+        "inputs": [],
+        "outputs": [],
+    },
+]
+
+
+@app.get("/api/agents")
+def list_agents():
+    return AGENT_REGISTRY
+
+
+@app.get("/api/agents/{agent_id}")
+def get_agent(agent_id: str):
+    for a in AGENT_REGISTRY:
+        if a["id"] == agent_id:
+            return a
+    raise HTTPException(404, "Agent not found")
+
+
+@app.post("/api/runs/launch/{agent_id}")
+def launch_agent_app(agent_id: str):
+    """Launch an agent application via python and return its URL."""
+    import importlib
+    try:
+        agent_module = importlib.import_module(f"agents.{agent_id}")
+        # Call the agent's native run_app function but DO NOT wait for it to finish
+        res = agent_module.run_app(wait=False)
+        
+        urls = res.get("urls", {})
+        # Grab the first available URL (usually http://localhost:PORT)
+        url = list(urls.values())[0] if urls else None
+        
+        if not url:
+            raise ValueError("Agent did not return a valid URL in its response.")
+            
+        return {"status": "success", "message": f"Agent {agent_id} launched.", "pid": res.get("pid"), "url": url}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to launch agent: {e}")
+
+# ---------------------------------------------------------------------------
+# Jobs — saved agent configurations with optional scheduling
+# ---------------------------------------------------------------------------
+
+JOBS_BASE = ROOT / "data" / "jobs"
+JOBS_BASE.mkdir(parents=True, exist_ok=True)
+JOBS_INDEX = JOBS_BASE / "index.jsonl"
+
+
+def _read_jobs() -> list[dict]:
+    if not JOBS_INDEX.is_file():
+        return []
+    rows: list[dict] = []
+    with JOBS_INDEX.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def _write_jobs(jobs: list[dict]) -> None:
+    with JOBS_INDEX.open("w", encoding="utf-8") as f:
+        for j in jobs:
+            f.write(json.dumps(j, default=str) + "\n")
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    return list(reversed(_read_jobs()))
+
+
+@app.post("/api/jobs")
+async def create_job(
+    name: str = Form(...),
+    agent_id: str = Form(...),
+    variables: str = Form("{}"),
+    schedule: str = Form(""),
+):
+    known_ids = {a["id"] for a in AGENT_REGISTRY}
+    if agent_id not in known_ids:
+        raise HTTPException(400, f"Unknown agent: {agent_id}")
+    try:
+        vars_dict = json.loads(variables)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "variables must be valid JSON")
+
+    job = {
+        "id": str(uuid.uuid4()),
+        "name": name.strip(),
+        "agent_id": agent_id,
+        "variables": vars_dict,
+        "schedule": schedule.strip(),
+        "enabled": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_run_at": None,
+        "last_status": None,
+        "run_count": 0,
+    }
+    jobs = _read_jobs()
+    jobs.append(job)
+    _write_jobs(jobs)
+    return JSONResponse(job, status_code=201)
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+    _validate_run_id(job_id)
+    for j in _read_jobs():
+        if j["id"] == job_id:
+            return j
+    raise HTTPException(404, "Job not found")
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    _validate_run_id(job_id)
+    jobs = _read_jobs()
+    filtered = [j for j in jobs if j["id"] != job_id]
+    if len(filtered) == len(jobs):
+        raise HTTPException(404, "Job not found")
+    _write_jobs(filtered)
+    return {"deleted": job_id}
+
+
+@app.put("/api/jobs/{job_id}")
+async def update_job(
+    job_id: str,
+    name: str = Form(""),
+    variables: str = Form(""),
+    schedule: str = Form(""),
+    enabled: str = Form(""),
+):
+    _validate_run_id(job_id)
+    jobs = _read_jobs()
+    target = None
+    for j in jobs:
+        if j["id"] == job_id:
+            target = j
+            break
+    if not target:
+        raise HTTPException(404, "Job not found")
+
+    if name.strip():
+        target["name"] = name.strip()
+    if variables.strip():
+        try:
+            target["variables"] = json.loads(variables)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "variables must be valid JSON")
+    if schedule.strip():
+        target["schedule"] = schedule.strip()
+    if enabled.strip():
+        target["enabled"] = enabled.strip().lower() in ("1", "true", "yes")
+
+    _write_jobs(jobs)
+    return target
+
+
+@app.post("/api/jobs/{job_id}/run")
+def run_job(job_id: str):
+    _validate_run_id(job_id)
+    jobs = _read_jobs()
+    target = None
+    for j in jobs:
+        if j["id"] == job_id:
+            target = j
+            break
+    if not target:
+        raise HTTPException(404, "Job not found")
+
+    agent_id = target["agent_id"]
+    variables = target.get("variables") or {}
+
+    target["last_run_at"] = datetime.now(timezone.utc).isoformat()
+    target["run_count"] = (target.get("run_count") or 0) + 1
+
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+
+    try:
+        if agent_id == "data_run":
+            ids = variables.get("operator_ids") or []
+            if isinstance(ids, str):
+                ids = [s.strip() for s in ids.split(",") if s.strip()]
+            result = run_data_run(
+                operator_ids=ids,
+                reporting_root=str(marketingreco_reporting_root()),
+            )
+        elif agent_id == "strategist":
+            ids = variables.get("operator_ids") or []
+            if isinstance(ids, str):
+                ids = [s.strip() for s in ids.split(",") if s.strip()]
+            result = run_strategist(operator_ids=ids)
+        elif agent_id == "health_check":
+            from datetime import date as dt_date
+            ref = None
+            if variables.get("reference_date"):
+                ref = datetime.strptime(variables["reference_date"], "%Y-%m-%d").date()
+            result = run_health_check(
+                weeks_back=int(variables.get("weeks", 2)),
+                operator_filter=variables.get("operator") or None,
+                reference_date=ref,
+                skip_download=bool(variables.get("skip_download")),
+            )
+        elif agent_id == "deepdive":
+            result = {"status": "error", "message": "DeepDive requires file uploads — run from the agent page."}
+        elif agent_id == "monthly_reporter":
+            result = {"status": "error", "message": "Monthly Reporter requires file uploads — run from the agent page."}
+        else:
+            result = {"status": "error", "message": f"Agent '{agent_id}' requires parameters not supported by jobs yet. Use the agent page."}
+
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        status = result.get("status", "success")
+        target["last_status"] = status
+
+        _append_index({
+            "id": run_id,
+            "agent": agent_id,
+            "operator": target["name"],
+            "status": status,
+            "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+            "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            "job_id": job_id,
+        })
+        _write_jobs(jobs)
+
+        return JSONResponse({"run_id": run_id, "job_id": job_id, **result})
+    except Exception as e:
+        target["last_status"] = "failed"
+        _write_jobs(jobs)
+        raise HTTPException(500, str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+# Serve React dashboard (production build) — must be last (catch-all)
+# ---------------------------------------------------------------------------
+
+DASHBOARD_DIR = ROOT / "dashboard" / "dist"
+if DASHBOARD_DIR.is_dir():
+    if (DASHBOARD_DIR / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=str(DASHBOARD_DIR / "assets")), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        dashboard_root = DASHBOARD_DIR.resolve()
+        file_path = (dashboard_root / full_path).resolve()
+        if dashboard_root in file_path.parents and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(DASHBOARD_DIR / "index.html")

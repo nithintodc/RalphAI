@@ -1,4 +1,4 @@
-"""`/deepdive` — delegates to agents.deepdive.agent.run (default: data/data/TriArch zips)."""
+"""`/deepdive` - delegates to agents.deepdive.agent.run (default: data/TriArch zips)."""
 
 from __future__ import annotations
 

@@ -21,6 +21,17 @@ dashboard/dist
 htmlcov
 .coverage
 .coverage.*
+*.log
+*.tmp
+*.temp
 
 # Large / local-only (re-mount or sync via GCS in production if needed)
 data/runs/**
+accounts.csv
+Account Information*.csv
+90days/**
+downloads/**
+operatorlevel/**
+rawdata/**
+weeklydata/**
+wow/**

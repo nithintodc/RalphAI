@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TODC Markup Contribution Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <style>
+    :root {
+      --green: #2E7D32;
+      --green-light: #4CAF50;
+      --green-bg: #E8F5E9;
+      --orange: #EF6C00;
+      --orange-light: #FF9800;
+      --orange-bg: #FFF3E0;
+      --white: #FFFFFF;
+      --gray-50: #FAFAFA;
+      --gray-100: #F5F5F5;
+      --gray-200: #EEEEEE;
+      --gray-300: #E0E0E0;
+      --gray-600: #757575;
+      --gray-800: #424242;
+      --gray-900: #212121;
+      --doordash-red: #FF3008;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.1), 0 6px 10px rgba(0,0,0,0.08);
+      --radius: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, var(--gray-100) 0%, var(--green-bg) 50%, var(--orange-bg) 100%);
+      min-height: 100vh;
+      color: var(--gray-900);
+    }
+
+    /* Header */
+    .header {
+      background: var(--white);
+      box-shadow: var(--shadow-md);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header img { height: 48px; }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--gray-900);
+      flex: 1;
+    }
+    .header .subtitle {
+      font-size: 13px;
+      color: var(--gray-600);
+      font-weight: 400;
+    }
+    .doordash-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFF0EC;
+      border: 1px solid #FFD4C8;
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--doordash-red);
+    }
+    .doordash-badge svg { width: 20px; height: 20px; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Section Title */
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--gray-900);
+    }
+    .section-title .material-icons { font-size: 24px; }
+
+    /* Card */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--gray-200);
+    }
+    .card-header .material-icons { font-size: 28px; }
+    .card-header h3 { font-size: 16px; font-weight: 700; }
+
+    /* Comparison Layout */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    .flow-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+    .flow-header {
+      padding: 16px 20px;
+      color: white;
+      font-weight: 700;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .flow-header .material-icons { font-size: 22px; }
+    .flow-instore .flow-header { background: linear-gradient(135deg, var(--green), var(--green-light)); }
+    .flow-delivery .flow-header { background: linear-gradient(135deg, var(--orange), var(--orange-light)); }
+    .flow-body { padding: 20px; }
+
+    /* Per-Dollar Section */
+    .per-dollar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .per-dollar-row:last-child { border-bottom: none; }
+    .per-dollar-row .material-icons { font-size: 20px; color: var(--gray-600); }
+    .per-dollar-label { flex: 1; font-size: 14px; font-weight: 500; }
+    .per-dollar-value {
+      font-size: 14px;
+      font-weight: 700;
+      min-width: 70px;
+      text-align: right;
+    }
+
+    /* Input field */
+    .input-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--gray-100);
+    }
+    .input-group:last-child { border-bottom: none; }
+    .input-group .material-icons { font-size: 18px; color: var(--gray-600); flex-shrink: 0; }
+    .input-group label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray-800);
+      flex: 1;
+      min-width: 0;
+    }
+    .input-group input {
+      width: 90px;
+      padding: 6px 10px;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 8px;
+      font-family: 'Roboto', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: right;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .input-group input:focus { border-color: var(--green-light); box-shadow: 0 0 0 3px rgba(76,175,80,0.15); }
+    .input-group .unit { font-size: 12px; color: var(--gray-600); width: 14px; }
+    .input-group .computed {
+      width: 90px;
+      padding: 6px 10px;
+      background: var(--gray-100);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    /* Divider with arrow */
+    .vs-divider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding-top: 60px;
+    }
+    .vs-badge {
+      background: var(--gray-900);
+      color: white;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* Delta card */
+    .delta-card {
+      background: linear-gradient(135deg, #1B5E20, #2E7D32);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      color: white;
+      text-align: center;
+      box-shadow: var(--shadow-lg);
+      margin-top: 16px;
+    }
+    .delta-card .delta-label { font-size: 13px; font-weight: 400; opacity: 0.9; margin-bottom: 4px; }
+    .delta-card .delta-value { font-size: 32px; font-weight: 700; }
+    .delta-card .delta-sub { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+
+    /* Result Row */
+    .result-row {
+      background: var(--green-bg);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .result-row.orange { background: var(--orange-bg); }
+    .result-row .material-icons { font-size: 20px; }
+    .result-row label { flex: 1; font-size: 13px; font-weight: 600; }
+    .result-row .computed { font-size: 14px; font-weight: 700; }
+
+    /* Section 2: P&L Table */
+    .pnl-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .pnl-tab {
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 2px solid var(--gray-300);
+      background: var(--white);
+      font-family: 'Roboto', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pnl-tab .material-icons { font-size: 18px; }
+    .pnl-tab.active { background: var(--green); color: white; border-color: var(--green); }
+    .pnl-tab:hover:not(.active) { border-color: var(--green-light); background: var(--green-bg); }
+    .add-tab {
+      border-style: dashed;
+      color: var(--gray-600);
+    }
+
+    /* PnL Table */
+    .pnl-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+    .pnl-table thead th {
+      background: var(--gray-900);
+      color: white;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .pnl-table thead th:first-child { border-radius: 8px 0 0 0; }
+    .pnl-table thead th:last-child { border-radius: 0 8px 0 0; }
+    .pnl-table td {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .pnl-table tr:last-child td { border-bottom: none; }
+    .pnl-table .row-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+    }
+    .pnl-table .row-label .material-icons { font-size: 18px; color: var(--gray-600); }
+    .dollar-input { display: flex; align-items: center; gap: 2px; }
+    .dollar-input::before { content: '$'; font-size: 13px; font-weight: 500; color: var(--gray-600); }
+    .pnl-table input {
+      width: 100%;
+      max-width: 110px;
+      padding: 5px 8px;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 6px;
+      font-family: 'Roboto', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: right;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .pnl-table input:focus { border-color: var(--green-light); box-shadow: 0 0 0 3px rgba(76,175,80,0.15); }
+    .pnl-table .computed-cell {
+      font-weight: 700;
+      text-align: right;
+      color: var(--gray-800);
+    }
+    .pnl-table .pct-cell {
+      font-weight: 600;
+      text-align: right;
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .pnl-table tr.total-row td {
+      background: var(--green-bg);
+      font-weight: 700;
+      border-top: 2px solid var(--green);
+      font-size: 14px;
+    }
+    .pnl-table tr.total-row .pct-cell { color: var(--green); font-size: 14px; }
+    .pnl-table tr.subtotal-row td {
+      background: var(--gray-50);
+      font-weight: 600;
+      border-top: 1px solid var(--gray-300);
+    }
+
+    .remove-tab-btn {
+      background: none;
+      border: none;
+      color: white;
+      opacity: 0.7;
+      cursor: pointer;
+      font-size: 16px;
+      margin-left: 4px;
+      padding: 0 2px;
+    }
+    .remove-tab-btn:hover { opacity: 1; }
+
+    .pnl-tab:not(.active) .remove-tab-btn { color: var(--gray-600); }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .comparison-grid { grid-template-columns: 1fr; }
+      .vs-divider { flex-direction: row; padding-top: 0; padding: 8px 0; }
+    }
+    @media (max-width: 600px) {
+      .header { padding: 12px 16px; }
+      .header h1 { font-size: 18px; }
+      .container { padding: 16px 8px; }
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <img src="todc-logo.webp" alt="TODC Logo" />
+  <div>
+    <h1>Markup Contribution Calculator</h1>
+    <div class="subtitle">Analyze delivery markup impact on food cost, labor & margins</div>
+  </div>
+  <div class="doordash-badge">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.071 8.409a6.09 6.09 0 0 0-5.396-3.228H.584A.589.589 0 0 0 .1 6.076l5.109 5.078a6.09 6.09 0 0 0 5.396 3.228h17.091a.589.589 0 0 0 .484-.895l-5.109-5.078zM6.1 11.652l-3.67-3.644h3.675a4.442 4.442 0 0 1 3.937 2.354L6.1 11.652zm9.937 6.758H.584a.589.589 0 0 0-.484.895l5.109 5.078a6.09 6.09 0 0 0 5.396 3.228h17.091a.589.589 0 0 0 .484-.895l-5.109-5.078a6.09 6.09 0 0 0-5.396-3.228z"/></svg>
+    3PO Delivery
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- SECTION 1: In-Store vs Delivery -->
+  <div class="section-title">
+    <span class="material-icons" style="color:var(--green)">compare_arrows</span>
+    Section 1: In-Store vs Delivery — Per Dollar Analysis
+  </div>
+
+  <div class="comparison-grid">
+    <!-- In-Store Flow -->
+    <div class="flow-card flow-instore">
+      <div class="flow-header">
+        <span class="material-icons">storefront</span>
+        In-Store
+      </div>
+      <div class="flow-body">
+        <div class="input-group">
+          <span class="material-icons">attach_money</span>
+          <label>Base Price</label>
+          <input type="number" id="instore-price" value="1.00" step="0.01" />
+          <span class="unit">$</span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">trending_flat</span>
+          <label>Markup</label>
+          <div class="computed">0%</div>
+          <span class="unit"></span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">restaurant</span>
+          <label>Food & Paper %</label>
+          <input type="number" id="instore-fp" value="26.00" step="0.01" />
+          <span class="unit">%</span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">engineering</span>
+          <label>Labor %</label>
+          <input type="number" id="instore-labor" value="22.89" step="0.01" />
+          <span class="unit">%</span>
+        </div>
+        <div class="result-row">
+          <span class="material-icons" style="color:var(--green)">functions</span>
+          <label>Combined %</label>
+          <div class="computed" id="instore-total">48.89%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VS Divider -->
+    <div class="vs-divider">
+      <div class="vs-badge">VS</div>
+      <span class="material-icons" style="font-size:32px;color:var(--gray-600)">swap_horiz</span>
+    </div>
+
+    <!-- Delivery Flow -->
+    <div class="flow-card flow-delivery">
+      <div class="flow-header">
+        <span class="material-icons">delivery_dining</span>
+        Online Delivery
+      </div>
+      <div class="flow-body">
+        <div class="input-group">
+          <span class="material-icons">attach_money</span>
+          <label>Online Price</label>
+          <div class="computed" id="online-price">$1.27</div>
+          <span class="unit"></span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">trending_up</span>
+          <label>Markup %</label>
+          <input type="number" id="markup-pct" value="27" step="0.5" />
+          <span class="unit">%</span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">restaurant</span>
+          <label>New Food & Paper %</label>
+          <div class="computed" id="online-fp">20.47%</div>
+          <span class="unit"></span>
+        </div>
+        <div class="input-group">
+          <span class="material-icons">engineering</span>
+          <label>New Labor %</label>
+          <div class="computed" id="online-labor">18.02%</div>
+          <span class="unit"></span>
+        </div>
+        <div class="result-row orange">
+          <span class="material-icons" style="color:var(--orange)">functions</span>
+          <label>Combined %</label>
+          <div class="computed" id="online-total">38.50%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delta Card -->
+  <div class="delta-card">
+    <div class="delta-label">Cost % Savings from Markup</div>
+    <div class="delta-value" id="delta-value">10.39%</div>
+    <div class="delta-sub">Reduction in combined F&P + Labor cost percentage</div>
+  </div>
+
+  <!-- SECTION 2: Average Order P&L -->
+  <div style="margin-top:40px">
+    <div class="section-title">
+      <span class="material-icons" style="color:var(--orange)">receipt_long</span>
+      Section 2: Average Order P&L Scenarios
+    </div>
+
+    <div class="card">
+      <div class="pnl-tabs" id="pnl-tabs">
+        <button class="pnl-tab active" data-tab="0">
+          <span class="material-icons">local_shipping</span>
+          AVG Order TODC
+        </button>
+        <button class="pnl-tab" data-tab="1">
+          <span class="material-icons">business</span>
+          AVG Order Corp
+        </button>
+        <button class="pnl-tab" data-tab="2">
+          <span class="material-icons">store</span>
+          Business
+        </button>
+        <button class="pnl-tab add-tab" id="add-scenario-btn">
+          <span class="material-icons">add_circle_outline</span>
+          Add Scenario
+        </button>
+      </div>
+
+      <div id="pnl-content"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ SECTION 1 LOGIC ============
+const instorePrice = document.getElementById('instore-price');
+const instoreFP = document.getElementById('instore-fp');
+const instoreLabor = document.getElementById('instore-labor');
+const markupPct = document.getElementById('markup-pct');
+
+function calcSection1() {
+  const base = parseFloat(instorePrice.value) || 0;
+  const fp = parseFloat(instoreFP.value) || 0;
+  const labor = parseFloat(instoreLabor.value) || 0;
+  const markup = parseFloat(markupPct.value) || 0;
+
+  const onlinePrice = base * (1 + markup / 100);
+  const newFP = onlinePrice > 0 ? (fp / 100 * base) / onlinePrice * 100 : 0;
+  const newLabor = onlinePrice > 0 ? (labor / 100 * base) / onlinePrice * 100 : 0;
+  const instoreTotal = fp + labor;
+  const onlineTotal = newFP + newLabor;
+  const delta = instoreTotal - onlineTotal;
+
+  document.getElementById('online-price').textContent = '$' + onlinePrice.toFixed(2);
+  document.getElementById('online-fp').textContent = newFP.toFixed(2) + '%';
+  document.getElementById('online-labor').textContent = newLabor.toFixed(2) + '%';
+  document.getElementById('instore-total').textContent = instoreTotal.toFixed(2) + '%';
+  document.getElementById('online-total').textContent = onlineTotal.toFixed(2) + '%';
+  document.getElementById('delta-value').textContent = delta.toFixed(2) + '%';
+
+  // Update all P&L scenarios with new F&P and Labor percentages
+  scenarios.forEach((_, i) => {
+    scenarios[i].fpPct = newFP;
+    scenarios[i].laborPct = newLabor;
+  });
+  if (scenarios.length > 0) renderPnl(activeTab);
+}
+
+[instorePrice, instoreFP, instoreLabor, markupPct].forEach(el =>
+  el.addEventListener('input', calcSection1)
+);
+
+// ============ SECTION 2 LOGIC ============
+const scenarios = [
+  { name: 'AVG Order TODC', icon: 'local_shipping', sales: 41.12, mktgFee: 1.00, promoSpend: 5.55, commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00, fpPct: 20.47, laborPct: 18.02 },
+  { name: 'AVG Order Corp', icon: 'business', sales: 27.22, mktgFee: 0, promoSpend: 7.21, commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00, fpPct: 20.47, laborPct: 18.02 },
+  { name: 'Business', icon: 'store', sales: 139746, mktgFee: 0, promoSpend: 10000, commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00, fpPct: 20.47, laborPct: 18.02 },
+];
+
+let activeTab = 0;
+
+function fmt(v, isBig) {
+  if (isBig && Math.abs(v) >= 1000) return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '$' + v.toFixed(2);
+}
+
+function pct(v) { return v.toFixed(2) + '%'; }
+
+function renderPnl(tabIdx) {
+  const s = scenarios[tabIdx];
+  const sales = s.sales;
+  const mktgFee = s.mktgFee;
+  const promoSpend = s.promoSpend;
+  const reflected = sales - promoSpend;
+  const commission = reflected * (s.commissionPct / 100);
+  const fp = sales * (s.fpPct / 100);
+  const labor = sales * (s.laborPct / 100);
+  const rent = reflected * (s.rentPct / 100);
+  const opnad = reflected * (s.opnadPct / 100);
+  const local = reflected * (s.localPct / 100);
+  const margin = sales - mktgFee - commission - fp - labor - rent - opnad - local - promoSpend;
+  const isBig = sales >= 1000;
+
+  const content = document.getElementById('pnl-content');
+  content.innerHTML = `
+    <table class="pnl-table">
+      <thead>
+        <tr>
+          <th style="width:40%">Line Item</th>
+          <th style="width:30%">Value</th>
+          <th style="width:30%">% of Sales</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:var(--green)">point_of_sale</span> Sales</div></td>
+          <td><div class="dollar-input"><input type="number" value="${s.sales}" data-field="sales" step="0.01" /></div></td>
+          <td class="pct-cell">100.00%</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:var(--orange)">campaign</span> Marketing Fee</div></td>
+          <td><div class="dollar-input"><input type="number" value="${s.mktgFee}" data-field="mktgFee" step="0.01" /></div></td>
+          <td class="pct-cell">${sales > 0 ? pct(mktgFee / sales * 100) : '0.00%'}</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:var(--doordash-red)">local_offer</span> Promo Spend</div></td>
+          <td><div class="dollar-input"><input type="number" value="${s.promoSpend}" data-field="promoSpend" step="0.01" /></div></td>
+          <td class="pct-cell">${sales > 0 ? pct(promoSpend / sales * 100) : '0.00%'}</td>
+        </tr>
+        <tr class="subtotal-row">
+          <td><div class="row-label"><span class="material-icons" style="color:var(--green)">arrow_forward</span> Reflected to QSR</div></td>
+          <td class="computed-cell">${fmt(reflected, isBig)}</td>
+          <td class="pct-cell">${sales > 0 ? pct(reflected / sales * 100) : '0.00%'}</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:var(--doordash-red)">percent</span> 3PO Commission</div></td>
+          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.commissionPct}" data-field="commissionPct" step="0.1" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
+          <td class="computed-cell">${fmt(commission, isBig)}</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:#8D6E63">restaurant</span> Food & Paper</div></td>
+          <td class="computed-cell">${fmt(fp, isBig)}</td>
+          <td class="pct-cell" style="color:var(--orange)">${pct(s.fpPct)} <span style="font-size:10px;color:var(--gray-600)">of Sales</span></td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:#5C6BC0">engineering</span> Labor</div></td>
+          <td class="computed-cell">${fmt(labor, isBig)}</td>
+          <td class="pct-cell" style="color:var(--orange)">${pct(s.laborPct)} <span style="font-size:10px;color:var(--gray-600)">of Sales</span></td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:#78909C">home_work</span> Rent & Royalties</div></td>
+          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.rentPct}" data-field="rentPct" step="0.1" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
+          <td class="computed-cell">${fmt(rent, isBig)}</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:#26A69A">tv</span> OPNAD C-Rate</div></td>
+          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.opnadPct}" data-field="opnadPct" step="0.01" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
+          <td class="computed-cell">${fmt(opnad, isBig)}</td>
+        </tr>
+        <tr>
+          <td><div class="row-label"><span class="material-icons" style="color:#AB47BC">location_on</span> Local C-Rate</div></td>
+          <td style="display:flex;align-items:center;gap:6px"><input type="number" value="${s.localPct}" data-field="localPct" step="0.01" style="max-width:70px" /><span style="font-size:12px;color:var(--gray-600)">% of Reflected</span></td>
+          <td class="computed-cell">${fmt(local, isBig)}</td>
+        </tr>
+        <tr class="total-row">
+          <td><div class="row-label"><span class="material-icons" style="color:var(--green)">savings</span> Contribution Margin</div></td>
+          <td class="computed-cell" style="color:${margin >= 0 ? 'var(--green)' : 'red'}">${fmt(margin, isBig)}</td>
+          <td class="pct-cell">${sales > 0 ? pct(margin / sales * 100) : '0.00%'}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  // Bind inputs
+  content.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const field = inp.dataset.field;
+      scenarios[tabIdx][field] = parseFloat(inp.value) || 0;
+      renderPnl(tabIdx);
+    });
+  });
+}
+
+function renderTabs() {
+  const tabsEl = document.getElementById('pnl-tabs');
+  tabsEl.innerHTML = '';
+  scenarios.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'pnl-tab' + (i === activeTab ? ' active' : '');
+    btn.dataset.tab = i;
+    btn.innerHTML = `<span class="material-icons">${s.icon}</span>${s.name}${scenarios.length > 1 ? '<button class="remove-tab-btn" data-remove="' + i + '">&times;</button>' : ''}`;
+    btn.addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-tab-btn')) return;
+      activeTab = i;
+      renderTabs();
+      renderPnl(i);
+    });
+    tabsEl.appendChild(btn);
+  });
+
+  // Add button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'pnl-tab add-tab';
+  addBtn.innerHTML = '<span class="material-icons">add_circle_outline</span>Add Scenario';
+  addBtn.addEventListener('click', () => {
+    const name = prompt('Scenario name:', 'New Scenario');
+    if (!name) return;
+    scenarios.push({
+      name, icon: 'calculate', sales: 0, mktgFee: 0, promoSpend: 0,
+      commissionPct: 12, rentPct: 13, opnadPct: 2.25, localPct: 1.00,
+      fpPct: scenarios[0].fpPct, laborPct: scenarios[0].laborPct
+    });
+    activeTab = scenarios.length - 1;
+    renderTabs();
+    renderPnl(activeTab);
+  });
+  tabsEl.appendChild(addBtn);
+
+  // Remove handlers
+  tabsEl.querySelectorAll('.remove-tab-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.remove);
+      if (scenarios.length <= 1) return;
+      scenarios.splice(idx, 1);
+      if (activeTab >= scenarios.length) activeTab = scenarios.length - 1;
+      renderTabs();
+      renderPnl(activeTab);
+    });
+  });
+}
+
+// Init
+renderTabs();
+renderPnl(0);
+</script>
+</body>
+</html>

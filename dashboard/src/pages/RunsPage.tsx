@@ -1,41 +1,6 @@
 import { useEffect, useState } from "react";
 import { Filter, Loader2 } from "lucide-react";
 
-const mockRuns = [
-  {
-    id: "run_8f2a1c",
-    agent: "deepdive",
-    operator: "op_north_01",
-    status: "success",
-    started: "2026-04-02 14:32",
-    duration: "1m 04s",
-  },
-  {
-    id: "run_8f2a1b",
-    agent: "marketingreco",
-    operator: "op_north_01",
-    status: "success",
-    started: "2026-04-02 14:28",
-    duration: "0m 42s",
-  },
-  {
-    id: "run_8f2a1a",
-    agent: "campaign_setup",
-    operator: "op_west_04",
-    status: "running",
-    started: "2026-04-02 14:15",
-    duration: "—",
-  },
-  {
-    id: "run_8f2a19",
-    agent: "campaign_review",
-    operator: "op_south_02",
-    status: "failed",
-    started: "2026-04-02 13:58",
-    duration: "2m 11s",
-  },
-];
-
 type RunRow = {
   id: string;
   agent: string;
@@ -53,7 +18,7 @@ const statusStyle: Record<string, string> = {
 };
 
 export function RunsPage() {
-  const [runs, setRuns] = useState<RunRow[]>(mockRuns);
+  const [runs, setRuns] = useState<RunRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiNote, setApiNote] = useState<string | null>(null);
 
@@ -72,17 +37,12 @@ export function RunsPage() {
           duration: string;
         }>;
         if (cancelled) return;
-        if (Array.isArray(data) && data.length > 0) {
-          const seen = new Set(data.map((r) => r.id));
-          const filler = mockRuns.filter((m) => !seen.has(m.id));
-          setRuns([...data, ...filler]);
-          setApiNote(null);
-        } else {
-          setApiNote("No API runs yet — complete a Monthly Reporter run while the API is running.");
-        }
+        setRuns(Array.isArray(data) ? data : []);
+        setApiNote(Array.isArray(data) && data.length > 0 ? null : "No API runs yet.");
       } catch {
         if (!cancelled) {
-          setApiNote("API unavailable — start `uvicorn api.main:app --port 8000` to record Monthly Reporter runs.");
+          setRuns([]);
+          setApiNote("API unavailable. Start the API to record and view runs.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -151,35 +111,43 @@ export function RunsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-100/80 dark:divide-white/10">
-              {runs.map((r) => (
-                <tr
-                  key={`${r.id}-${r.started}`}
-                  className="transition hover:bg-brand-50/70 dark:hover:bg-white/5"
-                >
-                  <td className="px-5 py-3 font-mono text-xs text-ink-600 dark:text-slate-400">
-                    {r.id}
-                  </td>
-                  <td className="px-5 py-3 font-medium text-ink-900 dark:text-white">
-                    {r.agent}
-                  </td>
-                  <td className="px-5 py-3 text-ink-600 dark:text-white/60">
-                    {r.operator}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusStyle[r.status] ?? ""}`}
-                    >
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-ink-600 dark:text-white/60">
-                    {r.started}
-                  </td>
-                  <td className="px-5 py-3 text-ink-600 dark:text-white/60">
-                    {r.duration}
+              {runs.length > 0 ? (
+                runs.map((r) => (
+                  <tr
+                    key={`${r.id}-${r.started}`}
+                    className="transition hover:bg-brand-50/70 dark:hover:bg-white/5"
+                  >
+                    <td className="px-5 py-3 font-mono text-xs text-ink-600 dark:text-slate-400">
+                      {r.id}
+                    </td>
+                    <td className="px-5 py-3 font-medium text-ink-900 dark:text-white">
+                      {r.agent}
+                    </td>
+                    <td className="px-5 py-3 text-ink-600 dark:text-white/60">
+                      {r.operator}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusStyle[r.status] ?? ""}`}
+                      >
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-ink-600 dark:text-white/60">
+                      {r.started}
+                    </td>
+                    <td className="px-5 py-3 text-ink-600 dark:text-white/60">
+                      {r.duration}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-sm text-ink-500 dark:text-white/60">
+                    No runs recorded yet.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

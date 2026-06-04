@@ -51,7 +51,7 @@ def data_root() -> Path:
 
 def deepdive_default_zip_dir() -> Path:
     """Directory of DoorDash export `.zip` files when DeepDive runs without `data_dir` / `data_files`."""
-    return data_root() / "data" / "TriArch"
+    return data_root() / "TriArch"
 
 
 def redis_url() -> str | None:
@@ -62,11 +62,21 @@ def review_delay_days() -> int:
     return int(os.environ.get("REVIEW_DELAY_DAYS", REVIEW_DELAY_DAYS))
 
 
+def reporting_browser_use_root() -> Path:
+    """
+    Repo directory for the browser-use DoorDash workflow (``main.py`` and nested ``agents/``).
+    """
+    return Path(__file__).resolve().parents[2] / "agents" / "reporting_browser_use"
+
+
 def marketingreco_reporting_root() -> Path:
     """
     Reporting workflow root used by MarketingReco manual/auto and Offers/Ads automation.
     """
-    return Path(os.environ.get("MARKETINGRECO_REPORTING_ROOT", "Reporting-browser-use-claude-code")).resolve()
+    raw = os.environ.get("MARKETINGRECO_REPORTING_ROOT", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return reporting_browser_use_root()
 
 
 def deepdive_include_metric_hierarchy() -> bool:
@@ -84,4 +94,4 @@ def account_information_csv_path() -> Path:
     raw = os.environ.get("ACCOUNT_INFORMATION_CSV", "").strip()
     if raw:
         return Path(raw).expanduser().resolve()
-    return Path(__file__).resolve().parents[2] / "Account Information-McDonalds.csv"
+    return Path(__file__).resolve().parents[2] / "accounts.csv"

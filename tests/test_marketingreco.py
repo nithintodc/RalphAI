@@ -1,5 +1,6 @@
 from agents.deepdive.agent import run as deepdive_run
 from agents.marketingreco.agent import run as reco_run
+from shared.config.settings import marketingreco_reporting_root
 
 
 def test_marketingreco_after_deepdive(tmp_path, monkeypatch):
@@ -25,7 +26,7 @@ def test_marketingreco_manual_mode_from_financial_csv(tmp_path, monkeypatch):
         "x",
         mode="manual",
         financial_report_path=str(financial_csv),
-        reporting_root="Reporting-browser-use-claude-code",
+        reporting_root=str(marketingreco_reporting_root()),
     )
     assert out["operator_id"] == "x"
     assert out["approval_status"] == "pending"

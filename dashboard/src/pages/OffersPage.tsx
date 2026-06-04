@@ -58,7 +58,8 @@ export function OffersPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI - Offers</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          Offers mode runs the complete <strong>Reporting-browser-use-claude-code</strong> app end-to-end using the
+          Offers mode runs the complete browser-use reporting workflow (<code>agents/reporting_browser_use</code>)
+          end-to-end using the
           DoorDash login credentials entered here in the UI.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">

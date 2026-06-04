@@ -146,7 +146,7 @@ def _resolve_marketing_folder(base: Path) -> Path:
 
 
 def _cloud_app_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "monthly_reporter" / "cloud_app"
+    return Path(__file__).resolve().parent / "cloud_app"
 
 
 # ---------------------------------------------------------------------------

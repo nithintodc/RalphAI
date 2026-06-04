@@ -276,7 +276,7 @@ def _section_metric_hierarchy(mh: dict) -> str:
         return f"""
     <div class="section">
         <h2>Performance hierarchy</h2>
-        <p style="color:#555;">{msg} Place export zips under <strong>data/data/TriArch</strong> (CLI default) or upload zips that include <strong>FINANCIAL_DETAILED_TRANSACTIONS</strong> with order timestamps.</p>
+        <p style="color:#555;">{msg} Place export zips under <strong>data/TriArch</strong> (CLI default) or upload zips that include <strong>FINANCIAL_DETAILED_TRANSACTIONS</strong> with order timestamps.</p>
     </div>
     """
 

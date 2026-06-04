@@ -56,10 +56,14 @@ function timeAgo(raw?: string): string {
 
 function displayAgentName(agent: string): string {
   const map: Record<string, string> = {
-    deepdive: "DeepDive",
+    deepdive: "DeepDive (Legacy)",
     marketingreco: "MarketingReco",
     monthly_reporter: "Monthly Reporter",
     campaign_review: "Campaign Review",
+    data_run: "Data Run",
+    strategist: "Strategist",
+    health_check: "Health Check",
+    campaign_killer: "Campaign Killer",
     offers: "RalphAI Offers",
     ads: "RalphAI Ads",
   };
@@ -296,9 +300,24 @@ export function DashboardPage() {
                   navigate("/agents/deepdive");
                 },
               },
-              { label: "MarketingReco — plan generation" },
-              { label: "Review — 7-day performance" },
-              { label: "Monthly Reporter — KPI rollup" },
+              {
+                label: "MarketingReco — plan generation",
+                onClick: () => {
+                  navigate("/agents/marketingreco");
+                },
+              },
+              {
+                label: "Review — 7-day performance",
+                onClick: () => {
+                  navigate("/agents/campaign-review");
+                },
+              },
+              {
+                label: "Monthly Reporter — KPI rollup",
+                onClick: () => {
+                  navigate("/agents/monthly-reporter");
+                },
+              },
             ].map((t) => (
               <li key={typeof t === "string" ? t : t.label}>
                 <button

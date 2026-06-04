@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from shared.config.settings import account_information_csv_path
+from shared.config.settings import account_information_csv_path, marketingreco_reporting_root
 from shared.utils.account_directory import load_account_operators_csv
 
 @dataclass(frozen=True)
@@ -110,6 +110,7 @@ def _run_reports_for_operator(
     operator_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
+    env["PYTHONPATH"] = str(reporting_root.resolve())
     env["DOORDASH_EMAIL"] = operator.email
     env["DOORDASH_PASSWORD"] = operator.password
     env["DATA_RUN_START_DATE"] = start_date
@@ -151,13 +152,13 @@ def _run_reports_for_operator(
 def run(
     *,
     operator_ids: list[str],
-    reporting_root: str = "Reporting-browser-use-claude-code",
+    reporting_root: str | None = None,
 ) -> dict[str, Any]:
     raw_ids = [(oid or "").strip() for oid in operator_ids if (oid or "").strip()]
     operators = _resolve_selected_operators(raw_ids)
     operator_by_id = {op.operator_id: op for op in operators}
     start_date, end_date = _date_range_last_three_months()
-    root = Path(reporting_root).resolve()
+    root = Path(reporting_root or str(marketingreco_reporting_root())).resolve()
     if not (root / "main.py").is_file():
         raise FileNotFoundError(f"Reporting workflow not found at: {root}")
 

@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.app
+      - -t
+      - gcr.io/$PROJECT_ID/todc-reporting-app:latest
+      - .
+images:
+  - gcr.io/$PROJECT_ID/todc-reporting-app:latest

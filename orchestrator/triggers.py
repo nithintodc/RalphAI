@@ -19,6 +19,7 @@ from orchestrator.flow_manager import (
     run_marketing_reco,
     run_review,
 )
+from shared.config.settings import marketingreco_reporting_root
 
 
 def dispatch(command: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -40,7 +41,9 @@ def dispatch(command: str, body: dict[str, Any]) -> dict[str, Any]:
                 financial_report_path=body.get("financial_report_path"),
                 doordash_email=body.get("doordash_email"),
                 doordash_password=body.get("doordash_password"),
-                reporting_root=body.get("reporting_root", "Reporting-browser-use-claude-code"),
+                reporting_root=body.get(
+                    "reporting_root", str(marketingreco_reporting_root())
+                ),
             )
         # Expect prior deepdive JSON under body["deepdive"] or run pipeline first
         if "deepdive" in body:

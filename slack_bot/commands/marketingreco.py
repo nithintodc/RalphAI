@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shared.config.settings import marketingreco_reporting_root
+
 
 def handle(
     operator_id: str,
@@ -10,7 +12,7 @@ def handle(
     financial_report_path: str | None = None,
     doordash_email: str | None = None,
     doordash_password: str | None = None,
-    reporting_root: str = "Reporting-browser-use-claude-code",
+    reporting_root: str | None = None,
 ) -> dict:
     from agents.marketingreco.agent import run
 
@@ -20,5 +22,5 @@ def handle(
         financial_report_path=financial_report_path,
         doordash_email=doordash_email,
         doordash_password=doordash_password,
-        reporting_root=reporting_root,
+        reporting_root=reporting_root or str(marketingreco_reporting_root()),
     )

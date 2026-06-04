@@ -27,7 +27,7 @@ ENV/
 .env
 .env.*
 !.env.example
-App2.0-cloud-app/.env
+agents/monthly_reporter/cloud_app/.env
 
 # Frontend
 dashboard/node_modules/
@@ -41,16 +41,32 @@ dashboard/dist/
 *.tmp
 *.temp
 
+# Credential files - NEVER commit
+accounts.csv
+Account Information*.csv
+
 # Data artifacts generated at runtime
 data/operators/*/
 !data/operators/.gitkeep
 data/runs/
-data/data/TriArch/*.zip
-data/data/TriArch/*/
-data/data/TriArch/_extracted/
+# Health check weekly downloads + WoW outputs
+weeklydata/
+rawdata/
+operatorlevel/
+wow/
+# Strategist 90-day report downloads + plans
+90days/
+# Browser download artifacts
+downloads/
+
+data/TriArch/*.zip
+data/TriArch/*/
+data/TriArch/_extracted/
+data/data/
 
 # Python packaging / notebooks
 build/
 dist/
 *.egg-info/
 .ipynb_checkpoints/
+KEYS.md
