@@ -27,7 +27,21 @@ htmlcov
 *.tmp
 *.temp
 
+# Other agents / design / docs (not in production image)
+agents/deepdive/**
+agents/reporting_browser_use/**
+agents/reporting_browser_use_*/
+agents/app2_0/**
+agents/app3_0/**
+agents/the_super_app/TODC*/
+agents/the_super_app/design/**
+sample_data_bican/**
+*.md
+!README.md
+
 # Large / local-only (re-mount or sync via GCS in production if needed)
+data/**
+!data/operators/.gitkeep
 data/runs/**
 accounts.csv
 Account Information*.csv

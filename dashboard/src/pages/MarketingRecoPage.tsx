@@ -27,7 +27,6 @@ export function MarketingRecoPage() {
   const [result, setResult] = useState<any | null>(null);
   const [resultTab, setResultTab] = useState<ResultTab>("offers");
   const [adsSubTab, setAdsSubTab] = useState<AdsSubTab>("upload");
-  const campaigns = useMemo(() => (result?.recommended_campaigns as any[]) ?? [], [result]);
   const mappings = useMemo(() => (result?.campaign_mappings as any[]) ?? [], [result]);
   const slotRecommendations = useMemo(
     () => (result?.slot_recommendations as any[]) ?? [],
