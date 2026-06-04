@@ -1,0 +1,8 @@
+# Lean dependency set for the Cloud Run export API container.
+# (No streamlit / pandas — those are only needed by the local Streamlit companion;
+#  gdrive_utils imports streamlit optionally and the API uses GCP_SERVICE_ACCOUNT_JSON.)
+openpyxl>=3.1.0
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.1.1
+certifi>=2023.7.22

@@ -1,0 +1,35 @@
+# Secrets — never commit
+.env
+.env.*
+KEYS.md
+streamlit_app/.streamlit/secrets.toml
+streamlit_app/todc-marketing-*.json
+streamlit_app/*service-account*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Node (app has its own .gitignore too)
+node_modules/
+app/dist/
+
+# Raw / large data sets — local only, never committed
+melt-data/
+sample_data/
+savvy-new-data/
+
+# Generated report artifacts
+*.docx
+TODC_Partnership_Report_*.doc
+
+# Cloud / deploy
+.firebase/

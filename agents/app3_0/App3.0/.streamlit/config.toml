@@ -1,0 +1,18 @@
+[server]
+# Allow large CSV uploads (DoorDash/UberEats financial + marketing). Default is 200MB.
+# Set to 1GB to match UI and avoid 413. If behind Nginx, set client_max_body_size 1024M there too.
+maxUploadSize = 1024
+
+[client]
+showSidebarNavigation = false
+
+[runner]
+magicEnabled = false
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#F1F5F9"
+textColor = "#0F172A"
+font = "sans serif"

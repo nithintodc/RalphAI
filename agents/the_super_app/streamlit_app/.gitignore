@@ -1,0 +1,4 @@
+# Google service account keys (never commit)
+todc-marketing-*.json
+*service-account*.json
+.streamlit/secrets.toml
