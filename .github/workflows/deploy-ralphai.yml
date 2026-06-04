@@ -81,18 +81,13 @@ jobs:
           add_secret "SLACK_BOT_TOKEN" "SLACK_BOT_TOKEN"
           add_secret "SLACK_SIGNING_SECRET" "SLACK_SIGNING_SECRET"
 
-          ENV_VARS="LOG_LEVEL=INFO"
-          DRIVE_NAME="${{ vars.GOOGLE_SHARED_DRIVE_NAME }}"
-          ENV_VARS+=",GOOGLE_SHARED_DRIVE_NAME=${DRIVE_NAME:-Data-Analysis-Uploads}"
-          if [[ -n "${{ vars.AIRTABLE_BASE_ID }}" ]]; then
-            ENV_VARS+=",AIRTABLE_BASE_ID=${{ vars.AIRTABLE_BASE_ID }}"
-          fi
-          if [[ -n "${{ vars.AIRTABLE_TABLE_ID }}" ]]; then
-            ENV_VARS+=",AIRTABLE_TABLE_ID=${{ vars.AIRTABLE_TABLE_ID }}"
-          fi
-          if [[ -n "${{ vars.CORS_ORIGINS }}" ]]; then
-            ENV_VARS+=",CORS_ORIGINS=${{ vars.CORS_ORIGINS }}"
-          fi
+          ENV_FILE="$(mktemp)"
+          {
+            echo "LOG_LEVEL=INFO"
+            echo "GOOGLE_SHARED_DRIVE_NAME=${{ vars.GOOGLE_SHARED_DRIVE_NAME || 'Data-Analysis-Uploads' }}"
+            [[ -n "${{ vars.AIRTABLE_BASE_ID }}" ]] && echo "AIRTABLE_BASE_ID=${{ vars.AIRTABLE_BASE_ID }}"
+            [[ -n "${{ vars.AIRTABLE_TABLE_ID }}" ]] && echo "AIRTABLE_TABLE_ID=${{ vars.AIRTABLE_TABLE_ID }}"
+          } >"$ENV_FILE"
 
           DEPLOY_ARGS=(
             run deploy "${SERVICE_NAME}"
@@ -106,13 +101,14 @@ jobs:
             --max-instances=5
             --min-instances=0
             --project="${PROJECT_ID}"
-            --set-env-vars="${ENV_VARS}"
+            --env-vars-file="${ENV_FILE}"
             --quiet
           )
           if [[ -n "${SECRET_FLAGS}" ]]; then
             DEPLOY_ARGS+=(--update-secrets="${SECRET_FLAGS}")
           fi
           gcloud "${DEPLOY_ARGS[@]}"
+          rm -f "$ENV_FILE"
 
       - name: Print service URL
         run: |

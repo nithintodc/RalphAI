@@ -155,22 +155,33 @@ deploy_cloud_run() {
   load_env
   build_cloud_run_secret_flags
 
-  TAG="$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d%H%M)")"
+  TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d%H%M)")}"
   IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${SERVICE_NAME}:${TAG}"
 
-  step "Cloud Build → ${IMAGE}"
-  gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-  gcloud builds submit . \
-    --config=infra/gcp/cloudbuild.yaml \
-    --substitutions=_IMAGE="${IMAGE}" \
-    --project="${GCP_PROJECT_ID}" \
-    --quiet
-  ok "Image built and pushed"
+  if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    step "Cloud Build → ${IMAGE}"
+    gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+    gcloud builds submit . \
+      --config=infra/gcp/cloudbuild.yaml \
+      --substitutions=_IMAGE="${IMAGE}" \
+      --project="${GCP_PROJECT_ID}" \
+      --quiet
+    ok "Image built and pushed"
+  else
+    ok "Skipping build — using existing image ${IMAGE}"
+  fi
 
-  ENV_VARS="LOG_LEVEL=INFO,GOOGLE_SHARED_DRIVE_NAME=${GOOGLE_SHARED_DRIVE_NAME}"
-  [[ -n "${AIRTABLE_BASE_ID:-}" ]]  && ENV_VARS+=",AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}"
-  [[ -n "${AIRTABLE_TABLE_ID:-}" ]] && ENV_VARS+=",AIRTABLE_TABLE_ID=${AIRTABLE_TABLE_ID}"
-  [[ -n "${CORS_ORIGINS:-}" ]]      && ENV_VARS+=",CORS_ORIGINS=${CORS_ORIGINS}"
+  # Path A: UI + API same host — skip .env CORS_ORIGINS (commas break gcloud --set-env-vars).
+  ENV_FILE="$(mktemp)"
+  {
+    echo "LOG_LEVEL=INFO"
+    echo "GOOGLE_SHARED_DRIVE_NAME=${GOOGLE_SHARED_DRIVE_NAME}"
+    [[ -n "${AIRTABLE_BASE_ID:-}" ]]  && echo "AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}"
+    [[ -n "${AIRTABLE_TABLE_ID:-}" ]] && echo "AIRTABLE_TABLE_ID=${AIRTABLE_TABLE_ID}"
+    if [[ -n "${CLOUD_RUN_CORS_ORIGINS:-}" ]]; then
+      echo "CORS_ORIGINS=${CLOUD_RUN_CORS_ORIGINS}"
+    fi
+  } >"$ENV_FILE"
 
   step "Cloud Run deploy → ${SERVICE_NAME}"
   DEPLOY_ARGS=(
@@ -185,13 +196,14 @@ deploy_cloud_run() {
     --max-instances=5
     --min-instances=0
     --project="${GCP_PROJECT_ID}"
-    --set-env-vars="${ENV_VARS}"
+    --env-vars-file="${ENV_FILE}"
     --quiet
   )
   if [[ -n "${SECRET_FLAGS:-}" ]]; then
     DEPLOY_ARGS+=(--update-secrets="${SECRET_FLAGS}")
   fi
   gcloud "${DEPLOY_ARGS[@]}"
+  rm -f "$ENV_FILE"
 
   URL="$(gcloud run services describe "${SERVICE_NAME}" \
     --region="${GCP_REGION}" \

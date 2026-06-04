@@ -27,6 +27,7 @@ That runs:
 |---------|----------------|
 | `./deploy.sh --bootstrap-only` | One-time GCP + GitHub deploy key only |
 | `./deploy.sh --deploy-only` | Build + deploy (skip bootstrap) |
+| `SKIP_BUILD=1 IMAGE_TAG=c9b0e15 ./deploy.sh --deploy-only` | Deploy an image already built by Cloud Build |
 | `./deploy.sh --github-secrets` | Show GitHub secret instructions |
 | `./deploy.sh --set-github-secrets` | Same + auto-set secrets via `gh` CLI |
 | `./deploy.sh --prepare` | Local build + tests only |
