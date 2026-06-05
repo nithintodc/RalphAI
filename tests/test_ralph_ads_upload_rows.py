@@ -13,7 +13,7 @@ from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows, slot_tab
 
 
 def test_slot_tag_monday_early_morning():
-    assert slot_table_row_to_schedule_tag({"day_of_week": "Monday", "daypart": "Early morning"}) == 1
+    assert slot_table_row_to_schedule_tag({"day_of_week": "Monday", "daypart": "Overnight"}) == 1
 
 
 def test_slot_tag_monday_breakfast():

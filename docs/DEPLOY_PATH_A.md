@@ -72,4 +72,8 @@ Workflow: `.github/workflows/deploy-ralphai.yml`
 | Super App 503 | Re-run `./deploy.sh --deploy-only` |
 | Rollback | Cloud Run → Revisions → previous revision |
 
+## Browser agents (Multilogin)
+
+DoorDash automation can use **Multilogin** profiles (already logged in). See [multilogin/README.md](../multilogin/README.md) and set `USE_MULTILOGIN=true` in `.env` on the machine running the API with the Multilogin app open.
+
 See also: [README.md](../README.md) deployment section.

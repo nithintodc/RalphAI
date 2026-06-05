@@ -1,0 +1,11 @@
+{
+  "folder_id": "289b34cb-e0e8-4128-adc9-855b8406f1f3",
+  "total_profiles_in_folder": 212,
+  "bulk_create_expected": 62,
+  "renamed_ok": 62,
+  "name_mismatch": 0,
+  "not_found": 0,
+  "copy_of_ahm_lake_count": 0,
+  "copy_of_ahm_lake_sample": [],
+  "mismatches": []
+}

@@ -1,6 +1,8 @@
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import ProcessingOverlay from '../ui/ProcessingOverlay';
 import { useConfigStore } from '../../stores/configStore';
+import { useDataStore } from '../../stores/dataStore';
 
 const SCREEN_META = {
   overview: { title: 'Overview', crumb: 'Dashboard' },
@@ -11,9 +13,11 @@ const SCREEN_META = {
   map: { title: 'Store Map', crumb: 'Operator stores · live from Airtable' },
   abComparison: { title: 'A/B Comparison', crumb: 'Tagged store groups' },
   storeDetail: { title: 'Store Detail', crumb: '' },
-  slots: { title: 'Slots & Heatmap', crumb: 'Time-of-day analysis' },
+  slots: { title: 'Slots', crumb: 'Pre/Post & YoY growth · ticket mix' },
+  days: { title: 'Days', crumb: 'Weekday customer mix & DashPass' },
+  daySlot: { title: 'Day-Slot', crumb: '42 rows · day × slot breakdown' },
   buckets: { title: 'Order Buckets', crumb: 'Ticket size distribution' },
-  marketing: { title: 'Marketing', crumb: 'Corp vs TODC · Pre / Post / YoY' },
+  marketing: { title: 'Marketing', crumb: 'Corp vs TODC · Campaigns' },
   operations: { title: 'Operations', crumb: 'Quality metrics' },
   productMix: { title: 'Product Mix', crumb: 'Item performance' },
   register: { title: 'Register', crumb: 'Layer 1 · store × day × slot · weekday avg' },
@@ -22,6 +26,8 @@ const SCREEN_META = {
 export default function Shell({ active, setActive, periodLabel, onExport, isExporting, children }) {
   const meta = SCREEN_META[active] || SCREEN_META.overview;
   const operatorName = useConfigStore((s) => s.operatorName) || 'Operator';
+  const isProcessing = useDataStore((s) => s.isProcessing);
+  const processingMessage = useDataStore((s) => s.processingMessage);
   const isMapView = active === 'map';
 
   return (
@@ -48,6 +54,7 @@ export default function Shell({ active, setActive, periodLabel, onExport, isExpo
           {children}
         </main>
       </div>
+      <ProcessingOverlay open={isProcessing} message={processingMessage} />
     </div>
   );
 }

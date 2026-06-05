@@ -27,12 +27,12 @@ COL_TXN_TYPE = "Transaction type"
 COL_BUSINESS = "Business name"
 
 DAY_PARTS = (
-    "Early morning",   # 00:00–05:59
-    "Breakfast",       # 06:00–10:59
-    "Lunch",           # 11:00–14:59
-    "Afternoon",       # 15:00–16:59
-    "Dinner",          # 17:00–21:59
-    "Late night",      # 22:00–23:59
+    "Overnight",   # 12:00 AM – 4:59 AM
+    "Breakfast",       # 5:00 AM – 10:59 AM
+    "Lunch",           # 11:00 AM – 1:59 PM
+    "Afternoon",       # 2:00 PM – 4:59 PM
+    "Dinner",          # 5:00 PM – 7:59 PM
+    "Late night",      # 8:00 PM – 11:59 PM
 )
 
 
@@ -60,15 +60,15 @@ def assign_day_part(hour: pd.Series) -> pd.Series:
     def one(hv: int) -> str:
         if hv < 0:
             return "Unknown"
-        if hv < 6:
+        if hv < 5:
             return DAY_PARTS[0]
         if hv < 11:
             return DAY_PARTS[1]
-        if hv < 15:
+        if hv < 14:
             return DAY_PARTS[2]
         if hv < 17:
             return DAY_PARTS[3]
-        if hv < 22:
+        if hv < 20:
             return DAY_PARTS[4]
         return DAY_PARTS[5]
 
@@ -130,25 +130,23 @@ def is_mktg_driven_order(mkt: float, disc: float) -> bool:
     return (m != 0.0) or (d != 0.0)
 
 
-def classify_order(mkt_fee: float, disc_vals: list[float]) -> str:
-    """
-    Classify an order into one of four buckets based on marketing financials.
+def classify_order(
+    mkt_fee: float,
+    disc_vals: list[float],
+    *,
+    mkt_hist: float | None = None,
+    ad_hist: float | None = None,
+) -> str:
+    """Returns one of: promo, ads, both, organic — see shared.dd_order_classification."""
+    from shared.dd_order_classification import classify_dd_order_from_discount_list
 
-    mkt_fee:   sum of Marketing fees for the order
-    disc_vals: list of sums for each marketing discount column present
-
-    Returns one of: "promo", "ads", "both", "organic"
-    """
-    has_mkt_fee = _finite_money(mkt_fee) != 0.0
-    any_disc = any(_finite_money(d) != 0.0 for d in disc_vals)
-
-    if any_disc and has_mkt_fee:
-        return "both"
-    if any_disc:
-        return "promo"
-    if has_mkt_fee:
-        return "ads"
-    return "organic"
+    return classify_dd_order_from_discount_list(
+        mkt_fee,
+        disc_vals,
+        mkt_hist=mkt_hist,
+        ad_hist=ad_hist,
+        both_label="both",
+    )
 
 
 def load_and_prepare(
@@ -172,9 +170,13 @@ def load_and_prepare(
     )
 
     mkt_discount_cols_present = [c for c in MKT_DISCOUNT_COLS if c in df.columns]
+    from shared.dd_order_classification import AD_FEE_HIST_COL, MKT_FEE_HIST_COL
+
+    mkt_hist_col = MKT_FEE_HIST_COL if MKT_FEE_HIST_COL in df.columns else None
+    ad_hist_col = AD_FEE_HIST_COL if AD_FEE_HIST_COL in df.columns else None
 
     oid_col = _find_col(df, COL_ORDER_ID)
-    time_col = _find_col(df, COL_ORDER_TIME, "Timestamp local time")
+    time_col = _find_col(df, COL_ORDER_TIME)
     txn_col = _find_col(df, COL_TXN_TYPE)
 
     business_col = COL_BUSINESS if COL_BUSINESS in df.columns else None
@@ -182,6 +184,12 @@ def load_and_prepare(
     orders = df.loc[df[txn_col].astype(str).str.strip().eq("Order")].copy()
     if orders.empty:
         raise ValueError("No rows with Transaction type == 'Order'.")
+
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    orders = drop_rows_without_order_time(orders, time_col)
+    if orders.empty:
+        raise ValueError(f"No Order rows with non-null {COL_ORDER_TIME!r}.")
 
     agg_dict = {
         sub_col: "sum",
@@ -193,6 +201,10 @@ def load_and_prepare(
     for dc in mkt_discount_cols_present:
         if dc not in agg_dict:
             agg_dict[dc] = "sum"
+    if mkt_hist_col:
+        agg_dict[mkt_hist_col] = "sum"
+    if ad_hist_col:
+        agg_dict[ad_hist_col] = "sum"
 
     g = (
         orders.groupby([store_col, oid_col], dropna=False, as_index=False)
@@ -233,13 +245,23 @@ def load_and_prepare(
 
     if mkt_discount_cols_present:
         g["_order_class"] = [
-            classify_order(mkt, [row[c] for c in mkt_discount_cols_present])
+            classify_order(
+                mkt,
+                [row[c] for c in mkt_discount_cols_present],
+                mkt_hist=row[mkt_hist_col] if mkt_hist_col else None,
+                ad_hist=row[ad_hist_col] if ad_hist_col else None,
+            )
             for mkt, (_, row) in zip(g["_mkt"], g[mkt_discount_cols_present].iterrows())
         ]
     else:
         g["_order_class"] = [
-            classify_order(mkt, [disc])
-            for mkt, disc in zip(g["_mkt"], g["_disc"])
+            classify_order(
+                mkt,
+                [disc],
+                mkt_hist=row[mkt_hist_col] if mkt_hist_col else None,
+                ad_hist=row[ad_hist_col] if ad_hist_col else None,
+            )
+            for mkt, disc, (_, row) in zip(g["_mkt"], g["_disc"], g.iterrows())
         ]
 
     g["_gc"] = g["_subtotal"].map(gc_bucket)

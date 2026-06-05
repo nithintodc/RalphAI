@@ -2,10 +2,12 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Download, Filter, Calendar, X, Search, RotateCw } from 'lucide-react';
 import { useConfigStore } from '../../stores/configStore';
 import { useDataStore } from '../../stores/dataStore';
+import { STORE_TAG_LABELS } from '../../lib/export/exportSheetSummaries';
 import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
 import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';
 import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
 import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
+import { buildAnalysisScope, applyStoreTableScope, buildScopedExcludedStores } from '../../lib/utils/abStoreFilter';
 import DateFilterDropdown from './DateFilterDropdown';
 import PlatformLogo from '../ui/PlatformLogo';
 
@@ -267,21 +269,28 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
     ? `${ddActiveCount} · ${ueActiveCount} stores`
     : `${activeStoreCount} stores`;
 
-  const reanalyze = useCallback(() => {
-    dataStore.setProcessing(true);
-    setTimeout(() => {
+  const reanalyze = useCallback((message = 'Updating analysis…') => {
+    dataStore.setProcessing(true, message);
+    window.setTimeout(() => {
       try {
+        const latestConfig = useConfigStore.getState();
+        const scope = buildAnalysisScope(latestConfig);
+        const scopeDdExcluded = buildScopedExcludedStores(allDdStores, 'dd', scope);
+        const scopeUeExcluded = buildScopedExcludedStores(allUeStores, 'ue', scope);
+        const ddExcludedStores = [...new Set([...(latestConfig.ddExcludedStores || []), ...scopeDdExcluded])];
+        const ueExcludedStores = [...new Set([...(latestConfig.ueExcludedStores || []), ...scopeUeExcluded])];
+
         const ddConfig = {
-          preStart: config.ddPreStart, preEnd: config.ddPreEnd,
-          postStart: config.ddPostStart, postEnd: config.ddPostEnd,
-          excludedDates: config.ddExcludedDates,
-          excludedStores: config.ddExcludedStores,
+          preStart: latestConfig.ddPreStart, preEnd: latestConfig.ddPreEnd,
+          postStart: latestConfig.ddPostStart, postEnd: latestConfig.ddPostEnd,
+          excludedDates: latestConfig.ddExcludedDates,
+          excludedStores: ddExcludedStores,
         };
         const ueConfig = {
-          preStart: config.uePreStart, preEnd: config.uePreEnd,
-          postStart: config.uePostStart, postEnd: config.uePostEnd,
-          excludedDates: config.ueExcludedDates,
-          excludedStores: config.ueExcludedStores,
+          preStart: latestConfig.uePreStart, preEnd: latestConfig.uePreEnd,
+          postStart: latestConfig.uePostStart, postEnd: latestConfig.uePostEnd,
+          excludedDates: latestConfig.ueExcludedDates,
+          excludedStores: ueExcludedStores,
         };
 
         let ddStore = [];
@@ -296,17 +305,22 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
           ueStore = addDerivedMetrics(ueStore);
         }
 
-        const combined = buildCombinedStoreTables(ddStore, ueStore, config.ddToUeStoreMap || {});
-        const summaries = buildSummaryTables(ddStore, ueStore);
+        let storeTables = {
+          dd: ddStore,
+          ue: ueStore,
+          combined: buildCombinedStoreTables(ddStore, ueStore, latestConfig.ddToUeStoreMap || {}),
+        };
+        storeTables = applyStoreTableScope(storeTables, scope);
+        const summaries = buildSummaryTables(storeTables.dd, storeTables.ue);
 
-        dataStore.setStoreTables({ dd: ddStore, ue: ueStore, combined });
+        dataStore.setStoreTables(storeTables);
         dataStore.setSummaryTables(summaries);
       } catch (err) {
         console.error('Re-analysis error:', err);
       }
       dataStore.setProcessing(false);
     }, 50);
-  }, [config, dataStore]);
+  }, [dataStore, allDdStores, allUeStores]);
 
   return (
     <div className="sticky top-0 z-20 flex items-center gap-3 h-14 px-5 bg-[var(--surface)] border-b border-[var(--border)] min-w-0 overflow-x-hidden">
@@ -388,6 +402,36 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
           />
         )}
       </div>
+
+      {/* A/B group scope */}
+      {Object.keys(config.storeTagMap || {}).length > 0 && (
+        <div className="flex items-center rounded-lg border border-[var(--border)] p-0.5 bg-[var(--surface-2)]">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'A', label: STORE_TAG_LABELS.A },
+            { id: 'B', label: STORE_TAG_LABELS.B },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                if (config.abGroupFilter === opt.id) return;
+                config.setAbGroupFilter(opt.id);
+                const label = opt.id === 'all' ? 'All stores' : STORE_TAG_LABELS[opt.id] || `Group ${opt.id}`;
+                reanalyze(`Applying ${label}…`);
+              }}
+              disabled={dataStore.isProcessing}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors
+                ${dataStore.isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                ${(config.abGroupFilter || 'all') === opt.id
+                  ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="w-px h-5 bg-[var(--border)]" />
 

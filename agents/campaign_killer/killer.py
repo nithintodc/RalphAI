@@ -13,7 +13,12 @@ from playwright.async_api import Browser, BrowserContext, Frame, Locator, Page, 
 log = logging.getLogger(__name__)
 
 # Same entry as Reporting `agents/doordash_agent.py` (get_task_description_reports_only / login_task).
-MERCHANT_LOGIN_URL = "https://merchant-portal.doordash.com/merchant/login"
+from shared.doordash_portal_tasks import (
+    MERCHANT_LOGIN_URL,
+    MERCHANT_REPORTS_URL,
+    resolve_doordash_credentials,
+)
+
 CAMPAIGNS_URL = "https://merchant-portal.doordash.com/merchant/marketing/campaigns"
 
 TIMEOUT_NAV = 90_000
@@ -240,12 +245,23 @@ async def _login(page: Page, email: str, password: str) -> bool:
     3) Password → 'Log In'
     4) Wait for dashboard (URL may be doordash.com/merchant/summary, not merchant-portal).
     """
-    log.info("Opening Merchant login URL (Reporting flow)…")
+    log.info("Opening Merchant Reports URL (login only if needed)…")
+    try:
+        await page.goto(MERCHANT_REPORTS_URL, wait_until="domcontentloaded", timeout=TIMEOUT_NAV)
+    except Exception:
+        await page.goto(MERCHANT_REPORTS_URL, wait_until="load", timeout=TIMEOUT_NAV)
+
+    await page.wait_for_timeout(2000)
+
+    if _url_looks_logged_in(page.url) or "merchant/reports" in page.url.lower():
+        log.info("Already on merchant portal / Reports; skipping login.")
+        return True
+
+    log.info("Not on Reports — opening login URL…")
     try:
         await page.goto(MERCHANT_LOGIN_URL, wait_until="domcontentloaded", timeout=TIMEOUT_NAV)
     except Exception:
         await page.goto(MERCHANT_LOGIN_URL, wait_until="load", timeout=TIMEOUT_NAV)
-
     await page.wait_for_timeout(2000)
 
     if _url_looks_logged_in(page.url):
@@ -922,6 +938,14 @@ async def kill_campaigns_for_operator(
     end each **TODC-*** row via ⋮ → End campaign → Yes, end → Technical issue → End campaign.
     Launches and closes its own browser instance.
     """
+    try:
+        email, password = resolve_doordash_credentials(email, password, operator_name=operator_id)
+    except ValueError as exc:
+        result = KillResult(operator_id=operator_id or email, email=email)
+        result.status = "login_failed"
+        result.errors.append(str(exc))
+        return result
+
     result = KillResult(operator_id=operator_id or email, email=email)
 
     async with async_playwright() as pw:

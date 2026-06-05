@@ -18,7 +18,7 @@ try:
 except ImportError:
     pd = None
 
-SLOT_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+SLOT_ORDER = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 
 def _find_financial_detailed_in_zip(zip_path: Path) -> Optional[str]:
@@ -42,34 +42,15 @@ def _extract_financial_detailed_csv(zip_path: Path, output_dir: Path) -> Optiona
 
 
 def _get_time_slot(time_str) -> Optional[str]:
-    # Slot boundaries (minutes from midnight):
-    #   Early morning:  0:00 – 4:59   (0   – 299)
-    #   Breakfast:      5:00 – 10:59  (300 – 659)
-    #   Lunch:         11:00 – 13:59  (660 – 839)
-    #   Afternoon:     14:00 – 15:59  (840 – 959)
-    #   Dinner:        16:00 – 19:59  (960 – 1199)
-    #   Late night:    20:00 – 23:59  (1200+)
-    if pd.isna(time_str) or time_str == "":
-        return None
-    try:
-        time_obj = pd.to_datetime(time_str, errors="coerce")
-        if pd.isna(time_obj):
-            return None
-        total_minutes = time_obj.hour * 60 + time_obj.minute
-        if total_minutes < 300:
-            return "Early morning"
-        if total_minutes < 660:
-            return "Breakfast"
-        if total_minutes < 840:
-            return "Lunch"
-        if total_minutes < 960:
-            return "Afternoon"
-        if total_minutes < 1200:
-            return "Dinner"
-        return "Late night"
-    except Exception:
-        pass
-    return None
+    from shared.time_slots import slot_from_datetime
+
+    return slot_from_datetime(time_str)
+
+
+def _orders_with_time(df: pd.DataFrame, time_col: str) -> pd.DataFrame:
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    return drop_rows_without_order_time(df, time_col)
 
 
 def _resolve_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -79,11 +60,9 @@ def _resolve_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Op
         if c in df.columns:
             date_col = c
             break
-    time_col = None
-    for c in ["Timestamp local time", "Timestamp Local Time", "Order received local time"]:
-        if c in df.columns:
-            time_col = c
-            break
+    from shared.order_time_columns import find_financial_order_time_column
+
+    time_col = find_financial_order_time_column(df)
     subtotal_col = "Subtotal" if "Subtotal" in df.columns else None
     payout_col = None
     if "Net total" in df.columns:
@@ -181,7 +160,9 @@ def _build_day_of_week(df: pd.DataFrame, date_col: str, subtotal_col: str, payou
 
 def _build_slot_based(df: pd.DataFrame, time_col: str, subtotal_col: str, payout_col: str, order_col: str) -> pd.DataFrame:
     """Slot-based: per slot Sales, Payouts, Profitability, Orders, AOV."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df["_slot"] = df[time_col].apply(_get_time_slot)
     df = df.dropna(subset=["_slot"])
     df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
@@ -201,7 +182,9 @@ def _build_slot_based(df: pd.DataFrame, time_col: str, subtotal_col: str, payout
 
 def _build_day_slot(df: pd.DataFrame, date_col: str, time_col: str, subtotal_col: str, payout_col: str, order_col: str) -> pd.DataFrame:
     """Day-Slot: Day, Slot, Sales, Payouts, Profitability, Orders, AOV, uplift, Min.Subtotal, campaign recommendation. Sorted by Day then Slot."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col])
     df["_day"] = df[date_col].dt.day_name()
@@ -238,7 +221,9 @@ def _build_store_slot_agg(
     order_col: Optional[str],
 ) -> pd.DataFrame:
     """Aggregate by Merchant Store ID and Slot; columns Merchant Store ID, Slot, Sales, Payouts, Orders, Profitability, AOV."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df["_slot"] = df[time_col].apply(_get_time_slot)
     df = df.dropna(subset=["_slot"])
     df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
@@ -264,7 +249,9 @@ def _build_day_slot_store_agg(
     order_col: Optional[str],
 ) -> pd.DataFrame:
     """Aggregate by Day-Slot and Merchant Store ID; columns Day-Slot, Merchant Store ID, Sales, Payouts, Orders, Profitability, AOV."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col])
     df["_day"] = df[date_col].dt.day_name()

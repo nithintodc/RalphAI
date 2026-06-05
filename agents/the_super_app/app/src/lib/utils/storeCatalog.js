@@ -52,7 +52,8 @@ function bestUeMatchByName(ddName, ueCatalog, usedUeIds) {
 
 function formatUeOptionLabel(store) {
   if (!store) return '';
-  return store.name !== '—' ? `${store.name} (${store.id})` : store.id;
+  if (store.name !== '—' && store.name !== store.id) return `${store.name} (${store.id})`;
+  return store.id;
 }
 
 /** Map DoorDash store ID → merchant store ID (register, product mix, marketing). */
@@ -153,7 +154,7 @@ export function buildSuggestedMapRows(ddCatalog, ueCatalog, savedMap = {}, saved
     }
 
     const ueStore = ueById.get(ueId);
-    const canonStoreId = ueId || d.id;
+    const canonStoreId = d.id || ueId;
     return {
       ddId: d.id,
       merchantStoreId: d.merchantStoreId ?? d.id,
@@ -183,7 +184,7 @@ export function mapRowsToTagMap(rows) {
   for (const row of rows || []) {
     const tag = String(row.tag ?? '').trim();
     if (!tag) continue;
-    const canonId = String(row.ueId || row.ddId || '').trim();
+    const canonId = String(row.ddId || row.ueId || '').trim();
     if (!canonId) continue;
     out[canonId] = tag;
   }

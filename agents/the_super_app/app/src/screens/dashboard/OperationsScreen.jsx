@@ -3,34 +3,186 @@ import { useDataStore } from '../../stores/dataStore';
 import SplitDataTable from '../../components/ui/SplitDataTable';
 import MatrixPivotTable from '../../components/ui/MatrixPivotTable';
 import { fmt } from '../../lib/utils/formatters';
+import { heatBackground, minMaxNumeric } from '../../lib/utils/heatmap';
 import {
   pivotDowntimeByStore,
   pivotDowntimeByDimension,
   pivotCountByStore,
-  pivotStoreByDatePeriod,
   pickCategoryColumn,
   pickStoreColumn,
   inferCategoricalColumns,
-  discoverDowntimePivotCatalog,
-  discoverCountPivotCatalog,
+  formatDurationDHM,
+  pivotStoreReasonMatrix,
+  pivotTopDatesPerStore,
 } from '../../lib/utils/opsProductPivot';
 
 function cols(rows) {
   return rows?.[0] ? Object.keys(rows[0]) : [];
 }
 
-const dhmCols = [
-  { key: 'label', label: 'Bucket', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
-  { key: 'days', label: 'Days', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-  { key: 'hours', label: 'Hours', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-  { key: 'minutes', label: 'Minutes', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-  { key: 'totalMinutes', label: 'Total (min)', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-  { key: 'lineCount', label: 'Rows', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-];
+function mapDurationRows(rows, labelKey = 'store') {
+  return (rows || []).map((r) => ({
+    ...r,
+    duration: formatDurationDHM(r.totalMinutes),
+    label: r[labelKey] ?? r.label,
+  }));
+}
+
+function durationCols(label = 'Store', labelKey = 'store') {
+  return [
+    {
+      key: labelKey,
+      label,
+      sortable: true,
+      labelCol: true,
+      render: (v) => <span className="font-medium">{v}</span>,
+    },
+    {
+      key: 'duration',
+      label: 'Downtime',
+      align: 'right',
+      sortable: true,
+      heatKey: 'totalMinutes',
+      render: (v) => v || '—',
+    },
+  ];
+}
+
+function bucketDurationCols(heatMin, heatMax) {
+  return [
+    {
+      key: 'label',
+      label: 'Category',
+      sortable: true,
+      labelCol: true,
+      render: (v) => <span className="font-medium">{v}</span>,
+    },
+    {
+      key: 'duration',
+      label: 'Downtime',
+      align: 'right',
+      sortable: true,
+      render: (v, row) => (
+        <span
+          className="block -mx-2 px-2 py-0.5 rounded-sm"
+          style={{ backgroundColor: heatBackground(row.totalMinutes, heatMin, heatMax) }}
+        >
+          {v || '—'}
+        </span>
+      ),
+    },
+  ];
+}
+
+function topDateCols({ valueKind, heatMin, heatMax, metricFormat }) {
+  const valueLabel = valueKind === 'duration' ? 'Downtime' : 'Count';
+  return [
+    {
+      key: 'store',
+      label: 'Store',
+      sortable: true,
+      labelCol: true,
+      render: (v) => <span className="font-medium">{v}</span>,
+    },
+    { key: 'date', label: 'Date', sortable: true, wrap: true },
+    {
+      key: 'display',
+      label: valueLabel,
+      align: 'right',
+      sortable: true,
+      render: (v, row) => {
+        const bg = heatBackground(row.total, heatMin, heatMax);
+        const text = valueKind === 'duration' ? v : (metricFormat ? metricFormat(v) : fmt.int(v));
+        return (
+          <span className="block -mx-2 px-2 py-0.5 rounded-sm" style={{ backgroundColor: bg }}>
+            {text}
+          </span>
+        );
+      },
+    },
+  ];
+}
+
+function countStoreCols(heatMin, heatMax) {
+  return [
+    {
+      key: 'store',
+      label: 'Store',
+      sortable: true,
+      labelCol: true,
+      render: (v) => <span className="font-medium">{v}</span>,
+    },
+    {
+      key: 'rowCount',
+      label: 'Count',
+      align: 'right',
+      sortable: true,
+      render: (v) => {
+        const n = Number(v) || 0;
+        return (
+          <span
+            className="block -mx-2 px-2 py-0.5 rounded-sm"
+            style={{ backgroundColor: heatBackground(n, heatMin, heatMax) }}
+          >
+            {fmt.int(n)}
+          </span>
+        );
+      },
+    },
+  ];
+}
+
+function OpsSection({ title, subtitle, children }) {
+  return (
+    <section className="space-y-2">
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--text)]">{title}</h3>
+        {subtitle ? <p className="text-xs text-[var(--text-subtle)] mt-0.5">{subtitle}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ReasonMatrix({ matrix, title, subtitle, formatCell }) {
+  if (!matrix?.rowKeys?.length || !matrix?.colKeys?.length) return null;
+  return (
+    <OpsSection title={title} subtitle={subtitle}>
+      <MatrixPivotTable
+        rowHeaderLabel="Store"
+        rowKeys={matrix.rowKeys}
+        colKeys={matrix.colKeys}
+        matrix={matrix.matrix}
+        formatCell={formatCell}
+        splitColumns={false}
+        heatmap
+        maxHeight="min(52vh, 460px)"
+      />
+    </OpsSection>
+  );
+}
+
+function TopDatesTable({ pivot, title, subtitle, valueKind, metricFormat }) {
+  if (!pivot?.rows?.length) return null;
+  const totals = pivot.rows.map((r) => r.total);
+  const { min, max } = minMaxNumeric(totals);
+  return (
+    <OpsSection title={title} subtitle={subtitle}>
+      <SplitDataTable
+        columns={topDateCols({ valueKind, heatMin: min, heatMax: max, metricFormat })}
+        data={pivot.rows}
+        maxHeight="min(440px, 48vh)"
+        layout="tight"
+        dense
+        split={false}
+        allowHorizontalScroll
+      />
+    </OpsSection>
+  );
+}
 
 export default function OperationsScreen() {
   const { ddOps } = useDataStore();
-
   const hasData = ddOps.byOrder || ddOps.byStore || ddOps.byTime;
 
   const downtimeRows = ddOps.byStore?.downtime?.data;
@@ -51,43 +203,56 @@ export default function OperationsScreen() {
     return inferred[0]?.col ?? null;
   }, [downtimeColumns, downtimeRows, storeColEarly]);
 
-  const downtimeCatalog = useMemo(
-    () => discoverDowntimePivotCatalog(downtimeRows || [], downtimeColumns, { maxMatrixCols: 20, maxMatrices: 14 }),
-    [downtimeRows, downtimeColumns],
-  );
-
   const downtimeByCategory = useMemo(() => {
     if (!downtimeRows?.length || !categoryCol) return null;
     return pivotDowntimeByDimension(downtimeRows, downtimeColumns, categoryCol);
   }, [downtimeRows, downtimeColumns, categoryCol]);
 
+  const downtimeStoreReason = useMemo(
+    () => pivotStoreReasonMatrix(downtimeRows || [], downtimeColumns, { valueKind: 'duration', maxReasonCols: 10 }),
+    [downtimeRows, downtimeColumns],
+  );
+
+  const downtimeTopDates = useMemo(
+    () => pivotTopDatesPerStore(downtimeRows || [], downtimeColumns, { topPerStore: 5, valueKind: 'duration' }),
+    [downtimeRows, downtimeColumns],
+  );
+
   const cancelRows = ddOps.byStore?.cancellations?.data;
   const cancelCols = useMemo(() => cols(cancelRows), [cancelRows]);
   const cancelPivot = useMemo(() => pivotCountByStore(cancelRows || [], cancelCols), [cancelRows, cancelCols]);
-  const cancelPivotCatalog = useMemo(
-    () => discoverCountPivotCatalog(cancelRows || [], cancelCols, { maxMatrices: 6, maxMatrixCols: 16 }),
+  const cancelStoreReason = useMemo(
+    () => pivotStoreReasonMatrix(cancelRows || [], cancelCols, { valueKind: 'count', maxReasonCols: 10 }),
+    [cancelRows, cancelCols],
+  );
+  const cancelTopDates = useMemo(
+    () => pivotTopDatesPerStore(cancelRows || [], cancelCols, { topPerStore: 5, valueKind: 'count' }),
     [cancelRows, cancelCols],
   );
 
   const missRows = ddOps.byStore?.missingIncorrect?.data;
   const missCols = useMemo(() => cols(missRows), [missRows]);
   const missPivot = useMemo(() => pivotCountByStore(missRows || [], missCols), [missRows, missCols]);
-  const missPivotCatalog = useMemo(
-    () => discoverCountPivotCatalog(missRows || [], missCols, { maxMatrices: 6, maxMatrixCols: 16 }),
+  const missStoreReason = useMemo(
+    () => pivotStoreReasonMatrix(missRows || [], missCols, { valueKind: 'count', maxReasonCols: 10 }),
+    [missRows, missCols],
+  );
+  const missTopDates = useMemo(
+    () => pivotTopDatesPerStore(missRows || [], missCols, { topPerStore: 5, valueKind: 'count' }),
     [missRows, missCols],
   );
 
   const timeAggRows = ddOps.byTime?.aggregate?.data;
   const timeAggCols = useMemo(() => cols(timeAggRows), [timeAggRows]);
-  const timePivot = useMemo(
-    () => pivotStoreByDatePeriod(timeAggRows || [], timeAggCols, { maxCols: 36 }),
+  const timeTopDates = useMemo(
+    () => pivotTopDatesPerStore(timeAggRows || [], timeAggCols, { topPerStore: 5, valueKind: 'metric' }),
     [timeAggRows, timeAggCols],
   );
 
   const timeByStoreRows = ddOps.byTime?.byStore?.data;
   const timeByStoreCols = useMemo(() => cols(timeByStoreRows), [timeByStoreRows]);
-  const timeByStorePivot = useMemo(
-    () => pivotStoreByDatePeriod(timeByStoreRows || [], timeByStoreCols, { maxCols: 28 }),
+  const timeByStoreTopDates = useMemo(
+    () => pivotTopDatesPerStore(timeByStoreRows || [], timeByStoreCols, { topPerStore: 5, valueKind: 'metric' }),
     [timeByStoreRows, timeByStoreCols],
   );
 
@@ -100,20 +265,39 @@ export default function OperationsScreen() {
       ['Missing / incorrect', bo.missingIncorrect],
     ]
       .filter(([, s]) => s?.data?.length)
-      .map(([label, s]) => ({
-        label,
-        rows: s.data,
-        pivot: pivotCountByStore(s.data, cols(s.data)),
-        countCatalog: discoverCountPivotCatalog(s.data, cols(s.data), { maxMatrices: 5, maxMatrixCols: 14 }),
-      }));
+      .map(([label, s]) => {
+        const c = cols(s.data);
+        return {
+          label,
+          rows: s.data,
+          pivot: pivotCountByStore(s.data, c),
+          storeReason: pivotStoreReasonMatrix(s.data, c, { valueKind: 'count', maxReasonCols: 10 }),
+          topDates: pivotTopDatesPerStore(s.data, c, { topPerStore: 5, valueKind: 'count' }),
+        };
+      });
   }, [ddOps.byOrder]);
 
-  const extraOneWay = useMemo(
-    () =>
-      downtimeCatalog.oneWay.filter(
-        (o) => o.dimCol !== downtimePivot.storeCol && o.dimCol !== categoryCol,
-      ),
-    [downtimeCatalog.oneWay, downtimePivot.storeCol, categoryCol],
+  const downtimeStoreRows = useMemo(() => mapDurationRows(downtimePivot.rows), [downtimePivot.rows]);
+  const downtimeCategoryRows = useMemo(() => {
+    const rows = mapDurationRows(downtimeByCategory?.rows || [], 'label');
+    return rows;
+  }, [downtimeByCategory]);
+
+  const downtimeStoreHeat = useMemo(
+    () => minMaxNumeric(downtimeStoreRows.map((r) => r.totalMinutes)),
+    [downtimeStoreRows],
+  );
+  const downtimeCategoryHeat = useMemo(
+    () => minMaxNumeric(downtimeCategoryRows.map((r) => r.totalMinutes)),
+    [downtimeCategoryRows],
+  );
+  const cancelHeat = useMemo(
+    () => minMaxNumeric((cancelPivot.rows || []).map((r) => Number(r.rowCount) || 0)),
+    [cancelPivot.rows],
+  );
+  const missHeat = useMemo(
+    () => minMaxNumeric((missPivot.rows || []).map((r) => Number(r.rowCount) || 0)),
+    [missPivot.rows],
   );
 
   if (!hasData) {
@@ -124,20 +308,6 @@ export default function OperationsScreen() {
       </div>
     );
   }
-
-  const downtimeTableCols = [
-    { key: 'store', label: 'Store', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
-    { key: 'days', label: 'Days', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-    { key: 'hours', label: 'Hours', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-    { key: 'minutes', label: 'Minutes', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-    { key: 'totalMinutes', label: 'Total (min)', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-    { key: 'lineCount', label: 'Rows', align: 'right', sortable: true, render: (v) => fmt.int(v ?? 0) },
-  ];
-
-  const countCols = [
-    { key: 'store', label: 'Store', sortable: true, labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
-    { key: 'rowCount', label: 'Count', align: 'right', sortable: true, render: (v) => fmt.int(Number(v) || 0) },
-  ];
 
   const metricFormat = (valueCol) => {
     const name = String(valueCol || '').toLowerCase();
@@ -152,267 +322,197 @@ export default function OperationsScreen() {
     };
   };
 
-  const minuteFmt = (v) => (v == null || v === 0 ? '—' : fmt.int(Math.round(v)));
+  const downtimeStoreTableCols = durationCols('Store', 'store').map((col) => {
+    if (col.key !== 'duration') return col;
+    return {
+      ...col,
+      render: (v, row) => (
+        <span
+          className="block -mx-2 px-2 py-0.5 rounded-sm"
+          style={{ backgroundColor: heatBackground(row.totalMinutes, downtimeStoreHeat.min, downtimeStoreHeat.max) }}
+        >
+          {v || '—'}
+        </span>
+      ),
+    };
+  });
+
+  const durationMatrixFmt = (v) => (v == null || v === 0 ? '—' : formatDurationDHM(v));
+  const countMatrixFmt = (v) => (v == null || v === 0 ? '—' : fmt.int(v));
 
   return (
     <div className="space-y-8 max-w-full min-w-0 overflow-x-hidden">
-      {downtimePivot.rows.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Downtime by store</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              Durations converted to total minutes, then split into{' '}
-              <span className="font-medium text-[var(--text-muted)]">days · hours · minutes</span>
-              {downtimePivot.downtimeCols?.length ? (
-                <>
-                  {' '}
-                  · summed columns: {downtimePivot.downtimeCols.join(', ')}
-                </>
-              ) : null}
-              {downtimePivot.storeCol ? (
-                <>
-                  {' '}
-                  · store field: <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{downtimePivot.storeCol}</code>
-                </>
-              ) : null}
-            </p>
-          </div>
-          <SplitDataTable columns={downtimeTableCols} data={downtimePivot.rows} maxHeight="min(480px, 55vh)" layout="tight" dense />
-        </section>
+      {downtimeStoreRows.length > 0 && (
+        <OpsSection
+          title="Downtime by store"
+          subtitle={
+            <>
+              Total downtime per store
+              {downtimePivot.downtimeCols?.length ? ` · summed: ${downtimePivot.downtimeCols.join(', ')}` : ''}
+            </>
+          }
+        >
+          <SplitDataTable
+            columns={downtimeStoreTableCols}
+            data={downtimeStoreRows}
+            maxHeight="min(480px, 55vh)"
+            layout="tight"
+            dense
+            split={false}
+          />
+        </OpsSection>
       )}
 
-      {downtimeByCategory?.rows?.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Downtime by category</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              Grouped by <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{downtimeByCategory.dimCol}</code>
-              {downtimeByCategory.downtimeCols?.length ? (
-                <> · same duration fields as store view: {downtimeByCategory.downtimeCols.join(', ')}</>
-              ) : null}
-            </p>
-          </div>
-          <SplitDataTable columns={dhmCols} data={downtimeByCategory.rows} maxHeight="min(440px, 50vh)" layout="tight" dense />
-        </section>
+      {downtimeCategoryRows.length > 0 && (
+        <OpsSection
+          title="Downtime by category"
+          subtitle={<>Grouped by {categoryCol}</>}
+        >
+          <SplitDataTable
+            columns={bucketDurationCols(downtimeCategoryHeat.min, downtimeCategoryHeat.max)}
+            data={downtimeCategoryRows}
+            maxHeight="min(440px, 50vh)"
+            layout="tight"
+            dense
+            split={false}
+          />
+        </OpsSection>
       )}
 
-      {downtimeCatalog.catalogLines.length > 0 && (
-        <details className="card p-4" open>
-          <summary className="text-sm font-semibold text-[var(--text)] cursor-pointer">
-            All discovered downtime pivots
-          </summary>
-          <p className="text-[11px] text-[var(--text-subtle)] mt-2 mb-3">
-            Built from your CSV headers: dimensions include store, matched category/type/reason-style fields, dates, and other
-            medium-cardinality columns. Matrices sum the same downtime minutes as the tables above.
-          </p>
-          <ul className="text-xs text-[var(--text-muted)] space-y-1 mb-4 list-disc pl-4">
-            {downtimeCatalog.catalogLines.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
+      <ReasonMatrix
+        matrix={downtimeStoreReason}
+        title="Downtime by store × reason"
+        subtitle={
+          downtimeStoreReason
+            ? `Stores in rows · reasons in columns (${downtimeStoreReason.reasonCol}) · darker = more downtime`
+            : null
+        }
+        formatCell={durationMatrixFmt}
+      />
 
-          {extraOneWay.map((block) => (
-            <div key={block.dimCol} className="mb-6 last:mb-0">
-              <h4 className="text-xs font-semibold text-[var(--text)] mb-2">{block.title}</h4>
-              <SplitDataTable columns={dhmCols} data={block.rows} maxHeight="min(360px, 42vh)" layout="tight" dense />
-            </div>
-          ))}
-
-          {downtimeCatalog.matrices
-            .filter((m) => !/store.*×.*store|store\s*name.*×.*store/i.test(m.title))
-            .map((m) => (
-            <div key={`${m.rowDim}|${m.colDim}`} className="mb-6 last:mb-0">
-              <h4 className="text-xs font-semibold text-[var(--text)] mb-2">{m.title}</h4>
-              <p className="text-[10px] text-[var(--text-subtle)] mb-1">
-                Rows: {m.rowDim} · Cols: {m.colDim}
-                {m.colMode === 'chrono' ? ' · columns in time order' : ' · top columns + Other'}
-              </p>
-              <MatrixPivotTable
-                rowHeaderLabel={m.rowDim}
-                rowKeys={m.rowKeys}
-                colKeys={m.colKeys}
-                matrix={m.matrix}
-                formatCell={minuteFmt}
-                maxHeight="min(56vh, 520px)"
-              />
-            </div>
-          ))}
-        </details>
-      )}
+      <TopDatesTable
+        pivot={downtimeTopDates}
+        title="Top downtime dates by store"
+        subtitle="Up to 5 highest-downtime dates per store (not a full date matrix)"
+        valueKind="duration"
+      />
 
       {cancelPivot.rows.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Cancellations by store</h3>
-            {cancelPivot.sumCol ? (
-              <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-                Totals sum <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{cancelPivot.sumCol}</code> per store
-                (aggregated export). Store column:{' '}
-                <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{cancelPivot.storeCol}</code>.
-              </p>
-            ) : (
-              <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-                One row = one cancellation event · store:{' '}
-                <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{cancelPivot.storeCol}</code>
-              </p>
-            )}
-          </div>
-          <SplitDataTable columns={countCols} data={cancelPivot.rows} maxHeight="400px" layout="tight" dense />
-        </section>
+        <OpsSection
+          title="Cancellations by store"
+          subtitle={
+            cancelPivot.sumCol
+              ? `Totals sum ${cancelPivot.sumCol} per store`
+              : 'One row = one cancellation event'
+          }
+        >
+          <SplitDataTable
+            columns={countStoreCols(cancelHeat.min, cancelHeat.max)}
+            data={cancelPivot.rows}
+            maxHeight="400px"
+            layout="tight"
+            dense
+            split={false}
+          />
+        </OpsSection>
       )}
 
-      {(cancelPivotCatalog.matrices.length > 0 || cancelPivotCatalog.catalogLines.length > 0) && (
-        <details className="card p-4">
-          <summary className="text-sm font-semibold text-[var(--text)] cursor-pointer">
-            Cancellations — extra count pivots
-          </summary>
-          <ul className="text-xs text-[var(--text-muted)] space-y-1 mt-2 mb-3 list-disc pl-4">
-            {cancelPivotCatalog.catalogLines.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-          {cancelPivotCatalog.matrices.map((m) => (
-            <div key={`can-${m.rowDim}|${m.colDim}`} className="mb-6 last:mb-0">
-              <h4 className="text-xs font-semibold text-[var(--text)] mb-2">{m.title}</h4>
-              <MatrixPivotTable
-                rowHeaderLabel={m.rowDim}
-                rowKeys={m.rowKeys}
-                colKeys={m.colKeys}
-                matrix={m.matrix}
-                formatCell={(v) => (v == null || v === 0 ? '—' : fmt.int(v))}
-                maxHeight="min(48vh, 440px)"
-              />
-            </div>
-          ))}
-        </details>
-      )}
+      <ReasonMatrix
+        matrix={cancelStoreReason}
+        title="Cancellations by store × reason"
+        subtitle={cancelStoreReason ? `Reason field: ${cancelStoreReason.reasonCol}` : null}
+        formatCell={countMatrixFmt}
+      />
+
+      <TopDatesTable
+        pivot={cancelTopDates}
+        title="Top cancellation dates by store"
+        subtitle="Up to 5 highest-count dates per store"
+        valueKind="count"
+      />
 
       {missPivot.rows.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Missing / incorrect by store</h3>
-            {missPivot.sumCol ? (
-              <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-                Totals sum <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{missPivot.sumCol}</code> per store
-                (aggregated export). Store column:{' '}
-                <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{missPivot.storeCol}</code>.
-              </p>
-            ) : (
-              <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-                One row = one issue · store:{' '}
-                <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{missPivot.storeCol}</code>
-              </p>
+        <OpsSection title="Missing / incorrect by store" subtitle="Event counts per store">
+          <SplitDataTable
+            columns={countStoreCols(missHeat.min, missHeat.max)}
+            data={missPivot.rows}
+            maxHeight="400px"
+            layout="tight"
+            dense
+            split={false}
+          />
+        </OpsSection>
+      )}
+
+      <ReasonMatrix
+        matrix={missStoreReason}
+        title="Missing / incorrect by store × reason"
+        subtitle={missStoreReason ? `Reason field: ${missStoreReason.reasonCol}` : null}
+        formatCell={countMatrixFmt}
+      />
+
+      <TopDatesTable
+        pivot={missTopDates}
+        title="Top missing / incorrect dates by store"
+        subtitle="Up to 5 highest-count dates per store"
+        valueKind="count"
+      />
+
+      <TopDatesTable
+        pivot={timeTopDates}
+        title="Operations quality — top dates (aggregate)"
+        subtitle={
+          timeTopDates.valueCol
+            ? `Highest ${timeTopDates.valueCol} dates per store`
+            : 'Top dates per store from time aggregate export'
+        }
+        valueKind="metric"
+        metricFormat={metricFormat(timeTopDates.valueCol)}
+      />
+
+      <TopDatesTable
+        pivot={timeByStoreTopDates}
+        title="Operations quality — top dates (by store export)"
+        subtitle={
+          timeByStoreTopDates.valueCol
+            ? `Highest ${timeByStoreTopDates.valueCol} dates per store`
+            : 'Top dates per store from by-store time export'
+        }
+        valueKind="metric"
+        metricFormat={metricFormat(timeByStoreTopDates.valueCol)}
+      />
+
+      {orderSheets.map(({ label, pivot, storeReason, topDates }) => {
+        const heat = minMaxNumeric((pivot.rows || []).map((r) => Number(r.rowCount) || 0));
+        return (
+          <div key={label} className="space-y-6">
+            {pivot.rows?.length > 0 && (
+              <OpsSection title={`${label} — by store`}>
+                <SplitDataTable
+                  columns={countStoreCols(heat.min, heat.max)}
+                  data={pivot.rows}
+                  maxHeight="360px"
+                  layout="tight"
+                  dense
+                  split={false}
+                />
+              </OpsSection>
             )}
+            <ReasonMatrix
+              matrix={storeReason}
+              title={`${label} — store × reason`}
+              subtitle={storeReason ? `Reason field: ${storeReason.reasonCol}` : null}
+              formatCell={countMatrixFmt}
+            />
+            <TopDatesTable
+              pivot={topDates}
+              title={`${label} — top dates by store`}
+              subtitle="Up to 5 highest-count dates per store"
+              valueKind="count"
+            />
           </div>
-          <SplitDataTable columns={countCols} data={missPivot.rows} maxHeight="400px" layout="tight" dense />
-        </section>
-      )}
-
-      {(missPivotCatalog.matrices.length > 0 || missPivotCatalog.catalogLines.length > 0) && (
-        <details className="card p-4">
-          <summary className="text-sm font-semibold text-[var(--text)] cursor-pointer">
-            Missing / incorrect — extra count pivots
-          </summary>
-          <ul className="text-xs text-[var(--text-muted)] space-y-1 mt-2 mb-3 list-disc pl-4">
-            {missPivotCatalog.catalogLines.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-          {missPivotCatalog.matrices.map((m) => (
-            <div key={`miss-${m.rowDim}|${m.colDim}`} className="mb-6 last:mb-0">
-              <h4 className="text-xs font-semibold text-[var(--text)] mb-2">{m.title}</h4>
-              <MatrixPivotTable
-                rowHeaderLabel={m.rowDim}
-                rowKeys={m.rowKeys}
-                colKeys={m.colKeys}
-                matrix={m.matrix}
-                formatCell={(v) => (v == null || v === 0 ? '—' : fmt.int(v))}
-                maxHeight="min(48vh, 440px)"
-              />
-            </div>
-          ))}
-        </details>
-      )}
-
-      {timePivot.rowStores?.length > 0 && timePivot.colProducts?.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Operations quality over time (pivot)</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              Rows: <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{timePivot.storeCol}</code>
-              {' · '}
-              Period: <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{timePivot.dateCol}</code>
-              {' · '}
-              Values: <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{timePivot.valueCol}</code>
-              {' '}
-              (most recent {timePivot.colProducts.length} periods)
-            </p>
-          </div>
-          <MatrixPivotTable
-            rowHeaderLabel="Store"
-            rowKeys={timePivot.rowStores}
-            colKeys={timePivot.colProducts}
-            matrix={timePivot.matrix}
-            formatCell={metricFormat(timePivot.valueCol)}
-            maxHeight="min(70vh, 560px)"
-          />
-        </section>
-      )}
-
-      {timeByStorePivot.rowStores?.length > 0 && timeByStorePivot.colProducts?.length > 0 && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">By store (time export) — pivot</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              {timeByStorePivot.storeCol} × {timeByStorePivot.dateCol} · {timeByStorePivot.valueCol}
-            </p>
-          </div>
-          <MatrixPivotTable
-            rowHeaderLabel="Store"
-            rowKeys={timeByStorePivot.rowStores}
-            colKeys={timeByStorePivot.colProducts}
-            matrix={timeByStorePivot.matrix}
-            formatCell={metricFormat(timeByStorePivot.valueCol)}
-            maxHeight="min(60vh, 480px)"
-          />
-        </section>
-      )}
-
-      {orderSheets.map(({ label, rows, pivot, countCatalog }) => (
-        <section key={label} className="space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--text)]">{label} — by store</h3>
-          {pivot.rows?.length ? (
-            <SplitDataTable columns={countCols} data={pivot.rows} maxHeight="360px" layout="tight" dense />
-          ) : (
-            <p className="text-xs text-[var(--text-muted)]">{rows.length} rows — could not detect a store column for pivot.</p>
-          )}
-          {(countCatalog.matrices.length > 0 || countCatalog.catalogLines.length > 0) && (
-            <details className="card p-4">
-              <summary className="text-xs font-semibold text-[var(--text)] cursor-pointer">
-                {label} — discovered count pivots
-              </summary>
-              <ul className="text-[11px] text-[var(--text-muted)] space-y-1 mt-2 mb-2 list-disc pl-4">
-                {countCatalog.catalogLines.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-              {countCatalog.matrices.map((m) => (
-                <div key={`${label}-${m.rowDim}|${m.colDim}`} className="mb-4 last:mb-0">
-                  <h4 className="text-[11px] font-semibold text-[var(--text)] mb-1">{m.title}</h4>
-                  <MatrixPivotTable
-                    rowHeaderLabel={m.rowDim}
-                    rowKeys={m.rowKeys}
-                    colKeys={m.colKeys}
-                    matrix={m.matrix}
-                    formatCell={(v) => (v == null || v === 0 ? '—' : fmt.int(v))}
-                    maxHeight="min(40vh, 380px)"
-                  />
-                </div>
-              ))}
-            </details>
-          )}
-        </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

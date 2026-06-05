@@ -17,7 +17,7 @@ _DOW_COL = {
     "Sunday": 6,
 }
 _DAYPART_ROW = {
-    "Early morning": 0,
+    "Overnight": 0,
     "Breakfast": 1,
     "Lunch": 2,
     "Afternoon": 3,
@@ -27,8 +27,10 @@ _DAYPART_ROW = {
 
 
 def slot_table_row_to_schedule_tag(row: dict) -> int | None:
+    from shared.time_slots import normalize_slot_name
+
     dow = str(row.get("day_of_week") or "").strip()
-    dp = str(row.get("daypart") or "").strip()
+    dp = normalize_slot_name(str(row.get("daypart") or "").strip())
     col = _DOW_COL.get(dow)
     ridx = _DAYPART_ROW.get(dp)
     if col is None or ridx is None:

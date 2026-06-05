@@ -2,10 +2,11 @@
  * Layer-1 register: store × weekday × slot with averaged metrics across calendar dates.
  */
 import { format } from 'date-fns';
-import { filterExcludedDates, filterExcludedStores } from './aggregator';
-import { assignBucket, classifyOrder, classifyUeOrder, sumPromoDiscountsFromRows } from './buckets';
-import { getSlot, SLOT_NAMES, DAY_NAMES } from './slots';
+import { filterByDateRange, filterExcludedDates, filterExcludedStores } from './aggregator';
+import { assignBucket, classifyDdOrder, sumDdOrderMarketingSignals } from './buckets';
+import { getSlot, getSlotTimeRange, SLOT_NAMES, DAY_NAMES } from './slots';
 import { safeDivide, round } from '../utils/safeMath';
+import { exportByKind } from '../utils/formatters';
 import { normalizeDdSalesByOrder } from '../parsers/ddSalesByOrder';
 import { applyDdOrderPlacedTiming } from '../parsers/ddOrderTiming';
 import { buildDdStoreIdToMerchantMap } from '../utils/storeCatalog';
@@ -185,12 +186,12 @@ function aggregateDdSalesByWeekdaySlot(salesOrders, ddStoreIdToMerchant) {
   for (const [key, group] of groups) {
     const n = group.dates.size || 1;
     out.set(key, {
-      newCustomerOrders: round(group.newCustomerOrders / n, 2),
-      repeatCustomerOrders: round(group.repeatCustomerOrders / n, 2),
-      unknownCustomerOrders: round(group.unknownCustomerOrders / n, 2),
-      dashPassOrders: round(group.dashPassOrders / n, 2),
-      nonDashPassOrders: round(group.nonDashPassOrders / n, 2),
-      totalItems: round(group.totalItems / n, 2),
+      newCustomerOrders: Math.round(group.newCustomerOrders / n),
+      repeatCustomerOrders: Math.round(group.repeatCustomerOrders / n),
+      unknownCustomerOrders: Math.round(group.unknownCustomerOrders / n),
+      dashPassOrders: Math.round(group.dashPassOrders / n),
+      nonDashPassOrders: Math.round(group.nonDashPassOrders / n),
+      totalItems: Math.round(group.totalItems / n),
       salesErrorCharges: round(group.salesErrorCharges / n, 2),
     });
   }
@@ -238,8 +239,8 @@ function buildDdOrderRecords(ddFinancial, errorByOrderId) {
     const cdYou = rs.reduce((s, r) => s + (r.customerDiscounts || 0), 0);
     const cdDd = rs.reduce((s, r) => s + (r.customerDiscountsDoorDash || 0), 0);
     const cd3p = rs.reduce((s, r) => s + (r.customerDiscountsThirdParty || 0), 0);
-    const promoDiscount = sumPromoDiscountsFromRows(rs);
-    const orderType = classifyOrder(marketingFees, promoDiscount);
+    const mktSignals = sumDdOrderMarketingSignals(rs);
+    const orderType = classifyDdOrder(mktSignals);
 
     const errExtra = errorByOrderId.get(orderId) || {};
 
@@ -272,6 +273,13 @@ function buildDdOrderRecords(ddFinancial, errorByOrderId) {
   return out;
 }
 
+const UE_OFFER_EPSILON = 0.01;
+
+/** UE register: promo when |offers| > 0; no ads bucket (UE financial has no ad spend). */
+function classifyUeRegisterOrder(offers) {
+  return Math.abs(offers || 0) >= UE_OFFER_EPSILON ? 'promo' : 'organic';
+}
+
 function buildUeOrderRecords(ueFinancial) {
   const byOrder = new Map();
   for (const r of ueFinancial) {
@@ -291,8 +299,7 @@ function buildUeOrderRecords(ueFinancial) {
     const payouts = rs.reduce((s, r) => s + (r.totalPayout || 0), 0);
     const marketplaceFee = rs.reduce((s, r) => s + (r.marketplaceFee || 0), 0);
     const offers = rs.reduce((s, r) => s + Math.abs(r.offers || 0), 0);
-    const marketingAdjustment = rs.reduce((s, r) => s + Math.abs(r.marketingAdjustment || 0), 0);
-    const orderType = classifyUeOrder(offers, marketingAdjustment);
+    const orderType = classifyUeRegisterOrder(offers);
 
     out.push({
       storeId: head.storeId,
@@ -302,11 +309,8 @@ function buildUeOrderRecords(ueFinancial) {
       payouts,
       marketplaceFee,
       offers,
-      discounts: Math.abs(offers),
-      mktSpend: Math.abs(marketplaceFee) + Math.abs(offers),
-      adsSpend: marketplaceFee,
+      discounts: offers,
       orderErrorAdjustments: rs.reduce((s, r) => s + (r.orderErrorAdjustments || 0), 0),
-      newCustomersFinancial: rs.reduce((s, r) => s + (r.newCustomers || 0), 0),
       orderType,
     });
   }
@@ -383,6 +387,19 @@ const REGISTER_SUM_KEYS = [
   'marketplaceFee', 'offers', 'orderErrorAdjustments', 'newCustomersFinancial',
 ];
 
+/** Count metrics averaged across calendar dates → nearest whole number (typical weekday GC). */
+const REGISTER_COUNT_KEYS = new Set([
+  'orders', 'organicOrders', 'promoOrders', 'adsOrders', 'bothOrders',
+  'newCustomerOrders', 'repeatCustomerOrders', 'unknownCustomerOrders',
+  'dashPassOrders', 'nonDashPassOrders', 'totalItems', 'newCustomersFinancial',
+]);
+
+function averageRegisterMetric(key, sum, dayCount) {
+  const n = dayCount || 1;
+  const avg = sum / n;
+  return REGISTER_COUNT_KEYS.has(key) ? Math.round(avg) : round(avg, 2);
+}
+
 function emptyWeekdaySlotRow(storeId, dayOfWeek, slot) {
   const row = { storeId, dayOfWeek, slot };
   for (const k of REGISTER_SUM_KEYS) row[k] = 0;
@@ -445,7 +462,7 @@ function collapseRegisterByWeekday(rows) {
       slot: group.slot,
     };
     for (const k of REGISTER_SUM_KEYS) {
-      row[k] = round(group.sums[k] / n, 2);
+      row[k] = averageRegisterMetric(k, group.sums[k], n);
     }
     out.push(finalizeRow(row));
   }
@@ -456,6 +473,7 @@ export const DD_REGISTER_COLUMNS = [
   { key: 'storeId', label: 'Store ID', kind: 'text' },
   { key: 'dayOfWeek', label: 'Day', kind: 'text' },
   { key: 'slot', label: 'Slot', kind: 'text' },
+  { key: 'slotTime', label: 'Slot time', kind: 'text' },
   { key: 'orders', label: 'Orders (GC)', kind: 'int' },
   { key: 'sales', label: 'Sales', kind: 'usd' },
   { key: 'payouts', label: 'Payouts', kind: 'usd' },
@@ -474,7 +492,6 @@ export const DD_REGISTER_COLUMNS = [
   { key: 'commission', label: 'Commission', kind: 'usd' },
   { key: 'errorCharges', label: 'Error Charges', kind: 'usd' },
   { key: 'errorRatePct', label: 'Error Rate %', kind: 'pct' },
-  { key: 'adjustments', label: 'Adjustments', kind: 'usd' },
   { key: 'ddMarketingCredit', label: 'DD Mkt Credit', kind: 'usd' },
   { key: 'thirdPartyContribution', label: '3P Contribution', kind: 'usd' },
   { key: 'paymentProcessingFee', label: 'Payment Processing', kind: 'usd' },
@@ -495,31 +512,29 @@ export const UE_REGISTER_COLUMNS = [
   { key: 'storeId', label: 'Store ID', kind: 'text' },
   { key: 'dayOfWeek', label: 'Day', kind: 'text' },
   { key: 'slot', label: 'Slot', kind: 'text' },
+  { key: 'slotTime', label: 'Slot time', kind: 'text' },
   { key: 'orders', label: 'Orders (GC)', kind: 'int' },
   { key: 'sales', label: 'Sales', kind: 'usd' },
   { key: 'payouts', label: 'Payouts', kind: 'usd' },
   { key: 'aov', label: 'AOV', kind: 'usd2' },
   { key: 'avgPayout', label: 'Avg Payout', kind: 'usd2' },
   { key: 'profitabilityPct', label: 'Profitability %', kind: 'pct' },
-  { key: 'mktSpend', label: 'Mkt Spend', kind: 'usd' },
-  { key: 'adsSpend', label: 'Ads Spend (Marketplace Fee)', kind: 'usd' },
+  { key: 'marketplaceFee', label: 'Marketplace Fee', kind: 'usd' },
   { key: 'discounts', label: 'Discounts (Offers)', kind: 'usd' },
   { key: 'organicOrders', label: 'Organic Orders', kind: 'int' },
   { key: 'promoOrders', label: 'Promo Orders', kind: 'int' },
-  { key: 'adsOrders', label: 'Ads Orders', kind: 'int' },
-  { key: 'bothOrders', label: 'Promo + Ads Orders', kind: 'int' },
-  { key: 'mktDrivenOrders', label: 'Mkt Driven Orders', kind: 'int' },
-  { key: 'adsDrivenOrders', label: 'Ads Driven Orders', kind: 'int' },
-  { key: 'marketplaceFee', label: 'Marketplace Fee', kind: 'usd' },
-  { key: 'offers', label: 'Offers', kind: 'usd' },
   { key: 'orderErrorAdjustments', label: 'Order Error Adjustments', kind: 'usd' },
   { key: 'errorRatePct', label: 'Error Rate %', kind: 'pct' },
-  { key: 'newCustomersFinancial', label: 'New Customers', kind: 'int' },
 ];
 
 function applyExcludedDates(orders, excludedDates) {
   if (!excludedDates?.length) return orders;
   return filterExcludedDates(orders, 'date', excludedDates);
+}
+
+function applyPostPeriod(rows, start, end) {
+  if (!start || !end || !rows?.length) return rows;
+  return filterByDateRange(rows, 'date', start, end);
 }
 
 export function buildDdRegister(data, config = {}) {
@@ -529,21 +544,24 @@ export function buildDdRegister(data, config = {}) {
   const storeIds = registerStoreIds(ddFinancial, config.ddExcludedStores);
   if (!storeIds.length) return [];
 
-  const ddFin = applyDdOrderPlacedTiming(
+  let ddFin = applyDdOrderPlacedTiming(
     filterExcludedStores(ddFinancial, 'storeId', config.ddExcludedStores),
     ddSales?.byOrder,
   );
-  const ddErr = ddFinancialError?.length
+  ddFin = applyPostPeriod(ddFin, config.ddPostStart, config.ddPostEnd);
+  let ddErr = ddFinancialError?.length
     ? applyDdOrderPlacedTiming(
       filterExcludedStores(ddFinancialError, 'storeId', config.ddExcludedStores),
       ddSales?.byOrder,
     )
     : ddFinancialError;
+  ddErr = applyPostPeriod(ddErr, config.ddPostStart, config.ddPostEnd);
 
   const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(ddFin);
   const errorByOrderId = buildErrorExtrasByOrderId(ddErr);
 
   let salesOrders = normalizeDdSalesByOrder(ddSales?.byOrder);
+  salesOrders = applyPostPeriod(salesOrders, config.ddPostStart, config.ddPostEnd);
   salesOrders = applyExcludedDates(salesOrders, config.ddExcludedDates);
   const salesByWeekday = aggregateDdSalesByWeekdaySlot(salesOrders, ddStoreIdToMerchant);
 
@@ -565,7 +583,8 @@ export function buildUeRegister(data, config = {}) {
   const storeIds = registerStoreIds(ueFinancial, config.ueExcludedStores);
   if (!storeIds.length) return [];
 
-  const ueFin = filterExcludedStores(ueFinancial, 'storeId', config.ueExcludedStores);
+  let ueFin = filterExcludedStores(ueFinancial, 'storeId', config.ueExcludedStores);
+  ueFin = applyPostPeriod(ueFin, config.uePostStart, config.uePostEnd);
 
   let orders = buildUeOrderRecords(ueFin);
   orders = applyExcludedDates(orders, config.ueExcludedDates);
@@ -579,9 +598,11 @@ export { compareRegisterWeekSlots, REGISTER_WOW_METRICS } from './registerWow.js
 
 export function registerRowToExport(row, columns) {
   return columns.map((c) => {
+    if (c.key === 'slotTime') return getSlotTimeRange(row.slot);
     const v = row[c.key];
     if (v == null || v === '') return '';
     if (c.kind === 'text' || c.kind === 'date') return v;
-    return v;
+    const exportKind = c.kind === 'num2' ? 'usd2' : c.kind;
+    return exportByKind(exportKind, v);
   });
 }

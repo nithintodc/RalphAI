@@ -141,6 +141,16 @@ export function suggestPrePostFromBounds(bounds) {
   return { preStart, preEnd, postStart, postEnd };
 }
 
+/** Suggested single period: latest calendar month overlapping uploaded data. */
+export function suggestSinglePeriodFromBounds(bounds) {
+  const suggested = suggestPrePostFromBounds(bounds);
+  if (!suggested) return null;
+  return {
+    start: suggested.postStart,
+    end: suggested.postEnd,
+  };
+}
+
 export function mergeAllUploadedBounds(ddFinancial, ueFinancial, ddSales) {
   const ranges = [];
   if (ddFinancial?.length) {

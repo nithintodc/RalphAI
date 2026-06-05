@@ -1,0 +1,1 @@
+Health Check WoW decision matrix (`logic.csv`): map slot metric directions (sales, orders, profitability, organic_orders, promo_ads_orders as `up`/`down`) to Keep/Kill/Update/Create actions; loaded by `shared/decision_matrix.py`.

@@ -4,7 +4,9 @@ import { PieChart, Pie, Cell } from 'recharts';
 import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
 import DataTable from '../../components/ui/DataTable';
+import BarShareLabels from '../../components/charts/BarShareLabels';
 import { buildBucketAnalysis, buildOrderOriginMix } from '../../lib/engine/buckets';
+import { addBarSharePct } from '../../lib/utils/barChartShare';
 import { fmt } from '../../lib/utils/formatters';
 import { DATA_PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
@@ -135,6 +137,7 @@ export default function BucketsScreen() {
       {DATA_PLATFORM_SECTIONS.map(({ key, label }) => {
         const ba = bucketAnalysis?.[key];
         if (!ba?.buckets?.length) return null;
+        const chartData = addBarSharePct(ba.buckets, ['pre_orders', 'post_orders']);
         return (
           <div key={key} className="space-y-4">
             <div className="flex items-center gap-2">
@@ -143,14 +146,26 @@ export default function BucketsScreen() {
             </div>
             <div className="card">
               <h3 className="text-sm font-semibold text-[var(--text)] mb-4">Order Count by Ticket Size</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={ba?.buckets || []} barGap={2}>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData} barGap={2} margin={{ top: 20, right: 4, left: 0, bottom: 0 }}>
                   <XAxis dataKey="range" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-subtle)' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                    formatter={(v, name, props) => {
+                      const pctKey = `${props?.dataKey}_pct`;
+                      const pct = props?.payload?.[pctKey];
+                      const count = fmt.int(v);
+                      return pct != null && pct > 0 ? [`${count} (${Number(pct).toFixed(1)}% of orders)`, name] : [count, name];
+                    }}
+                  />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="pre_orders" name="Pre" fill="var(--border-strong)" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="post_orders" name="Post" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="pre_orders" name="Pre" fill="var(--border-strong)" radius={[3, 3, 0, 0]}>
+                    <BarShareLabels dataKey="pre_orders" fill="var(--text-subtle)" />
+                  </Bar>
+                  <Bar dataKey="post_orders" name="Post" fill="var(--accent)" radius={[3, 3, 0, 0]}>
+                    <BarShareLabels dataKey="post_orders" />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -12,6 +12,7 @@ const initialState = {
   ueFinancial: null,
   uploadedFiles: {},
   isProcessing: false,
+  processingMessage: null,
   aggregated: null,
   storeTables: null,
   summaryTables: null,
@@ -60,7 +61,10 @@ export const useDataStore = create((set, get) => ({
   setUploadedFile: (key, info) => set((s) => ({
     uploadedFiles: { ...s.uploadedFiles, [key]: info },
   })),
-  setProcessing: (v) => set({ isProcessing: v }),
+  setProcessing: (v, message = null) => set({
+    isProcessing: v,
+    processingMessage: v ? (message || 'Updating analysis…') : null,
+  }),
   setAggregated: (data) => set({ aggregated: data }),
   setStoreTables: (data) => set({ storeTables: data }),
   setSummaryTables: (data) => set({ summaryTables: data }),

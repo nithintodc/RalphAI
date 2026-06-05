@@ -12,6 +12,61 @@ export const MARKETING_SUMMARY_METRICS = [
   { key: 'checkAfterPromo', kind: 'usd2', label: 'Check After Promo' },
 ];
 
+/** Single-period Corp vs TODC / campaign tables (columns in this order). */
+export const MARKETING_IMPACT_METRICS = [
+  { key: 'sales', kind: 'usd', label: 'Sales' },
+  { key: 'orders', kind: 'int', label: 'Orders' },
+  { key: 'spend', kind: 'usd', label: 'Spend' },
+  { key: 'roas', kind: 'roas', label: 'ROAS' },
+  { key: 'cpo', kind: 'usd2', label: 'Cost Per Order' },
+  { key: 'checkAfterPromo', kind: 'usd2', label: 'Check after Promo' },
+];
+
+export function sliceMarketingPct(n, pct = 0.10) {
+  if (!n) return 0;
+  return Math.max(1, Math.ceil(n * pct));
+}
+
+/** Corp / TODC / Total rows for one period (`pre` or `post`). */
+export function buildCorpTodcImpactRows(sourceData, period = 'post') {
+  if (!sourceData?.corp) return [];
+  const suffix = period === 'pre' ? 'Pre' : 'Post';
+  return ['corp', 'todc', 'total'].map((key) => {
+    const r = sourceData[key];
+    return {
+      group: r.label,
+      sales: r[`sales${suffix}`],
+      orders: r[`orders${suffix}`],
+      spend: r[`spend${suffix}`],
+      roas: r[`roas${suffix}`],
+      cpo: r[`cpo${suffix}`],
+      checkAfterPromo: r[`checkAfterPromo${suffix}`],
+      _total: key === 'total',
+    };
+  });
+}
+
+export function filterCampaignsBySource(campaigns, source) {
+  return (campaigns || []).filter((c) => c.source === source);
+}
+
+/** `kind`: topRoas | topSpend | poorRoas */
+export function buildCampaignHighlights(campaigns, kind, pct = 0.10) {
+  const eligible = (campaigns || []).filter((c) => (c.spend || 0) > 0);
+  const n = sliceMarketingPct(eligible.length, pct);
+  if (!n) return [];
+  if (kind === 'topRoas') {
+    return [...eligible].sort((a, b) => (b.roas || 0) - (a.roas || 0)).slice(0, n);
+  }
+  if (kind === 'topSpend') {
+    return [...eligible].sort((a, b) => (b.spend || 0) - (a.spend || 0)).slice(0, n);
+  }
+  if (kind === 'poorRoas') {
+    return [...eligible].sort((a, b) => (a.roas || 0) - (b.roas || 0)).slice(0, n);
+  }
+  return [];
+}
+
 function shiftYear(d) {
   const x = new Date(d);
   x.setFullYear(x.getFullYear() - 1);

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Filter, Loader2 } from "lucide-react";
-
 type RunRow = {
   id: string;
   agent: string;

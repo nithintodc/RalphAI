@@ -163,7 +163,16 @@ export default function ExportResultModal({ open, payload, onClose, onOpenPdf })
     );
   }
 
-  const { filename, spreadsheetUrl, googleSheets, docUrl, googleDoc, canOpenPdf } = payload;
+  const {
+    filename,
+    docFilename,
+    pdfFilename,
+    spreadsheetUrl,
+    googleSheets,
+    docUrl,
+    googleDoc,
+    canOpenPdf,
+  } = payload;
   const hasReport = !!(docUrl || canOpenPdf || googleDoc);
   const hasWorkbook = !!(spreadsheetUrl || filename);
   const sheetsFailed = !googleSheets?.skipped && googleSheets?.error;
@@ -244,11 +253,27 @@ export default function ExportResultModal({ open, payload, onClose, onOpenPdf })
           />
         ) : null}
 
-        {filename ? (
-          <p className="text-[10px] text-[var(--text-subtle)] text-center">
-            Also saved locally as{' '}
-            <span className="font-mono text-[var(--text-muted)]">{filename}</span>
-          </p>
+        {(filename || docFilename) ? (
+          <div className="text-[10px] text-[var(--text-subtle)] text-center space-y-1">
+            {docFilename ? (
+              <p>
+                Report saved as{' '}
+                <span className="font-mono text-[var(--text-muted)]">{docFilename}</span>
+              </p>
+            ) : null}
+            {filename ? (
+              <p>
+                Workbook saved as{' '}
+                <span className="font-mono text-[var(--text-muted)]">{filename}</span>
+              </p>
+            ) : null}
+            {pdfFilename && canOpenPdf ? (
+              <p>
+                PDF save-as name:{' '}
+                <span className="font-mono text-[var(--text-muted)]">{pdfFilename}</span>
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

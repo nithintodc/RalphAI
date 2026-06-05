@@ -1,18 +1,25 @@
 import * as XLSX from 'xlsx';
 import { format, subYears } from 'date-fns';
-import { buildSlotAnalysis, SLOT_METRIC_TABLES } from '../engine/slots';
+import { buildSlotAnalysis, SLOT_METRIC_TABLES, getSlotTimeRange, SLOT_EXPORT_HEADERS_PVP, SLOT_EXPORT_HEADERS_YOY } from '../engine/slots';
 import { buildSlotSalesOrderAnalysis, slotSalesOrderExportHeaders, slotSalesOrderExportRow, dashPassExportHeaders, dashPassExportRow, orderVolumeExportHeaders, orderVolumeExportRow } from '../engine/slotSalesOrder';
 import { buildDdRegister, buildUeRegister, registerRowToExport, DD_REGISTER_COLUMNS, UE_REGISTER_COLUMNS } from '../engine/register';
 import { normalizeDdSalesByOrder } from '../parsers/ddSalesByOrder';
 import { normalizeUeOrdersForSlotView } from '../parsers/ueOrderSlots';
 import { buildBucketAnalysis, buildOrderOriginMix } from '../engine/buckets';
 import { buildOrderOriginAov, buildPayoutBridgePrePost, buildRevenueGrowthDrivers } from '../engine/diagnostics';
-import { buildCorpVsTodcBySource, buildCampaignTable, MARKETING_SUMMARY_METRICS } from '../engine/marketing';
+import {
+  buildCorpVsTodcBySource,
+  buildCampaignTable,
+  buildCorpTodcImpactRows,
+  buildCampaignHighlights,
+  filterCampaignsBySource,
+  MARKETING_IMPACT_METRICS,
+} from '../engine/marketing';
 import { DATA_PLATFORM_SECTIONS, PLATFORM_SECTIONS } from '../platforms';
 import { getStarAndDecliningStores, getAllStoresDailyExtremes } from '../engine/diagnostics';
 import { growthPct, round, safeDivide } from '../utils/safeMath';
 import { xf, exportByKind, exportSummaryMetric, exportStoreSpecValue } from '../utils/formatters';
-import { parseDate, getLastYearDates, isInRange } from '../utils/dateUtils';
+import { parseDate, getLastYearDates, isInRange, formatCompactDateRange } from '../utils/dateUtils';
 import {
   pivotDowntimeByStore,
   pivotDowntimeByDimension,
@@ -21,15 +28,12 @@ import {
   pickCategoryColumn,
   pickStoreColumn,
   inferCategoricalColumns,
-  pivotProductByStore,
-  pivotStoreByProduct,
   pivotOneWaySum,
   pickProductColumn,
-  pickColumnByRegexOrder,
+  pickMetricColumn,
+  pickProductMixQtyColumn,
   pickErrorChargeColumn,
 } from '../utils/opsProductPivot';
-
-const QTY_PATTERNS = [/units?\s*sold/i, /quantity/i, /\bqty\b/i, /orders/i, /count/i];
 const DATE_NAME_RE = /(^|[^a-z])date([^a-z]|$)|order\s*date|business\s*date|^day$/i;
 
 const STORE_METRIC_SPECS = [
@@ -49,16 +53,25 @@ const METRIC_LABELS = {
   aov: 'Average Check',
 };
 
+import { resolveSheetsExportUrl } from './exportApi.js';
+import { buildExportFilename } from './exportFilename.js';
+import { buildLegacyExportSheets } from './legacyExportSheets.js';
+import {
+  buildAlignedExportStoreTables,
+  combinedExportStoreId,
+  combinedExportStoreName,
+  EXPORT_NA,
+  exportStoreName,
+  legacyStoreIdCell,
+} from './storeExportLayout.js';
+import { withSheetSummary } from './exportSheetSummaries.js';
+
 const GOOGLE_SHEETS_EXPORT_URL = import.meta.env.VITE_GOOGLE_SHEETS_EXPORT_URL;
 
 /** Same-origin export API (RalphAI FastAPI; /api is proxied in dev). */
 function defaultExportUrl() {
   if (typeof window === 'undefined') return null;
   return `${window.location.origin}/api/export`;
-}
-
-function timestamp() {
-  return format(new Date(), 'yyyyMMdd_HHmmss');
 }
 
 function cleanSheetName(name) {
@@ -93,13 +106,10 @@ function appendSheet(wb, sheetDefs, name, rows) {
   sheetDefs.push({ name: sheetName, rows });
 }
 
-function appendReportSheet(wb, sheetDefs, name, rows) {
-  appendSheet(
-    wb,
-    sheetDefs,
-    name,
-    rows.length ? rows : [[`No ${name.toLowerCase()} report data available for this export.`]],
-  );
+function appendReportSheet(wb, sheetDefs, name, rows, data, config) {
+  const body = rows.length ? rows : [[`No ${name.toLowerCase()} report data available for this export.`]];
+  const withSummary = data && config ? withSheetSummary(name, body, data, config) : body;
+  appendSheet(wb, sheetDefs, name, withSummary);
 }
 
 function estimateColumnWidths(rows) {
@@ -143,66 +153,184 @@ function summaryYoyRows(summary) {
   });
 }
 
-function storeRows(stores) {
-  return (stores || []).map((row) => [
-    row.storeId,
-    xf.usd(row.pre_sales),
-    xf.usd(row.post_sales),
-    xf.usd(row.sales_prevspost),
-    xf.deltaPct(row.sales_growth_pct),
-    xf.usd(row.postLY_sales),
-    xf.usd(row.sales_yoy),
-    xf.deltaPct(row.sales_yoy_pct),
-    xf.usd(row.pre_payouts),
-    xf.usd(row.post_payouts),
-    xf.deltaPct(row.payouts_growth_pct),
-    xf.int(row.pre_orders),
-    xf.int(row.post_orders),
-    xf.deltaPct(row.orders_growth_pct),
-    xf.usd2(row.post_aov),
-    xf.pct(row.post_profitability),
-  ]);
+function summaryRowByMetric(summary, metric) {
+  return (summary || []).find((r) => r.metric === metric) || {};
 }
 
-function storeMetricPvpRows(stores, spec) {
-  return (stores || []).map((row) => [
-    row.storeId,
-    exportStoreSpecValue(spec, row[spec.preKey]),
-    exportStoreSpecValue(spec, row[spec.postKey]),
-    exportStoreSpecValue(spec, row[spec.deltaKey]),
-    exportStoreSpecValue(spec, row[spec.lyDeltaKey]),
-    xf.deltaPct(row[spec.deltaPctKey]),
-    xf.deltaPct(row[spec.lyDeltaPctKey]),
-  ]);
+function platformHasSummary(summary) {
+  const sales = summaryRowByMetric(summary, 'sales');
+  return (sales.pre || 0) !== 0 || (sales.post || 0) !== 0 || (sales.postLY || 0) !== 0;
 }
 
-function storeMetricYoyRows(stores, spec) {
-  return (stores || []).map((row) => [
-    row.storeId,
-    exportStoreSpecValue(spec, row[spec.postLyKey]),
-    exportStoreSpecValue(spec, row[spec.postKey]),
-    exportStoreSpecValue(spec, row[spec.yoyDeltaKey]),
-    xf.deltaPct(row[spec.yoyPctKey]),
-  ]);
+function periodRangeLabel(start, end) {
+  return formatCompactDateRange(start, end) || '—';
 }
 
-function buildStoresExportRows(data) {
-  const rows = [];
+function growthHeadlineRow(label, summary) {
+  const g = (m) => summaryRowByMetric(summary, m);
+  return [
+    label,
+    xf.deltaPct(g('sales').growthPct),
+    xf.deltaPct(g('payouts').growthPct),
+    xf.deltaPct(g('orders').growthPct),
+    xf.deltaPct(g('profitability').growthPct),
+    xf.deltaPct(g('aov').growthPct),
+    xf.deltaPct(g('sales').yoyPct),
+    xf.deltaPct(g('payouts').yoyPct),
+    xf.deltaPct(g('orders').yoyPct),
+    xf.deltaPct(g('profitability').yoyPct),
+    xf.deltaPct(g('aov').yoyPct),
+  ];
+}
+
+const GROWTH_HEADLINE_HEADERS = [
+  'Platform',
+  'Sales PvP%',
+  'Payouts PvP%',
+  'Orders PvP%',
+  'Profitability PvP%',
+  'AOV PvP%',
+  'Sales YoY%',
+  'Payouts YoY%',
+  'Orders YoY%',
+  'Profitability YoY%',
+  'AOV YoY%',
+];
+
+function buildSummaryDetailSections(summaryTables) {
+  const summaryRows = [];
   for (const { key, label } of PLATFORM_SECTIONS) {
-    const stores = data.storeTables?.[key] || [];
+    const summary = summaryTables?.[key] || [];
+    if (!platformHasSummary(summary)) continue;
+    addSection(
+      summaryRows,
+      `${label} — Pre vs Post`,
+      ['Metric', 'Pre', 'Post', 'Pre vs Post', 'LY Pre vs Post', 'Growth%', 'LY Growth%'],
+      summaryPrePostRows(summary),
+    );
+    addSection(
+      summaryRows,
+      `${label} — Year over Year`,
+      ['Metric', 'LY Post', 'Post', 'YoY', 'YoY%'],
+      summaryYoyRows(summary),
+    );
+  }
+  return summaryRows;
+}
+
+function buildSummarySheetRows(data, config) {
+  const rows = [];
+  const operator = (config.operatorName || '').trim();
+  if (operator) {
+    addBlock(rows, 'Report', [['Operator', operator]]);
+  }
+
+  addSection(
+    rows,
+    'Analysis periods',
+    ['Platform', 'Pre period', 'Post period'],
+    [
+      [
+        'Combined',
+        periodRangeLabel(config.ddPreStart || config.uePreStart, config.ddPreEnd || config.uePreEnd),
+        periodRangeLabel(config.ddPostStart || config.uePostStart, config.ddPostEnd || config.uePostEnd),
+      ],
+      ['DoorDash', periodRangeLabel(config.ddPreStart, config.ddPreEnd), periodRangeLabel(config.ddPostStart, config.ddPostEnd)],
+      ['Uber Eats', periodRangeLabel(config.uePreStart, config.uePreEnd), periodRangeLabel(config.uePostStart, config.uePostEnd)],
+    ],
+  );
+
+  const headlineData = [];
+  for (const { key, label } of PLATFORM_SECTIONS) {
+    const summary = data.summaryTables?.[key] || [];
+    if (!platformHasSummary(summary)) continue;
+    headlineData.push(growthHeadlineRow(label, summary));
+  }
+  if (headlineData.length) {
+    addSection(rows, 'Growth summary (Pre vs Post & YoY %)', GROWTH_HEADLINE_HEADERS, headlineData);
+  }
+
+  const detail = buildSummaryDetailSections(data.summaryTables);
+  if (detail.length) {
+    if (rows.length) rows.push([]);
+    rows.push(['Detailed summary tables']);
+    rows.push(...detail);
+  }
+  return rows;
+}
+
+function storeIdNameCells(row, platform, dominantPlatform) {
+  if (platform === 'combined') {
+    return [combinedExportStoreId(row, dominantPlatform), combinedExportStoreName(row, dominantPlatform)];
+  }
+  return [legacyStoreIdCell(row, platform), exportStoreName(row)];
+}
+
+function storeRows(stores, platform, dominantPlatform) {
+  return (stores || []).map((row) => [
+    ...storeIdNameCells(row, platform, dominantPlatform),
+    row._isNa ? EXPORT_NA : xf.usd(row.pre_sales),
+    row._isNa ? EXPORT_NA : xf.usd(row.post_sales),
+    row._isNa ? EXPORT_NA : xf.usd(row.sales_prevspost),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row.sales_growth_pct),
+    row._isNa ? EXPORT_NA : xf.usd(row.postLY_sales),
+    row._isNa ? EXPORT_NA : xf.usd(row.sales_yoy),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row.sales_yoy_pct),
+    row._isNa ? EXPORT_NA : xf.usd(row.pre_payouts),
+    row._isNa ? EXPORT_NA : xf.usd(row.post_payouts),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row.payouts_growth_pct),
+    row._isNa ? EXPORT_NA : xf.int(row.pre_orders),
+    row._isNa ? EXPORT_NA : xf.int(row.post_orders),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row.orders_growth_pct),
+    row._isNa ? EXPORT_NA : xf.usd2(row.post_aov),
+    row._isNa ? EXPORT_NA : xf.pct(row.post_profitability),
+  ]);
+}
+
+function storeMetricPvpRows(stores, spec, platform, dominantPlatform) {
+  return (stores || []).map((row) => [
+    ...storeIdNameCells(row, platform, dominantPlatform),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.preKey]),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.postKey]),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.deltaKey]),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.lyDeltaKey]),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row[spec.deltaPctKey]),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row[spec.lyDeltaPctKey]),
+  ]);
+}
+
+function storeMetricYoyRows(stores, spec, platform, dominantPlatform) {
+  return (stores || []).map((row) => [
+    ...storeIdNameCells(row, platform, dominantPlatform),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.postLyKey]),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.postKey]),
+    row._isNa ? EXPORT_NA : exportStoreSpecValue(spec, row[spec.yoyDeltaKey]),
+    row._isNa ? EXPORT_NA : xf.deltaPct(row[spec.yoyPctKey]),
+  ]);
+}
+
+function buildStoresExportRows(data, config) {
+  const rows = [];
+  const aligned = buildAlignedExportStoreTables(data.storeTables, config?.ddToUeStoreMap || {});
+  const tableMap = { combined: aligned.combined, dd: aligned.dd, ue: aligned.ue };
+  const pvpHeaders = ['Store ID', 'Store Name', 'Pre', 'Post', 'Pre vs Post Δ', 'LY Pre vs Post Δ', 'Pre vs Post %', 'LY Growth%'];
+  const yoyHeaders = ['Store ID', 'Store Name', 'LY Post', 'Post', 'YoY Δ', 'YoY %'];
+
+  for (const { key, label } of PLATFORM_SECTIONS) {
+    const stores = tableMap[key] || [];
     if (!stores.length) continue;
     for (const spec of storeSpecsForPlatform(key)) {
       addSection(
         rows,
         `${label} — ${spec.label} (Pre vs Post)`,
-        ['Store ID', 'Pre', 'Post', 'Pre vs Post Δ', 'LY Pre vs Post Δ', 'Pre vs Post %', 'LY Growth%'],
-        storeMetricPvpRows(stores, spec),
+        pvpHeaders,
+        storeMetricPvpRows(stores, spec, key, aligned.dominantPlatform),
       );
       addSection(
         rows,
         `${label} — ${spec.label} (YoY)`,
-        ['Store ID', 'LY Post', 'Post', 'YoY Δ', 'YoY %'],
-        storeMetricYoyRows(stores, spec),
+        yoyHeaders,
+        storeMetricYoyRows(stores, spec, key, aligned.dominantPlatform),
       );
     }
   }
@@ -256,64 +384,20 @@ function metricDecimals(metricKey) {
   return 0;
 }
 
-function marketingPostImpactRows(table) {
-  if (!table?.corp) return [];
-  return [table.corp, table.todc, table.total].map((r) => [
-    r.label,
-    xf.usd(r.salesPost),
-    xf.usd(r.spendPost),
-    xf.usd2(r.promoAovPost),
-    xf.usd2(r.cpoPost),
-    xf.usd2(r.checkAfterPromoPost),
+const MARKETING_IMPACT_HEADERS = ['Group', ...MARKETING_IMPACT_METRICS.map((m) => m.label)];
+const CAMPAIGN_IMPACT_HEADERS = ['Campaign', ...MARKETING_IMPACT_METRICS.map((m) => m.label)];
+
+function marketingImpactExportRows(table, period) {
+  return buildCorpTodcImpactRows(table, period).map((r) => [
+    r.group,
+    ...MARKETING_IMPACT_METRICS.map((m) => exportByKind(m.kind, r[m.key])),
   ]);
 }
 
-function marketingMetricPrePostRows(table, metricKey, metricKind) {
-  if (!table?.corp) return [];
-  const keys = ['corp', 'todc', 'total'];
-  return keys.map((k) => {
-    const r = table[k];
-    const lyPrevspost = round((r[`${metricKey}LyPost`] ?? 0) - (r[`${metricKey}LyPre`] ?? 0), metricDecimals(metricKey));
-    const lyGrowthPct = round(growthPct(r[`${metricKey}LyPre`], r[`${metricKey}LyPost`]), 1);
-    return [
-      r.label,
-      exportByKind(metricKind, r[`${metricKey}Pre`]),
-      exportByKind(metricKind, r[`${metricKey}Post`]),
-      exportByKind(metricKind, r[`${metricKey}Pvp`]),
-      exportByKind(metricKind, lyPrevspost),
-      xf.deltaPct(r[`${metricKey}PvpPct`]),
-      xf.deltaPct(lyGrowthPct),
-    ];
-  });
-}
-
-function marketingMetricYoyRows(table, metricKey, metricKind) {
-  if (!table?.corp) return [];
-  const keys = ['corp', 'todc', 'total'];
-  return keys.map((k) => {
-    const r = table[k];
-    return [
-      r.label,
-      exportByKind(metricKind, r[`${metricKey}LyPost`]),
-      exportByKind(metricKind, r[`${metricKey}Post`]),
-      exportByKind(metricKind, r[`${metricKey}Yoy`]),
-      xf.deltaPct(r[`${metricKey}YoyPct`]),
-    ];
-  });
-}
-
-function campaignRows(campaigns) {
+function campaignImpactExportRows(campaigns) {
   return (campaigns || []).map((row) => [
     row.campaignName,
-    row.source,
-    row.isSelfServe ? 'TODC' : 'Corporate',
-    xf.int(row.orders),
-    xf.usd(row.sales),
-    xf.usd(row.spend),
-    xf.usd2(row.promoAov),
-    xf.roas(row.roas),
-    xf.usd2(row.cpo),
-    xf.usd2(row.checkAfterPromo),
+    ...MARKETING_IMPACT_METRICS.map((m) => exportByKind(m.kind, row[m.key])),
   ]);
 }
 
@@ -321,6 +405,7 @@ function slotRows(rows, valueKind) {
   const val = (v) => exportByKind(valueKind, v);
   return (rows || []).map((row) => [
     row.slot,
+    getSlotTimeRange(row.slot),
     val(row.pre ?? row.postLY),
     val(row.post),
     val(row.prevspost ?? row.yoy),
@@ -450,7 +535,9 @@ function buildMixChangeRows(mixPre, mixPost) {
 
 function marketingTablesNeedRebuild(tables) {
   const c = tables?.bySource?.combined?.corp;
-  return !c || c.ordersPre === undefined;
+  if (!c || c.ordersPre === undefined) return true;
+  // Rebuild after spend column fix (promo = customer discounts, ads = marketing fees).
+  return tables?._spendMappingVersion !== 2;
 }
 
 function buildMarketingSections(data, config) {
@@ -468,6 +555,7 @@ function buildMarketingSections(data, config) {
   }
 
   return {
+    _spendMappingVersion: 2,
     bySource: buildCorpVsTodcBySource(
       promotion,
       sponsored,
@@ -594,9 +682,11 @@ function detectDateColumn(columns, rows) {
   return null;
 }
 
-function buildProductPeriodRows(ddProductMix, columns, config) {
+function buildProductPeriodData(ddProductMix, columns, config) {
   const productCol = pickProductColumn(columns);
-  const valueCol = columns.find((c) => /sales|revenue|amount|payout/i.test(String(c))) || null;
+  const valueCol = pickMetricColumn(ddProductMix, columns, [productCol].filter(Boolean))
+    || columns.find((c) => /sales|revenue|amount|payout/i.test(String(c)))
+    || null;
   const dateCol = detectDateColumn(columns, ddProductMix);
   if (!dateCol || !productCol || !valueCol) return [];
   const { ddPreStart, ddPreEnd, ddPostStart, ddPostEnd } = config;
@@ -626,14 +716,13 @@ function buildProductPeriodRows(ddProductMix, columns, config) {
       postLY: round(p.postLY),
       growthPct: round(growthPct(p.pre, p.post), 1),
     }))
-    .sort((a, b) => b.post - a.post)
-    .map((p) => [p.product, xf.usd(p.pre), xf.usd(p.post), xf.usd(p.postLY), xf.deltaPct(p.growthPct)]);
+    .sort((a, b) => b.post - a.post);
 }
 
 function buildProductHighlightRows(ddProductMix, columns) {
   const productCol = pickProductColumn(columns);
   const salesCol = columns.find((c) => /sales|revenue|amount|payout/i.test(String(c))) || null;
-  const qtyCol = pickColumnByRegexOrder(columns, QTY_PATTERNS);
+  const qtyCol = pickProductMixQtyColumn(columns);
   const errorCol = pickErrorChargeColumn(columns);
   if (!productCol || !salesCol) return { topSelling: [], topAov: [], topErrorCharge: [], hasAov: false, hasErrorCharge: false };
 
@@ -673,16 +762,31 @@ function buildProductHighlightRows(ddProductMix, columns) {
   };
 }
 
+function sliceProductPct(n, pct = 0.10) {
+  if (!n) return 0;
+  return Math.max(1, Math.ceil(n * pct));
+}
+
+function splitProductGrowthRows(periodRows) {
+  const eligible = periodRows.filter((p) => p.pre > 0);
+  const n = sliceProductPct(eligible.length);
+  const top = [...eligible].sort((a, b) => b.growthPct - a.growthPct).slice(0, n);
+  const declining = [...eligible].sort((a, b) => a.growthPct - b.growthPct).slice(0, n);
+  const toRow = (p) => [p.product, xf.usd(p.pre), xf.usd(p.post), xf.deltaPct(p.growthPct)];
+  return {
+    top: top.map(toRow),
+    declining: declining.map(toRow),
+  };
+}
+
 function buildProductMixExportRows(data, config) {
   const rows = [];
   const ddProductMix = data.ddProductMix || [];
   const columns = objectColumns(ddProductMix);
-  const productStore = pivotProductByStore(ddProductMix, columns, { maxStoreCols: 26 });
-  const storeProduct = pivotStoreByProduct(ddProductMix, columns, { maxProductCols: 26 });
-  const valueCol = productStore.valueCol || storeProduct.valueCol;
-
-  addBlock(rows, 'Product × Store', matrixToRows('Product', productStore.rowProducts, productStore.colStores, productStore.matrix));
-  addBlock(rows, 'Store × Product', matrixToRows('Store', storeProduct.rowStores, storeProduct.colProducts, storeProduct.matrix));
+  const productCol = pickProductColumn(columns);
+  const valueCol = pickMetricColumn(ddProductMix, columns, [productCol].filter(Boolean))
+    || columns.find((c) => /sales|revenue|amount|payout/i.test(String(c)))
+    || null;
 
   const highlights = buildProductHighlightRows(ddProductMix, columns);
   if (highlights.topSelling.length) {
@@ -703,11 +807,17 @@ function buildProductMixExportRows(data, config) {
     );
   }
 
-  const periodRows = buildProductPeriodRows(ddProductMix, columns, config);
-  if (periodRows.length) {
-    addSection(rows, 'By product (Pre / Post / LY)', ['Product', 'Pre', 'Post', 'LY Post', 'Growth %'], periodRows);
-  } else if (valueCol) {
-    const byProduct = pivotOneWaySum(ddProductMix, productStore.productCol, valueCol);
+  const periodData = buildProductPeriodData(ddProductMix, columns, config);
+  if (periodData.length) {
+    const movers = splitProductGrowthRows(periodData);
+    if (movers.top.length) {
+      addSection(rows, 'Top 10% — highest growth', ['Product', 'Pre', 'Post', 'Growth %'], movers.top);
+    }
+    if (movers.declining.length) {
+      addSection(rows, 'Declining 10% — largest drops', ['Product', 'Pre', 'Post', 'Growth %'], movers.declining);
+    }
+  } else if (valueCol && productCol) {
+    const byProduct = pivotOneWaySum(ddProductMix, productCol, valueCol);
     addSection(rows, `By product (total ${valueCol})`, ['Product', 'Total'], byProduct.keys.map((k, i) => [k, byProduct.values[i]]));
   }
   return rows;
@@ -910,7 +1020,7 @@ function extractSpreadsheetUrl(gs) {
 }
 
 async function pushToGoogleSheets(filename, sheets) {
-  const targetUrl = GOOGLE_SHEETS_EXPORT_URL || defaultExportUrl();
+  const targetUrl = resolveSheetsExportUrl(GOOGLE_SHEETS_EXPORT_URL, defaultExportUrl);
 
   if (!targetUrl) {
     return {
@@ -945,26 +1055,21 @@ export async function exportAllReports(data, config) {
   const wb = XLSX.utils.book_new();
   const sheets = [];
 
-  const summaryRows = [];
-  for (const { key, label } of PLATFORM_SECTIONS) {
-    const summary = data.summaryTables?.[key] || [];
-    addSection(
-      summaryRows,
-      `${label} Table 1: Current Year Pre vs Post Analysis`,
-      ['Metric', 'Pre', 'Post', 'Pre vs Post', 'LY Pre vs Post', 'Growth%', 'LY Growth%'],
-      summaryPrePostRows(summary),
-    );
-    addSection(
-      summaryRows,
-      `${label} Table 2: Year-over-Year Analysis`,
-      ['Metric', 'LY Post', 'Post', 'YoY', 'YoY%'],
-      summaryYoyRows(summary),
-    );
+  // Legacy App2.0 / reference workbook sheets (required baseline)
+  for (const legacy of buildLegacyExportSheets(data, config)) {
+    appendReportSheet(wb, sheets, legacy.name, legacy.rows, data, config);
   }
 
+  const summarySheetRows = buildSummarySheetRows(data, config);
+  appendReportSheet(wb, sheets, 'Extended Summary', summarySheetRows, data, config);
+
+  const summaryRows = buildSummaryDetailSections(data.summaryTables);
+
   const storeLevelRows = [];
+  const alignedStores = buildAlignedExportStoreTables(data.storeTables, config?.ddToUeStoreMap || {});
   const storeHeaders = [
     'Store ID',
+    'Store Name',
     'Pre Sales',
     'Post Sales',
     'Sales Pre vs Post',
@@ -986,7 +1091,11 @@ export async function exportAllReports(data, config) {
       storeLevelRows,
       `${label}: Store-Level Performance (summary)`,
       storeHeaders,
-      storeRows(data.storeTables?.[key] || []),
+      storeRows(
+        { combined: alignedStores.combined, dd: alignedStores.dd, ue: alignedStores.ue }[key] || [],
+        key,
+        alignedStores.dominantPlatform,
+      ),
     );
   }
 
@@ -1052,7 +1161,7 @@ export async function exportAllReports(data, config) {
   addBlock(fullRows, 'Overview Spotlight', overviewRows);
   addBlock(fullRows, 'Store-Level Summary', storeLevelRows);
   addBlock(fullRows, 'Growth and Payout Drivers', diagnosticsRows);
-  appendReportSheet(wb, sheets, 'Full', fullRows);
+  appendReportSheet(wb, sheets, 'Full', fullRows, data, config);
 
   const dateRows = [];
   addApp2DatePivotSections(dateRows, data, config);
@@ -1068,41 +1177,31 @@ export async function exportAllReports(data, config) {
     ['Platform', 'Date', 'Store ID', 'Sales', 'Payouts', 'Orders'],
     buildDailyRows(data.ueFinancial, 'ue', config),
   );
-  appendReportSheet(wb, sheets, 'Date', dateRows);
+  appendReportSheet(wb, sheets, 'Date', dateRows, data, config);
 
   const marketingTables = buildMarketingSections(data, config);
   const marketingRows = [];
-  const prePostHeaders = ['Group', 'Pre', 'Post', 'Pre vs Post Δ', 'LY Pre vs Post Δ', 'Pre vs Post %', 'LY Growth%'];
-  const yoyHeaders = ['Group', 'LY Post', 'Post', 'YoY Δ', 'YoY %'];
-  const postImpactHeaders = ['Group', 'Sales', 'Spend', 'Promo AOV', 'Cost / Order', 'Check After Promo'];
-  const marketingSources = [
-    { title: 'Promotions', table: marketingTables?.bySource?.promotion },
-    { title: 'Sponsored Listings', table: marketingTables?.bySource?.sponsored },
-  ];
-  for (const source of marketingSources) {
-    addSection(
-      marketingRows,
-      `${source.title} — Post-period impact`,
-      postImpactHeaders,
-      marketingPostImpactRows(source.table),
-    );
-    for (const metric of MARKETING_SUMMARY_METRICS) {
-      addSection(
-        marketingRows,
-        `${source.title} — ${metric.label} (Pre vs Post)`,
-        prePostHeaders,
-        marketingMetricPrePostRows(source.table, metric.key, metric.kind),
-      );
-      addSection(
-        marketingRows,
-        `${source.title} — ${metric.label} (YoY)`,
-        yoyHeaders,
-        marketingMetricYoyRows(source.table, metric.key, metric.kind),
-      );
-    }
+  const combined = marketingTables?.bySource?.combined;
+  if (combined?.corp) {
+    addSection(marketingRows, 'Corp vs TODC — Post period', MARKETING_IMPACT_HEADERS, marketingImpactExportRows(combined, 'post'));
+    addSection(marketingRows, 'Corp vs TODC — Pre period', MARKETING_IMPACT_HEADERS, marketingImpactExportRows(combined, 'pre'));
   }
-  addSection(marketingRows, 'Campaign Performance', ['Campaign', 'Source', 'Type', 'Orders', 'Sales', 'Spend', 'Promo AOV', 'ROAS', 'Cost per Order', 'Check After Promo'], campaignRows(marketingTables?.campaigns));
-  appendReportSheet(wb, sheets, 'Marketing', marketingRows);
+  const allCampaigns = marketingTables?.campaigns || [];
+  const promoCampaigns = filterCampaignsBySource(allCampaigns, 'promotion');
+  const adsCampaigns = filterCampaignsBySource(allCampaigns, 'sponsored');
+  if (promoCampaigns.length) {
+    addSection(marketingRows, 'Promo campaigns', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(promoCampaigns));
+    addSection(marketingRows, 'Promo — Top 10% by ROAS', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(promoCampaigns, 'topRoas')));
+    addSection(marketingRows, 'Promo — Top 10% by spend', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(promoCampaigns, 'topSpend')));
+    addSection(marketingRows, 'Promo — Bottom 10% by ROAS', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(promoCampaigns, 'poorRoas')));
+  }
+  if (adsCampaigns.length) {
+    addSection(marketingRows, 'Ads campaigns', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(adsCampaigns));
+    addSection(marketingRows, 'Ads — Top 10% by ROAS', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(adsCampaigns, 'topRoas')));
+    addSection(marketingRows, 'Ads — Top 10% by spend', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(adsCampaigns, 'topSpend')));
+    addSection(marketingRows, 'Ads — Bottom 10% by ROAS', CAMPAIGN_IMPACT_HEADERS, campaignImpactExportRows(buildCampaignHighlights(adsCampaigns, 'poorRoas')));
+  }
+  appendReportSheet(wb, sheets, 'Marketing', marketingRows, data, config);
 
   const slotSheetRows = [];
   for (const { key, label } of DATA_PLATFORM_SECTIONS) {
@@ -1112,13 +1211,13 @@ export async function exportAllReports(data, config) {
       addSection(
         rows,
         `${title} - Pre vs Post`,
-        ['Slot', 'Pre', 'Post', 'Pre vs Post', 'Growth%'],
+        SLOT_EXPORT_HEADERS_PVP,
         slotRows(analysis?.[`${key}PrePost`], valueKind),
       );
       addSection(
         rows,
         `${title} - Year over Year`,
-        ['Slot', 'LY Post', 'Post', 'YoY', 'YoY%'],
+        SLOT_EXPORT_HEADERS_YOY,
         slotRows(analysis?.[`${key}YoY`], valueKind),
       );
     }
@@ -1149,7 +1248,7 @@ export async function exportAllReports(data, config) {
     appendSlotOrderAnalysisBlock(slotSheetRows, 'Uber Eats — order volume by slot / day', ueSlotOrderAnalysis);
   }
 
-  appendReportSheet(wb, sheets, 'Slot', slotSheetRows);
+  appendReportSheet(wb, sheets, 'Slot', slotSheetRows, data, config);
 
   const bucketData = buildBucketSections(data, config);
   const bucketRows = [];
@@ -1183,23 +1282,23 @@ export async function exportAllReports(data, config) {
       buildMixChangeRows(entry?.mixPre, entry?.mix),
     );
   }
-  appendReportSheet(wb, sheets, 'Bucket', bucketRows);
+  appendReportSheet(wb, sheets, 'Bucket', bucketRows, data, config);
 
-  const storesRows = buildStoresExportRows(data);
-  appendReportSheet(wb, sheets, 'Stores', storesRows);
+  const storesRows = buildStoresExportRows(data, config);
+  appendReportSheet(wb, sheets, 'Stores', storesRows, data, config);
 
   const opsRows = buildOperationsExportRows(data);
-  appendReportSheet(wb, sheets, 'Operations', opsRows);
+  appendReportSheet(wb, sheets, 'Operations', opsRows, data, config);
 
   const productMixRows = buildProductMixExportRows(data, config);
-  appendReportSheet(wb, sheets, 'Product Mix', productMixRows);
+  appendReportSheet(wb, sheets, 'Product Mix', productMixRows, data, config);
 
   const ddRegister = buildDdRegister(data, config);
   if (ddRegister.length) {
     appendReportSheet(wb, sheets, 'DD Register', [
       DD_REGISTER_COLUMNS.map((c) => c.label),
       ...ddRegister.map((r) => registerRowToExport(r, DD_REGISTER_COLUMNS)),
-    ]);
+    ], data, config);
   }
 
   const ueRegister = buildUeRegister(data, config);
@@ -1207,10 +1306,10 @@ export async function exportAllReports(data, config) {
     appendReportSheet(wb, sheets, 'UE Register', [
       UE_REGISTER_COLUMNS.map((c) => c.label),
       ...ueRegister.map((r) => registerRowToExport(r, UE_REGISTER_COLUMNS)),
-    ]);
+    ], data, config);
   }
 
-  const filename = `analysis_all_reports_${timestamp()}.xlsx`;
+  const filename = buildExportFilename(config, 'excel', { ext: 'xlsx' });
   XLSX.writeFile(wb, filename);
 
   let googleSheets;
@@ -1235,8 +1334,8 @@ function exportRegisterSheet(platform, data, config) {
     columns.map((c) => c.label),
     ...rows.map((r) => registerRowToExport(r, columns)),
   ]);
-  const prefix = isDd ? 'dd_register' : 'ue_register';
-  const filename = `${prefix}_${timestamp()}.xlsx`;
+  const fileType = isDd ? 'register_dd_excel' : 'register_ue_excel';
+  const filename = buildExportFilename(config, fileType, { ext: 'xlsx' });
   XLSX.writeFile(wb, filename);
   return { filename };
 }

@@ -12,7 +12,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-SLOT_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+SLOT_ORDER = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -35,26 +35,9 @@ MKT_FEE_COL = "Marketing fees | (including any applicable taxes)"
 
 
 def get_time_slot(time_str) -> Optional[str]:
-    if pd.isna(time_str) or time_str == "":
-        return None
-    try:
-        time_obj = pd.to_datetime(time_str, errors="coerce")
-        if pd.isna(time_obj):
-            return None
-        total_minutes = time_obj.hour * 60 + time_obj.minute
-        if total_minutes < 300:
-            return "Early morning"
-        if total_minutes < 660:
-            return "Breakfast"
-        if total_minutes < 840:
-            return "Lunch"
-        if total_minutes < 960:
-            return "Afternoon"
-        if total_minutes < 1200:
-            return "Dinner"
-        return "Late night"
-    except Exception:
-        return None
+    from shared.time_slots import slot_from_datetime
+
+    return slot_from_datetime(time_str)
 
 
 def get_subtotal_bucket(subtotal: float) -> str:
@@ -112,8 +95,10 @@ def resolve_financial_columns(df: pd.DataFrame) -> dict:
             cols["date"] = c
             break
 
-    for c in ["Timestamp local time", "Timestamp Local Time", "Order received local time"]:
-        if c in df.columns:
+    from shared.order_time_columns import FINANCIAL_ORDER_TIME_COL
+
+    for c in df.columns:
+        if str(c).strip() == FINANCIAL_ORDER_TIME_COL:
             cols["time"] = c
             break
 
@@ -144,6 +129,13 @@ def resolve_financial_columns(df: pd.DataFrame) -> dict:
     cols["mkt_discount_cols"] = [c for c in MKT_DISCOUNT_COLS if c in df.columns]
     if MKT_FEE_COL in df.columns:
         cols["mkt_fee_exact"] = MKT_FEE_COL
+
+    from shared.dd_order_classification import AD_FEE_HIST_COL, MKT_FEE_HIST_COL
+
+    if MKT_FEE_HIST_COL in df.columns:
+        cols["mkt_fee_hist"] = MKT_FEE_HIST_COL
+    if AD_FEE_HIST_COL in df.columns:
+        cols["ad_fee_hist"] = AD_FEE_HIST_COL
 
     return cols
 
@@ -454,6 +446,12 @@ def build_weekly_csv(
     df[cols["payout"]] = pd.to_numeric(df[cols["payout"]], errors="coerce").fillna(0)
 
     if "time" in cols:
+        from shared.order_time_columns import drop_rows_without_order_time
+
+        df = drop_rows_without_order_time(df, cols["time"])
+        if df.empty:
+            logger.warning("No rows with %s for week %s to %s", cols["time"], week_start, week_end)
+            return None
         df["_slot"] = df[cols["time"]].apply(get_time_slot)
     else:
         df["_slot"] = "Unknown"
@@ -507,31 +505,35 @@ def build_weekly_csv(
 
         oid_col = cols.get("order_id")
         orders_promo = orders_ads = orders_both = orders_organic = 0
+        mkt_fee_hist_col = cols.get("mkt_fee_hist")
+        ad_fee_hist_col = cols.get("ad_fee_hist")
 
-        if oid_col and mkt_fee_exact and mkt_discount_cols:
+        if oid_col and mkt_fee_exact:
+            from shared.dd_order_classification import classify_dd_order_from_discount_list
+
+            disc_cols = mkt_discount_cols or ([discount_col] if discount_col else [])
             for _, sub in group.groupby(oid_col, sort=False):
-                any_disc = any(float(sub[c].sum()) != 0 for c in mkt_discount_cols)
-                has_mkt_fee = float(sub[mkt_fee_exact].sum()) != 0
-                if any_disc and not has_mkt_fee:
-                    orders_promo += 1
-                elif not any_disc and has_mkt_fee:
-                    orders_ads += 1
-                elif any_disc and has_mkt_fee:
-                    orders_both += 1
-                else:
+                mkt = float(sub[mkt_fee_exact].sum())
+                disc_vals = [float(sub[c].sum()) for c in disc_cols] if disc_cols else [0.0]
+                while len(disc_vals) < 3:
+                    disc_vals.append(0.0)
+                mkt_hist = float(sub[mkt_fee_hist_col].sum()) if mkt_fee_hist_col else None
+                ad_hist = float(sub[ad_fee_hist_col].sum()) if ad_fee_hist_col else None
+                cls = classify_dd_order_from_discount_list(
+                    mkt,
+                    disc_vals[:3],
+                    mkt_hist=mkt_hist,
+                    ad_hist=ad_hist,
+                    both_label="both",
+                )
+                if cls == "organic":
                     orders_organic += 1
-        elif oid_col and mkt_fee_col and discount_col:
-            for _, sub in group.groupby(oid_col, sort=False):
-                disc = float(pd.to_numeric(sub[discount_col], errors="coerce").fillna(0).sum())
-                mkt = float(pd.to_numeric(sub[mkt_fee_col], errors="coerce").fillna(0).sum())
-                if disc != 0 and mkt == 0:
+                elif cls == "promo":
                     orders_promo += 1
-                elif mkt != 0 and disc == 0:
+                elif cls == "ads":
                     orders_ads += 1
-                elif mkt != 0 and disc != 0:
-                    orders_both += 1
                 else:
-                    orders_organic += 1
+                    orders_both += 1
 
         orders_mktg_driven = orders_promo + orders_ads + orders_both
 

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-
 type LogLine = {
   ts: string;
   level: string;

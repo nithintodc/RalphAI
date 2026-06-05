@@ -57,11 +57,12 @@ GC_BUCKET_ORDER = [
 ]
 
 SLOT_ORDER = [
+    "Overnight",
     "Breakfast",
     "Lunch",
     "Afternoon",
     "Dinner",
-    "Late Night",
+    "Late night",
     "All Day",
     "Unknown",
 ]
@@ -113,22 +114,11 @@ def first_matching_column(
 
 def derive_slot(timestamp_series: pd.Series) -> pd.Series:
     """Convert timestamps into operational meal slots."""
-    hours = timestamp_series.dt.hour.fillna(-1)
-    slots = []
-    for hour in hours:
-        if 5 <= hour < 11:
-            slots.append("Breakfast")
-        elif 11 <= hour < 15:
-            slots.append("Lunch")
-        elif 15 <= hour < 18:
-            slots.append("Afternoon")
-        elif 18 <= hour < 23:
-            slots.append("Dinner")
-        elif 0 <= hour < 5 or hour >= 23:
-            slots.append("Late Night")
-        else:
-            slots.append("Unknown")
-    return pd.Series(slots, index=timestamp_series.index)
+    from shared.time_slots import assign_day_part
+
+    hours = timestamp_series.dt.hour
+    slots = assign_day_part(hours)
+    return slots.where(hours.notna(), "Unknown")
 
 
 def apply_temporal_columns(df: pd.DataFrame, date_col: str, timestamp_col: str | None = None) -> pd.DataFrame:
@@ -190,15 +180,17 @@ def load_dd_order_level(file_path: Path, start_date: str, end_date: str, exclude
     order_col = first_matching_column(filtered, exact=["doordash order id", "order id"])
     timestamp_col = first_matching_column(
         filtered,
-        exact=["order received local time", "timestamp local time"],
+        exact=["order received local time"],
     )
     sales_col = first_matching_column(filtered, exact=["subtotal"])
     payout_col = first_matching_column(filtered, exact=["net total"]) or first_matching_column(
         filtered,
         contains_all=["net total"],
     )
-    if not all([date_col, order_col, sales_col]):
+    if not all([date_col, order_col, sales_col, timestamp_col]):
         return pd.DataFrame()
+
+    from shared.order_time_columns import drop_rows_without_order_time
 
     dd_frame = filtered.copy()
     if "Transaction type" in dd_frame.columns:
@@ -210,6 +202,9 @@ def load_dd_order_level(file_path: Path, start_date: str, end_date: str, exclude
     if payout_col:
         keep_cols.append(payout_col)
     dd_frame = dd_frame[keep_cols].copy()
+    dd_frame = drop_rows_without_order_time(dd_frame, timestamp_col)
+    if dd_frame.empty:
+        return pd.DataFrame()
     dd_frame = apply_temporal_columns(dd_frame, date_col, timestamp_col)
     dd_frame["Order ID"] = dd_frame[order_col].astype(str)
     dd_frame["Sales"] = pd.to_numeric(dd_frame[sales_col], errors="coerce").fillna(0.0)

@@ -49,10 +49,20 @@ from agents.health_check.agent import run_health_check  # noqa: E402
 from agents.campaign_killer.agent import run_async as run_campaign_killer_async  # noqa: E402
 from agents.campaign_analyser.agent import run as run_campaign_analyser  # noqa: E402
 from api.internal_apps import register_internal_apps  # noqa: E402
+from api.operator_profile_mapping import router as operator_profile_mapping_router  # noqa: E402
 from api.super_app_export import router as super_app_export_router  # noqa: E402
 from api.super_app_slack import router as super_app_slack_router  # noqa: E402
 from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows  # noqa: E402
 from shared.config.settings import marketingreco_reporting_root  # noqa: E402
+from shared.reporting_browser_use_forks import (  # noqa: E402
+    ALL_FORK_IDS,
+    credential_env_keys,
+    env_status_for_fork,
+    fork_directory,
+    fork_metadata,
+    list_fork_metadata,
+)
+from shared.subprocess_env import reporting_subprocess_env  # noqa: E402
 from shared.utils.airtable_directory import (  # noqa: E402
     get_accounts as airtable_get_accounts,
     load_account_operators_airtable,
@@ -80,6 +90,7 @@ app.include_router(super_app_export_router)
 app.include_router(super_app_export_router, prefix="/api")
 app.include_router(super_app_slack_router)
 app.include_router(super_app_slack_router, prefix="/api")
+app.include_router(operator_profile_mapping_router, prefix="/api")
 
 _ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 _origins = [o.strip() for o in _ALLOWED_ORIGINS.split(",") if o.strip()] if _ALLOWED_ORIGINS else [
@@ -169,6 +180,9 @@ def get_super_app_locations(operator: str = "", refresh: bool = False):
 @app.on_event("startup")
 def _prefetch_airtable_directory() -> None:
     """Fetch the Airtable Enterprise DB once at app start (non-fatal on failure)."""
+    from shared.health_check_run_jobs import reconcile_stale_running_jobs
+
+    reconcile_stale_running_jobs()
 
     def _fetch() -> None:
         try:
@@ -231,7 +245,6 @@ def _notify_export(kind: str, run_id: str, filename: str) -> None:
 
 
 _INDEX_LOCK = threading.Lock()
-
 
 def _append_index(rec: dict) -> None:
     # Lock so concurrent runs can't interleave writes and corrupt index lines.
@@ -836,6 +849,121 @@ def post_marketingreco(
         shutil.rmtree(work, ignore_errors=True)
 
 
+@app.get("/api/reporting-browser-use/forks")
+def get_reporting_browser_use_forks():
+    """List all reporting_browser_use fork agents and whether each can run."""
+    return list_fork_metadata()
+
+
+@app.get("/api/reporting-browser-use/forks/{fork_id}")
+def get_reporting_browser_use_fork(fork_id: str):
+    if fork_id not in ALL_FORK_IDS:
+        raise HTTPException(404, f"Unknown fork: {fork_id}")
+    return {**fork_metadata(fork_id), "env": env_status_for_fork(fork_id)}
+
+
+@app.post("/api/runs/reporting-browser-use/{fork_id}")
+def post_reporting_browser_use_fork(
+    fork_id: str,
+    operator_id: str = Form(""),
+    doordash_email: str = Form(""),
+    doordash_password: str = Form(""),
+):
+    """
+    Run a specific reporting_browser_use fork's ``main.py``.
+
+    DoorDash credentials come from the form or fall back to ``.env``.
+    LLM, Multilogin, CDP, and other secrets are always taken from the server ``.env``.
+    """
+    if fork_id not in ALL_FORK_IDS:
+        raise HTTPException(404, f"Unknown fork: {fork_id}")
+    meta = fork_metadata(fork_id)
+    if not meta["runnable"]:
+        raise HTTPException(
+            400,
+            meta["note"] or f"Fork {fork_id} is not runnable (main.py missing).",
+        )
+
+    run_id = str(uuid.uuid4())
+    t0 = datetime.now(timezone.utc)
+    reporting_root = fork_directory(fork_id)
+    env = reporting_subprocess_env(reporting_root)
+
+    email_key, password_key = credential_env_keys()
+    email = doordash_email.strip() or os.getenv(email_key, "").strip()
+    password = doordash_password or os.getenv(password_key, "")
+    if not email or not password:
+        raise HTTPException(
+            400,
+            f"DoorDash credentials required — provide in the form or set {email_key} / {password_key} in .env.",
+        )
+    env[email_key] = email
+    env[password_key] = password
+
+    llm_key = meta["llm_env_key"]
+    if not str(env.get(llm_key, "")).strip():
+        raise HTTPException(400, f"{llm_key} must be set in .env for fork {fork_id}.")
+
+    try:
+        subprocess.run(
+            [sys.executable, "main.py"],
+            cwd=str(reporting_root),
+            env=env,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        err = f"main.py exited with code {exc.returncode}"
+        _append_index(
+            {
+                "id": run_id,
+                "agent": fork_id,
+                "operator": operator_id.strip() or email,
+                "status": "error",
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+                "error": err,
+            }
+        )
+        raise HTTPException(500, err) from exc
+    except Exception as exc:
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        _append_index(
+            {
+                "id": run_id,
+                "agent": fork_id,
+                "operator": operator_id.strip() or email,
+                "status": "error",
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+                "error": str(exc),
+            }
+        )
+        raise HTTPException(500, str(exc)) from exc
+
+    duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+    _append_index(
+        {
+            "id": run_id,
+            "agent": fork_id,
+            "operator": operator_id.strip() or email,
+            "status": "success",
+            "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+            "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+        }
+    )
+    return JSONResponse(
+        {
+            "status": "success",
+            "run_id": run_id,
+            "fork_id": fork_id,
+            "fork_path": str(reporting_root),
+            "operator_id": operator_id.strip() or None,
+            "doordash_email": email,
+        }
+    )
+
+
 @app.post("/api/runs/offers")
 def post_offers(
     operator_id: str = Form(...),
@@ -1228,9 +1356,19 @@ def post_campaign_review(
         shutil.rmtree(work, ignore_errors=True)
 
 
+@app.get("/api/data-run/report-types")
+def get_data_run_report_types():
+    from shared.data_run_reports import list_report_type_options
+
+    return {"report_types": list_report_type_options()}
+
+
 @app.post("/api/runs/data-run")
 def post_data_run(
     operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
+    report_types: str = Form("[]", description="JSON array of report type ids"),
+    start_date: str = Form(..., description="YYYY-MM-DD or MM/DD/YYYY"),
+    end_date: str = Form(..., description="YYYY-MM-DD or MM/DD/YYYY"),
 ):
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
@@ -1252,33 +1390,51 @@ def post_data_run(
         if not parsed_ids:
             raise HTTPException(400, "Select at least one operator.")
 
+        types_raw = (report_types or "[]").strip()
+        try:
+            parsed_types = json.loads(types_raw) if types_raw else []
+            if not isinstance(parsed_types, list):
+                raise ValueError
+            type_ids = [str(v).strip() for v in parsed_types if str(v).strip()]
+        except Exception as exc:
+            raise HTTPException(400, "report_types must be a JSON array of report type ids") from exc
+        if not type_ids:
+            raise HTTPException(400, "Select at least one report type.")
+
+        if not (start_date or "").strip() or not (end_date or "").strip():
+            raise HTTPException(400, "start_date and end_date are required.")
+
         result = run_data_run(
             operator_ids=parsed_ids,
+            report_types=type_ids,
+            start_date=start_date.strip(),
+            end_date=end_date.strip(),
             reporting_root=str(marketingreco_reporting_root()),
         )
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        run_status = str(result.get("status") or "success")
         _append_index(
             {
                 "id": run_id,
                 "agent": "data_run",
                 "operator": f"{len(parsed_ids)} selected",
-                "status": "success",
+                "status": run_status,
                 "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
                 "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
             }
         )
         return JSONResponse(
             {
-                "status": "success",
                 "run_id": run_id,
-                "file_type": "both",
                 "selected_operator_count": len(parsed_ids),
                 **result,
             }
         )
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -1334,6 +1490,108 @@ def post_strategist(
         raise HTTPException(500, str(e))
 
 
+def _parse_health_check_form(
+    operator_emails: str,
+    weeks: int,
+    operator: str,
+    skip_download: str,
+    reference_date: str,
+) -> tuple[int, bool, list[str] | None, str | None, date_type | None]:
+    ref: date_type | None = None
+    raw = (reference_date or "").strip()
+    if raw:
+        ref = datetime.strptime(raw, "%Y-%m-%d").date()
+    wb = max(2, int(weeks or 2))
+    skip_dl = (skip_download or "").strip().lower() in ("1", "true", "yes", "on")
+
+    emails_arg: list[str] | None = None
+    filter_arg: str | None = None
+    raw_emails = (operator_emails or "").strip()
+    if raw_emails:
+        try:
+            parsed = json.loads(raw_emails)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, "operator_emails must be a JSON array of strings.") from exc
+        if not isinstance(parsed, list):
+            raise HTTPException(400, "operator_emails must be a JSON array.")
+        emails_arg = [str(x).strip() for x in parsed if str(x).strip()]
+        if not emails_arg:
+            raise HTTPException(400, "Select at least one operator (operator_emails is empty).")
+    else:
+        filter_arg = (operator or "").strip() or None
+    return wb, skip_dl, emails_arg, filter_arg, ref
+
+
+def _health_check_op_label(emails_arg: list[str] | None, operator: str, result: dict) -> str:
+    if emails_arg is not None:
+        return f"{len(emails_arg)} selected ({result.get('operators_processed', '?')} in CSV)"
+    return (operator or "").strip() or "all operators"
+
+
+def _run_health_check_worker(
+    run_id: str,
+    t0: datetime,
+    *,
+    weeks_back: int,
+    operator_filter: str | None,
+    operator_emails: list[str] | None,
+    reference_date: date_type | None,
+    skip_download: bool,
+    op_label: str,
+) -> None:
+    from shared.health_check_run_control import begin_run
+
+    begin_run()
+    try:
+        result = run_health_check(
+            weeks_back=weeks_back,
+            operator_filter=operator_filter,
+            operator_emails=operator_emails,
+            reference_date=reference_date,
+            skip_download=skip_download,
+            run_id=run_id,
+        )
+        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        status = result.get("status", "unknown")
+        _append_index(
+            {
+                "id": run_id,
+                "agent": "health_check",
+                "operator": op_label,
+                "status": status,
+                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
+                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
+            }
+        )
+        from shared.health_check_run_jobs import set_health_check_job
+
+        set_health_check_job(
+            run_id,
+            {
+                "run_id": run_id,
+                "status": status,
+                "started": t0.isoformat(),
+                "result": result,
+                "error": None,
+            },
+        )
+    except Exception as exc:
+        from shared.health_check_job_progress import clear_health_check_progress
+        from shared.health_check_run_jobs import set_health_check_job
+
+        clear_health_check_progress(run_id)
+        set_health_check_job(
+            run_id,
+            {
+                "run_id": run_id,
+                "status": "error",
+                "started": t0.isoformat(),
+                "result": None,
+                "error": str(exc),
+            },
+        )
+
+
 @app.post("/api/runs/health-check")
 def post_health_check(
     operator_emails: str = Form(
@@ -1348,60 +1606,85 @@ def post_health_check(
     """
     Weekly health check: one combined browser download per operator (last two Mon–Sun),
     split into weekly CSVs, merged WoW sheets under ``wow/``.
+
+    Returns immediately with ``run_id``; poll ``GET /api/runs/health-check/{run_id}`` or cancel via
+    ``POST /api/runs/health-check/cancel``.
     """
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
     try:
-        ref: date_type | None = None
-        raw = (reference_date or "").strip()
-        if raw:
-            ref = datetime.strptime(raw, "%Y-%m-%d").date()
-        wb = max(2, int(weeks or 2))
-        skip_dl = (skip_download or "").strip().lower() in ("1", "true", "yes", "on")
-
-        emails_arg: list[str] | None = None
-        filter_arg: str | None = None
-        raw_emails = (operator_emails or "").strip()
-        if raw_emails:
-            try:
-                parsed = json.loads(raw_emails)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(400, "operator_emails must be a JSON array of strings.") from exc
-            if not isinstance(parsed, list):
-                raise HTTPException(400, "operator_emails must be a JSON array.")
-            emails_arg = [str(x).strip() for x in parsed if str(x).strip()]
-            if not emails_arg:
-                raise HTTPException(400, "Select at least one operator (operator_emails is empty).")
-        else:
-            filter_arg = (operator or "").strip() or None
-
-        result = run_health_check(
-            weeks_back=wb,
-            operator_filter=filter_arg,
-            operator_emails=emails_arg,
-            reference_date=ref,
-            skip_download=skip_dl,
+        wb, skip_dl, emails_arg, filter_arg, ref = _parse_health_check_form(
+            operator_emails, weeks, operator, skip_download, reference_date
         )
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
         if emails_arg is not None:
-            op_label = f"{len(emails_arg)} selected ({result.get('operators_processed', '?')} in CSV)"
+            op_label = f"{len(emails_arg)} selected"
         else:
             op_label = (operator or "").strip() or "all operators"
-        _append_index(
+
+        from shared.health_check_run_jobs import set_health_check_job
+
+        set_health_check_job(
+            run_id,
             {
-                "id": run_id,
-                "agent": "health_check",
-                "operator": op_label,
-                "status": result.get("status", "unknown"),
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
+                "run_id": run_id,
+                "status": "running",
+                "started": t0.isoformat(),
+                "result": None,
+                "error": None,
+            },
         )
-        return JSONResponse({"run_id": run_id, **result})
+
+        threading.Thread(
+            target=_run_health_check_worker,
+            name=f"health-check-{run_id[:8]}",
+            daemon=True,
+            kwargs={
+                "run_id": run_id,
+                "t0": t0,
+                "weeks_back": wb,
+                "operator_filter": filter_arg,
+                "operator_emails": emails_arg,
+                "reference_date": ref,
+                "skip_download": skip_dl,
+                "op_label": op_label,
+            },
+        ).start()
+
+        return JSONResponse({"run_id": run_id, "status": "running"}, status_code=202)
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
+
+
+@app.get("/api/runs/health-check/{run_id}")
+def get_health_check_run(run_id: str):
+    _validate_run_id(run_id)
+    from shared.health_check_run_jobs import get_health_check_job
+
+    job = get_health_check_job(run_id)
+    if not job:
+        raise HTTPException(404, "Health check run not found (expired or invalid run_id).")
+    from shared.health_check_job_progress import get_health_check_progress
+
+    payload = {"run_id": run_id, "status": job.get("status", "unknown")}
+    progress = get_health_check_progress(run_id)
+    if progress:
+        payload["progress"] = progress
+    if job.get("error"):
+        payload["error"] = job["error"]
+    if job.get("result") is not None:
+        payload.update(job["result"])
+    return JSONResponse(payload)
+
+
+@app.post("/api/runs/health-check/cancel")
+def cancel_health_check_run():
+    """Stop the in-flight browser download / health-check loop."""
+    from shared.health_check_run_control import request_cancel
+
+    request_cancel()
+    return {"status": "cancel_requested"}
 
 
 @app.get("/api/healthcheck/wow-viz")
@@ -1611,9 +1894,12 @@ AGENT_REGISTRY: list[dict] = [
         "id": "data_run",
         "name": "Data Run",
         "category": "data",
-        "description": "Sequential browser download for multiple operators (last 3 months)",
+        "description": "Sequential DoorDash report zip downloads per operator (selected types and date range)",
         "inputs": [
             {"name": "operator_ids", "type": "string[]", "required": True, "description": "Operator IDs to pull data for"},
+            {"name": "report_types", "type": "string[]", "required": True, "description": "financial, marketing, operations, sales, product_mix, refund"},
+            {"name": "start_date", "type": "date", "required": True},
+            {"name": "end_date", "type": "date", "required": True},
         ],
         "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
     },
@@ -1702,6 +1988,36 @@ AGENT_REGISTRY: list[dict] = [
         "outputs": [],
     },
 ]
+
+for _fork in list_fork_metadata():
+    AGENT_REGISTRY.append(
+        {
+            "id": _fork["id"],
+            "name": _fork["name"],
+            "category": "execution",
+            "description": _fork["description"],
+            "runnable": _fork["runnable"],
+            "reporting_fork": True,
+            "llm": _fork["llm"],
+            "llm_env_key": _fork["llm_env_key"],
+            "inputs": [
+                {"name": "operator_id", "type": "string", "required": False},
+                {
+                    "name": "doordash_email",
+                    "type": "string",
+                    "required": False,
+                    "description": "Falls back to DOORDASH_EMAIL in .env",
+                },
+                {
+                    "name": "doordash_password",
+                    "type": "password",
+                    "required": False,
+                    "description": "Falls back to DOORDASH_PASSWORD in .env",
+                },
+            ],
+            "outputs": [{"name": "status", "type": "string"}],
+        }
+    )
 
 
 @app.get("/api/agents")
@@ -1887,8 +2203,14 @@ def run_job(job_id: str):
             ids = variables.get("operator_ids") or []
             if isinstance(ids, str):
                 ids = [s.strip() for s in ids.split(",") if s.strip()]
+            types = variables.get("report_types") or []
+            if isinstance(types, str):
+                types = [s.strip() for s in types.split(",") if s.strip()]
             result = run_data_run(
                 operator_ids=ids,
+                report_types=types,
+                start_date=str(variables.get("start_date") or ""),
+                end_date=str(variables.get("end_date") or ""),
                 reporting_root=str(marketingreco_reporting_root()),
             )
         elif agent_id == "strategist":

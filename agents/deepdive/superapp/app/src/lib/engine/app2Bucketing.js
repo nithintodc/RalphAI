@@ -4,12 +4,13 @@
  * Ported from App2.0/bucketing_analysis.py and App2.0/export_functions.py helpers.
  */
 import { format, startOfWeek, endOfWeek, subYears } from 'date-fns';
+import { isPresentTimeValue } from '../constants/orderTimeColumns';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
 import { parseTimeToMinutes } from './slots';
 import { round } from '../utils/safeMath';
 
 export const APP2_DAY_PARTS = [
-  'Early morning',
+  'Overnight',
   'Breakfast',
   'Lunch',
   'Afternoon',
@@ -82,11 +83,11 @@ function hourFromTimeStr(timeStr) {
 export function assignApp2DayPart(hour) {
   const h = hour == null || hour < 0 ? -1 : Math.floor(hour);
   if (h < 0) return 'Unknown';
-  if (h < 6) return APP2_DAY_PARTS[0];
+  if (h < 5) return APP2_DAY_PARTS[0];
   if (h < 11) return APP2_DAY_PARTS[1];
-  if (h < 15) return APP2_DAY_PARTS[2];
+  if (h < 14) return APP2_DAY_PARTS[2];
   if (h < 17) return APP2_DAY_PARTS[3];
-  if (h < 22) return APP2_DAY_PARTS[4];
+  if (h < 20) return APP2_DAY_PARTS[4];
   return APP2_DAY_PARTS[5];
 }
 
@@ -108,6 +109,7 @@ export function prepareApp2OrderRows(ddFinancial, start, end, excludedDates = []
     if (!orderRows?.length) continue;
     const r0 = orderRows[0];
     if (!r0.orderId) continue;
+    if (!isPresentTimeValue(r0.time)) continue;
     const subtotal = orderRows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0);
     const netTotal = orderRows.reduce((s, r) => s + (Number(r.netTotal) || 0), 0);
     const mkt = orderRows.reduce((s, r) => s + (Number(r.marketingFees) || 0), 0);

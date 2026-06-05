@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { subYears } from 'date-fns';
+import { isSinglePeriodMode } from '../lib/utils/periodMode';
 
 export const useConfigStore = create((set, get) => ({
   ddPreStart: null,
@@ -35,6 +36,10 @@ export const useConfigStore = create((set, get) => ({
   ddToUeStoreMap: {},
   // Canonical combined store ID (UE mapped ID or DD ID) -> tag label (e.g. A/B).
   storeTagMap: {},
+  // Canonical store IDs included in analysis (mapping rows not deleted).
+  includedStoreIds: [],
+  // App-wide A/B scope: all | A | B
+  abGroupFilter: 'all',
 
   setDdToUeStoreMap: (map) => {
     const next = map && typeof map === 'object' && !Array.isArray(map) ? { ...map } : {};
@@ -43,6 +48,14 @@ export const useConfigStore = create((set, get) => ({
   setStoreTagMap: (map) => {
     const next = map && typeof map === 'object' && !Array.isArray(map) ? { ...map } : {};
     set({ storeTagMap: next });
+  },
+  setIncludedStoreIds: (ids) => {
+    const next = Array.isArray(ids) ? ids.map((id) => String(id).trim()).filter(Boolean) : [];
+    set({ includedStoreIds: next });
+  },
+  setAbGroupFilter: (abGroupFilter) => {
+    const next = abGroupFilter === 'A' || abGroupFilter === 'B' ? abGroupFilter : 'all';
+    set({ abGroupFilter: next });
   },
 
   setDateAnalysisMode: (dateAnalysisMode) => set({ dateAnalysisMode }),
@@ -123,6 +136,11 @@ export const useConfigStore = create((set, get) => ({
 
   isConfigured: () => {
     const s = get();
+    if (isSinglePeriodMode(s.dateAnalysisMode)) {
+      const ddReady = s.ddPostStart && s.ddPostEnd;
+      const ueReady = s.uePostStart && s.uePostEnd;
+      return !!(ddReady || ueReady);
+    }
     const ddReady = s.ddPreStart && s.ddPreEnd && s.ddPostStart && s.ddPostEnd;
     const ueReady = s.uePreStart && s.uePreEnd && s.uePostStart && s.uePostEnd;
     return !!(ddReady || ueReady);

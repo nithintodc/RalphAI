@@ -4,12 +4,13 @@
  * Ported from App2.0/bucketing_analysis.py and App2.0/export_functions.py helpers.
  */
 import { format, startOfWeek, endOfWeek, subYears } from 'date-fns';
+import { isPresentTimeValue } from '../constants/orderTimeColumns';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
-import { parseTimeToMinutes } from './slots';
+import { parseTimeToMinutes, getSlotTimeRange, SLOT_TIME_COLUMN_LABEL } from './slots';
 import { round } from '../utils/safeMath';
 
 export const APP2_DAY_PARTS = [
-  'Early morning',
+  'Overnight',
   'Breakfast',
   'Lunch',
   'Afternoon',
@@ -82,11 +83,11 @@ function hourFromTimeStr(timeStr) {
 export function assignApp2DayPart(hour) {
   const h = hour == null || hour < 0 ? -1 : Math.floor(hour);
   if (h < 0) return 'Unknown';
-  if (h < 6) return APP2_DAY_PARTS[0];
+  if (h < 5) return APP2_DAY_PARTS[0];
   if (h < 11) return APP2_DAY_PARTS[1];
-  if (h < 15) return APP2_DAY_PARTS[2];
+  if (h < 14) return APP2_DAY_PARTS[2];
   if (h < 17) return APP2_DAY_PARTS[3];
-  if (h < 22) return APP2_DAY_PARTS[4];
+  if (h < 20) return APP2_DAY_PARTS[4];
   return APP2_DAY_PARTS[5];
 }
 
@@ -108,6 +109,7 @@ export function prepareApp2OrderRows(ddFinancial, start, end, excludedDates = []
     if (!orderRows?.length) continue;
     const r0 = orderRows[0];
     if (!r0.orderId) continue;
+    if (!isPresentTimeValue(r0.time)) continue;
     const subtotal = orderRows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0);
     const netTotal = orderRows.reduce((s, r) => s + (Number(r.netTotal) || 0), 0);
     const mkt = orderRows.reduce((s, r) => s + (Number(r.marketingFees) || 0), 0);
@@ -543,14 +545,39 @@ export function buildApp2BucketingPack(ddFinancial, config) {
   };
 }
 
+function slotColumnKey(keys) {
+  return keys.find((k) => k === 'slot' || k === 'Day part') || null;
+}
+
+function exportKeysWithSlotTime(keys, slotKey) {
+  if (!slotKey || !keys.includes(slotKey)) return keys;
+  const out = [];
+  for (const k of keys) {
+    out.push(k);
+    if (k === slotKey) out.push(SLOT_TIME_COLUMN_LABEL);
+  }
+  return out;
+}
+
+function exportRowWithSlotTime(row, keys, slotKey) {
+  const out = [];
+  for (const k of keys) {
+    out.push(row[k]);
+    if (k === slotKey) out.push(getSlotTimeRange(row[k]));
+  }
+  return out;
+}
+
 function pushObjectSection(target, title, objects, maxRows = 50000) {
   if (!objects?.length) return;
   if (target.length) target.push([]);
   target.push([title]);
-  const keys = Object.keys(objects[0]);
+  const baseKeys = Object.keys(objects[0]);
+  const slotKey = slotColumnKey(baseKeys);
+  const keys = exportKeysWithSlotTime(baseKeys, slotKey);
   target.push(keys);
   const slice = objects.slice(0, maxRows);
-  for (const o of slice) target.push(keys.map((k) => o[k]));
+  for (const o of slice) target.push(exportRowWithSlotTime(o, baseKeys, slotKey));
   if (objects.length > maxRows) {
     target.push([`… truncated at ${maxRows} rows (${objects.length} total)`]);
   }
@@ -587,10 +614,28 @@ export function columnsFromObjects(rows, labelMap = {}) {
   if (!rows?.length) {
     return [{ key: '_empty', label: '—', sortable: false }];
   }
-  return Object.keys(rows[0]).map((key) => ({
-    key,
-    label: labelMap[key] || key,
-    align: typeof rows[0][key] === 'number' ? 'right' : 'left',
-    sortable: true,
-  }));
+  const keys = Object.keys(rows[0]);
+  const slotKey = slotColumnKey(keys);
+  const cols = [];
+  for (const key of keys) {
+    cols.push({
+      key,
+      label: labelMap[key] || key,
+      align: typeof rows[0][key] === 'number' ? 'right' : 'left',
+      sortable: true,
+      labelCol: key === slotKey || key === STORE_COL,
+    });
+    if (key === slotKey) {
+      cols.push({
+        key: 'slotTime',
+        label: SLOT_TIME_COLUMN_LABEL,
+        align: 'left',
+        sortable: false,
+        labelCol: true,
+        wrap: true,
+        render: (_, row) => getSlotTimeRange(row[key]),
+      });
+    }
+  }
+  return cols;
 }

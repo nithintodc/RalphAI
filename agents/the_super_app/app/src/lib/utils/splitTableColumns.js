@@ -5,6 +5,7 @@ const ANCHOR_KEY_HINTS = new Set([
   'store',
   'storeId',
   'slot',
+  'slotTime',
   'step',
   'segment',
   'product',

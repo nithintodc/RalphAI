@@ -41,7 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPORTING_ROOT = marketingreco_reporting_root()
 HEALTHCHECK_ROOT = PROJECT_ROOT / "data" / "healthcheck"
 
-SLOT_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+SLOT_ORDER = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 
 def _setup_logging():
@@ -183,6 +183,42 @@ asyncio.run(_main())
 """
 
 
+def _download_failure_reason(download_result: dict[str, Any]) -> str:
+    """Human-readable failure for operator_results / dashboard."""
+    err = (download_result.get("error") or "").strip()
+    if "Incorrect credentials" in err or "Multilogin sign-in failed" in err:
+        return (
+            "multilogin_signin_failed: Multilogin API rejected MULTILOGIN_USERNAME/PASSWORD. "
+            "Log in at https://app.multilogin.com with the same account, fix .env, restart ./run.sh"
+        )
+    if err:
+        # Keep last line of traceback-ish stderr readable in UI
+        for line in reversed(err.splitlines()):
+            line = line.strip()
+            if line and not line.startswith("File "):
+                return line[:500]
+        return err[:500]
+    missing = download_result.get("missing_reports") or []
+    if missing:
+        return "missing_required_reports:" + ",".join(missing)
+    return "download_failed"
+
+
+def _resolve_multilogin_profile_id(doordash_email: str) -> str | None:
+    """Look up Multilogin profile_id in operator_multilogin_mapping.json by DoorDash email."""
+    try:
+        from shared.multilogin_browser import multilogin_enabled, profile_id_for_email
+
+        if not multilogin_enabled():
+            return None
+        return profile_id_for_email(doordash_email)
+    except KeyError:
+        raise
+    except Exception as exc:
+        logger.warning("Multilogin profile lookup failed for %s: %s", doordash_email, exc)
+        return None
+
+
 def download_reports_for_operator(
     operator: dict[str, str],
     week_start: date,
@@ -191,13 +227,57 @@ def download_reports_for_operator(
 ) -> dict[str, Any]:
     """
     Download financial + marketing reports for one operator via browser-use subprocess.
+
+    When USE_MULTILOGIN=true: maps operator email → profile_id in
+    ``operator_multilogin_mapping.json``, starts that profile, then browser-use
+    pulls reports (no DoorDash login in the task).
     """
     start_str, end_str = format_date_range_for_doordash(week_start, week_end)
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    env["DOORDASH_EMAIL"] = operator["email"]
-    env["DOORDASH_PASSWORD"] = operator["password"]
+    email = operator["email"].strip()
+    password = operator["password"].strip()
+    try:
+        from shared.doordash_portal_tasks import resolve_doordash_credentials
+
+        email, password = resolve_doordash_credentials(
+            email,
+            password or None,
+            operator_name=operator.get("business_name"),
+        )
+    except ValueError as cred_exc:
+        return {
+            "status": "failed",
+            "error": str(cred_exc),
+            "missing_reports": ["financial", "marketing"],
+        }
+    try:
+        mlx_profile_id = _resolve_multilogin_profile_id(email)
+    except KeyError:
+        mapping_path = os.getenv(
+            "OPERATOR_PROFILE_MAPPING",
+            str(PROJECT_ROOT / "operator_multilogin_mapping.json"),
+        )
+        return {
+            "status": "failed",
+            "error": (
+                f"No multilogin_profile_id in {mapping_path} for DoorDash email {email!r}. "
+                "Run: python -m multilogin.sync_operator_mapping"
+            ),
+            "missing_reports": ["financial", "marketing"],
+        }
+    if mlx_profile_id:
+        logger.info(
+            "Multilogin: operator %s → profile %s (from operator_multilogin_mapping.json)",
+            email,
+            mlx_profile_id,
+        )
+
+    from shared.subprocess_env import reporting_subprocess_env
+
+    env = reporting_subprocess_env(REPORTING_ROOT)
+    env["DOORDASH_EMAIL"] = email
+    env["DOORDASH_PASSWORD"] = password
     env["REPORT_START_DATE"] = start_str
     env["REPORT_END_DATE"] = end_str
     env["DOWNLOAD_DIR"] = str(download_dir)
@@ -208,22 +288,41 @@ def download_reports_for_operator(
         operator["business_name"], operator["email"], start_str, end_str,
     )
 
+    from shared.health_check_run_control import (
+        clear_subprocess,
+        is_cancelled,
+        register_subprocess,
+        wait_for_subprocess,
+    )
+    from shared.multilogin_browser import multilogin_enabled, stop_profile_for_email
+
+    dd_email = operator["email"].strip()
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, "-c", _download_subprocess_script()],
             cwd=str(REPORTING_ROOT),
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=1200,
         )
+        register_subprocess(proc)
+        returncode, stdout, stderr = wait_for_subprocess(proc, timeout=1200.0)
 
-        if proc.returncode != 0:
-            logger.error("Download failed for %s: %s", operator["email"], proc.stderr[-500:] if proc.stderr else "no stderr")
-            return {"status": "failed", "error": proc.stderr[-500:] if proc.stderr else "non-zero exit"}
+        if is_cancelled() or returncode == -1:
+            logger.info("Download cancelled for %s", operator["email"])
+            return {
+                "status": "cancelled",
+                "error": "cancelled",
+                "missing_reports": ["financial", "marketing"],
+            }
+
+        if returncode != 0:
+            logger.error("Download failed for %s: %s", operator["email"], stderr[-500:] if stderr else "no stderr")
+            return {"status": "failed", "error": stderr[-500:] if stderr else "non-zero exit"}
 
         result_line = ""
-        for line in reversed((proc.stdout or "").splitlines()):
+        for line in reversed((stdout or "").splitlines()):
             if line.startswith("HEALTH_CHECK_RESULT="):
                 result_line = line.split("=", 1)[1].strip()
                 break
@@ -235,6 +334,8 @@ def download_reports_for_operator(
         parsed = json.loads(result_line)
         missing_reports = parsed.get("missing_reports") or []
         status = "success" if not missing_reports else "partial"
+        if mlx_profile_id:
+            parsed["multilogin_profile_id"] = mlx_profile_id
         if status == "partial":
             logger.warning(
                 "Download partial for %s | missing=%s | financial=%s | marketing=%s",
@@ -243,12 +344,15 @@ def download_reports_for_operator(
                 bool(parsed.get("financial_path")),
                 bool(parsed.get("marketing_path")),
             )
-        return {
+        out: dict[str, Any] = {
             "status": status,
             "financial_path": parsed.get("financial_path") or None,
             "marketing_path": parsed.get("marketing_path") or None,
             "missing_reports": missing_reports,
         }
+        if mlx_profile_id:
+            out["multilogin_profile_id"] = mlx_profile_id
+        return out
 
     except subprocess.TimeoutExpired:
         logger.error("Timeout downloading reports for %s", operator["email"])
@@ -256,6 +360,10 @@ def download_reports_for_operator(
     except Exception as e:
         logger.error("Error downloading reports for %s: %s", operator["email"], e)
         return {"status": "failed", "error": str(e)}
+    finally:
+        clear_subprocess()
+        if multilogin_enabled():
+            stop_profile_for_email(dd_email)
 
 
 def process_operator_week(
@@ -455,6 +563,7 @@ def run_health_check(
     operator_emails: list[str] | None = None,
     reference_date: date | None = None,
     skip_download: bool = False,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Main entry point for the health check agent.
@@ -476,8 +585,11 @@ def run_health_check(
             ``data/healthcheck/<operator>/operatorlevel/`` (legacy layout). New runs write under
             ``data/healthcheck/run-<timestamp>/<operator>/``.
     """
+    from shared.health_check_job_progress import clear_health_check_progress, set_health_check_progress
+
     _setup_logging()
     HEALTHCHECK_ROOT.mkdir(parents=True, exist_ok=True)
+    set_health_check_progress(run_id, "starting", "Loading operators")
 
     operators, airtable_warning = load_health_check_operators()
     if airtable_warning:
@@ -531,6 +643,21 @@ def run_health_check(
             weeks_back,
         )
 
+    try:
+        from shared.multilogin_browser import multilogin_enabled
+
+        if multilogin_enabled():
+            logger.info(
+                "Browser: Multilogin enabled (USE_MULTILOGIN=true) — DoorDash sessions from profiles CSV"
+            )
+        else:
+            logger.info(
+                "Browser: local Chrome via browser-use (USE_MULTILOGIN not set). "
+                "Add USE_MULTILOGIN=true and MULTILOGIN_USERNAME/PASSWORD to .env for logged-in profiles."
+            )
+    except Exception:
+        pass
+
     logger.info(
         "Processing %d operators | combined pull %s → %s (%s); WoW: %s vs %s",
         len(operators),
@@ -548,7 +675,13 @@ def run_health_check(
     store_operator_map: dict[str, str] = {}
     operator_results: list[dict[str, Any]] = []
 
+    from shared.health_check_run_control import is_cancelled
+
     for operator in operators:
+        if is_cancelled():
+            logger.info("Health check cancelled — stopping before next operator")
+            break
+
         safe_name = _safe_name(operator["business_name"] or operator["email"])
         op_name = operator["business_name"] or operator["email"]
         legacy_dirs = _legacy_operator_dirs(op_name)
@@ -585,12 +718,18 @@ def run_health_check(
                     )
             continue
 
+        set_health_check_progress(
+            run_id,
+            "downloading",
+            f"{op_name}: DoorDash reports (Multilogin + browser-use)",
+        )
         download_result = download_reports_for_operator(
             operator=operator,
             week_start=combined_start,
             week_end=combined_end,
             download_dir=op_raw_dir,
         )
+        set_health_check_progress(run_id, "processing", f"{op_name}: weekly CSVs + WoW")
         operator_result: dict[str, Any] = {
             "operator": op_name,
             "email": operator["email"],
@@ -603,12 +742,17 @@ def run_health_check(
             "failure_reason": None,
         }
 
+        if download_result.get("status") == "cancelled":
+            operator_result["status"] = "cancelled"
+            operator_result["failure_reason"] = "cancelled"
+            operator_results.append(operator_result)
+            break
+
         # Financial report is mandatory for weekly health-check/WoW correctness.
         if download_result.get("status") != "success":
             operator_result["status"] = "failed"
-            operator_result["failure_reason"] = (
-                "missing_required_reports:" + ",".join(operator_result["missing_reports"])
-            )
+            operator_result["failure_reason"] = _download_failure_reason(download_result)
+            operator_result["download_error"] = (download_result.get("error") or "")[:2000]
             logger.error(
                 "Operator failed: %s (%s) | reason=%s",
                 op_name,
@@ -672,7 +816,64 @@ def run_health_check(
                 op_wow_dir / "summary_wow.csv",
                 op_store_map,
             )
+            from agents.health_check.restaurant_campaign_correlation import (
+                correlate_restaurant_wow_with_campaigns,
+                write_correlation_artifact,
+            )
+
+            master_wow = op_wow_dir / "master_wow_analysis.csv"
+            campaign_wow_path = None
             wow_files = operator_result.get("campaign_wow_files") or {}
+            for p in wow_files.values():
+                if p and Path(p).is_file():
+                    campaign_wow_path = Path(p)
+                    break
+            correlation = correlate_restaurant_wow_with_campaigns(
+                master_wow_csv=master_wow,
+                campaigns_wow_csv=campaign_wow_path,
+            )
+            corr_path = write_correlation_artifact(op_wow_dir, correlation)
+            operator_result["restaurant_campaign_correlation"] = str(corr_path)
+            operator_result["campaign_slot_matches"] = correlation.get("slot_campaign_matches", 0)
+
+            from agents.health_check.slot_level_review import (
+                build_slot_level_review,
+                write_slot_level_review_artifacts,
+            )
+
+            w1_label = format_week_folder(*week_older)
+            w2_label = format_week_folder(*week_newer)
+            w1_campaigns = op_level_dir / f"current_campaigns_{w1_label}.csv"
+            w2_campaigns = op_level_dir / f"current_campaigns_{w2_label}.csv"
+            ads_wow_path = wow_files.get("wow_campaigns_ads")
+            if w1_campaigns.is_file() and w2_campaigns.is_file():
+                slot_review = build_slot_level_review(
+                    week1_campaigns_csv=w1_campaigns,
+                    week2_campaigns_csv=w2_campaigns,
+                    week1_start=week_older[0],
+                    week1_end=week_older[1],
+                    week2_start=week_newer[0],
+                    week2_end=week_newer[1],
+                    ads_wow_csv=Path(ads_wow_path) if ads_wow_path else None,
+                )
+                slot_paths = write_slot_level_review_artifacts(
+                    slot_review,
+                    op_wow_dir,
+                    week1_tag=w1_label.replace("/", ""),
+                    week2_tag=w2_label.replace("/", ""),
+                )
+                wow_files = dict(wow_files)
+                wow_files.update(slot_paths)
+                operator_result["slot_level_review"] = slot_paths.get("slot_level_review_json")
+                operator_result["slot_level_review_summary"] = (
+                    (slot_review.get("slot_vs_blanket") or {})
+                    .get("current_slot_vs_prior_blanket", {})
+                    .get("summary")
+                )
+                operator_result["slot_action_counts"] = slot_review.get("action_counts")
+                operator_result["campaign_wow_files"] = wow_files
+
+            set_health_check_progress(run_id, "reports", f"{op_name}: HTML/PDF + Slack")
             bundle = build_operator_register_bundle(
                 week1_weekly_csv=previous_csv,
                 week2_weekly_csv=current_csv,
@@ -708,6 +909,8 @@ def run_health_check(
                 "operator": r.get("operator"),
                 "email": r.get("email"),
                 "status": r.get("status"),
+                "failure_reason": r.get("failure_reason"),
+                "download_error": r.get("download_error"),
                 "browser_report_url": r.get("browser_report_url"),
                 "pdf_drive_url": r.get("pdf_drive_url"),
                 "pdf_local_url": r.get("pdf_local_url"),
@@ -717,8 +920,15 @@ def run_health_check(
             }
         )
 
+    overall = "success"
+    if is_cancelled():
+        overall = "cancelled"
+    elif any(r.get("status") == "failed" for r in operator_results):
+        overall = "partial" if any(r.get("status") == "success" for r in operator_results) else "error"
+
+    clear_health_check_progress(run_id)
     return {
-        "status": "success",
+        "status": overall,
         "run_folder": str(run_root),
         "operators_processed": len(operators),
         "operators_succeeded": sum(1 for r in operator_results if r.get("status") == "success"),

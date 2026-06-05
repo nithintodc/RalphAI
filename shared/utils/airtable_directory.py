@@ -21,6 +21,7 @@ import os
 import ssl
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -39,6 +40,8 @@ ACCOUNT_FIELD = os.getenv("AIRTABLE_ACCOUNT_FIELD", "Business Name (original)")
 STORE_NAME_FIELD = os.getenv("AIRTABLE_STORE_NAME_FIELD", "Account Name")
 
 CACHE_TTL = int(os.getenv("AIRTABLE_CACHE_TTL_SECONDS", "300"))
+FETCH_TIMEOUT = int(os.getenv("AIRTABLE_FETCH_TIMEOUT_SECONDS", "60"))
+FETCH_RETRIES = int(os.getenv("AIRTABLE_FETCH_RETRIES", "3"))
 
 _cache: dict[str, Any] = {"ts": 0.0, "data": None}
 _lock = threading.Lock()
@@ -124,6 +127,22 @@ def cell_to_text(value: Any) -> str:
     return str(value)
 
 
+def _urlopen_with_retries(req: urllib.request.Request) -> bytes:
+    """Fetch one Airtable page; retry transient SSL / network errors."""
+    last_err: Exception | None = None
+    for attempt in range(max(1, FETCH_RETRIES)):
+        try:
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT, context=_ssl_context()) as resp:
+                return resp.read()
+        except (TimeoutError, urllib.error.URLError, ssl.SSLError, OSError) as e:
+            last_err = e
+            if attempt + 1 >= FETCH_RETRIES:
+                break
+            time.sleep(min(2 ** attempt, 8))
+    assert last_err is not None
+    raise last_err
+
+
 def fetch_records() -> list[dict[str, Any]]:
     """Fetch all records from the Enterprise view (paginated, all fields)."""
     if not AIRTABLE_PAT:
@@ -137,8 +156,7 @@ def fetch_records() -> list[dict[str, Any]]:
             params.append(("offset", offset))
         url = base_url + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {AIRTABLE_PAT}"})
-        with urllib.request.urlopen(req, timeout=30, context=_ssl_context()) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        payload = json.loads(_urlopen_with_retries(req).decode("utf-8"))
         records.extend(payload.get("records", []))
         offset = payload.get("offset")
         if not offset:
@@ -249,15 +267,25 @@ def load_health_check_operators() -> tuple[list[dict[str, str]], str | None]:
     DoorDash operators for the health-check agent (deduped by login email).
 
     Each item: ``email``, ``password``, ``business_name`` (Business Name from Airtable).
-    Skips accounts with no DoorDash login + password.
+    Skips accounts with no DoorDash email. Password required unless ``USE_MULTILOGIN=true``
+    (Multilogin profile is already logged in).
     """
+    try:
+        from shared.multilogin_browser import multilogin_enabled
+
+        mlx = multilogin_enabled()
+    except Exception:
+        mlx = False
+
     operators, warning = load_account_operators_airtable()
     by_email: dict[str, dict[str, str]] = {}
     for op in operators:
         email = (op.get("doordash_email") or "").strip()
         password = (op.get("doordash_password") or "").strip()
         business = (op.get("business_name") or "").strip()
-        if not email or not password:
+        if not email:
+            continue
+        if not mlx and not password:
             continue
         key = email.lower()
         if key not in by_email:

@@ -11,8 +11,9 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from shared.time_slots import SLOT_ORDER as SLOT_NAMES
+
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-SLOT_NAMES = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 REGISTER_COLUMNS = [
     "Merchant Store ID",

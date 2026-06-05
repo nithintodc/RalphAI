@@ -16,6 +16,9 @@ from shared.config.settings import data_root, deepdive_default_zip_dir
 from shared.models.report import CampaignReviewItem, CampaignReviewReport
 from shared.utils.date_helpers import review_scheduled_at_from_now, utc_now_iso
 
+from shared.campaign_history import build_campaign_history_from_review
+from shared.slot_campaign_keys import parse_slot_campaign_name, slot_key
+
 from .comparator import compare
 from .recommender import recommend
 
@@ -499,6 +502,132 @@ def _load_active_campaigns(operator_id: str, active_campaigns: dict[str, Any] | 
     return {"campaigns_created": []}
 
 
+def _load_marketing_plan(operator_id: str) -> dict[str, Any]:
+    path = _marketing_plan_path(operator_id)
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _slot_attribution_table(
+    *,
+    active_campaigns: dict[str, Any],
+    enriched_by_name: dict[str, dict[str, Any]],
+    reviews: list[CampaignReviewItem],
+    marketing_plan: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Slot-level attribution: store × day × daypart tied to review metrics."""
+    plan_by_name = {
+        str(c.get("campaign_name", "")).strip(): c
+        for c in marketing_plan.get("recommended_campaigns") or []
+        if str(c.get("campaign_name", "")).strip()
+    }
+    review_by_name = {r.campaign_name: r for r in reviews if r.campaign_name}
+
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _append_row(
+        *,
+        name: str,
+        store_id: str,
+        dow: str,
+        daypart: str,
+        tier: str,
+        slot_tags: list[str],
+        enriched: dict[str, Any] | None,
+        review: CampaignReviewItem | None,
+    ) -> None:
+        key = slot_key(store_id, dow, daypart)
+        if key in seen:
+            return
+        seen.add(key)
+        post = (enriched or {}).get("post_metrics") or (review.post_metrics if review else {})
+        pre = (enriched or {}).get("pre_metrics") or (review.pre_metrics if review else {})
+        rows.append(
+            {
+                "campaign_name": name,
+                "store_id": store_id,
+                "day_of_week": dow,
+                "daypart": daypart,
+                "tier": tier,
+                "slot_tags": slot_tags,
+                "slot_key": key,
+                "recommendation": review.recommendation if review else "",
+                "post_roas": post.get("roas", 0.0),
+                "pre_roas": pre.get("roas", 0.0),
+                "roas_delta": round(_safe_num(post.get("roas")) - _safe_num(pre.get("roas")), 2),
+                "post_sales": post.get("sales", 0.0),
+                "pre_sales": pre.get("sales", 0.0),
+                "post_spend": post.get("spend", 0.0),
+                "aov_lift_pct": review.aov_lift_pct if review else 0.0,
+                "order_volume_lift_pct": review.order_volume_lift_pct if review else 0.0,
+            }
+        )
+
+    for c in active_campaigns.get("campaigns_created", []) or []:
+        name = str(c.get("campaign_name") or "").strip()
+        store_id = str(c.get("store_id") or "")
+        dow = str(c.get("day_of_week") or "")
+        daypart = str(c.get("daypart") or "")
+        tier = str(c.get("tier") or "")
+        slot_tags = [str(t) for t in (c.get("slot_tags") or [])]
+        if not dow or not daypart:
+            parsed = parse_slot_campaign_name(name)
+            if parsed:
+                store_id = store_id or parsed.get("store_id", "")
+                dow = dow or parsed.get("day_of_week", "")
+                daypart = daypart or parsed.get("daypart", "")
+                tier = tier or parsed.get("tier", "")
+        plan_frag = plan_by_name.get(name) or {}
+        if not slot_tags:
+            slot_tags = [str(t) for t in (plan_frag.get("slot_tags") or plan_frag.get("target_day_parts") or [])]
+        if not tier:
+            tier = str(plan_frag.get("tier") or "")
+        _append_row(
+            name=name,
+            store_id=store_id,
+            dow=dow,
+            daypart=daypart,
+            tier=tier,
+            slot_tags=slot_tags,
+            enriched=enriched_by_name.get(name),
+            review=review_by_name.get(name),
+        )
+
+    for name, plan_frag in plan_by_name.items():
+        if plan_frag.get("campaign_type") != "sponsored_listing":
+            continue
+        store_id = str(plan_frag.get("store_id") or "")
+        dow = str(plan_frag.get("day_of_week") or "")
+        daypart = str(plan_frag.get("daypart") or "")
+        if not dow and not daypart:
+            parsed = parse_slot_campaign_name(name)
+            if parsed:
+                store_id = store_id or parsed.get("store_id", "")
+                dow = parsed.get("day_of_week", "")
+                daypart = parsed.get("daypart", "")
+        if not dow or not daypart:
+            continue
+        slot_tags = [str(t) for t in (plan_frag.get("slot_tags") or plan_frag.get("target_day_parts") or [])]
+        _append_row(
+            name=name,
+            store_id=store_id,
+            dow=dow,
+            daypart=daypart,
+            tier=str(plan_frag.get("tier") or ""),
+            slot_tags=slot_tags,
+            enriched=enriched_by_name.get(name),
+            review=review_by_name.get(name),
+        )
+
+    rows.sort(key=lambda r: (r.get("store_id", ""), r.get("day_of_week", ""), r.get("daypart", "")))
+    return rows
+
+
 def _load_planned_budget_by_name(operator_id: str) -> dict[str, float]:
     path = _marketing_plan_path(operator_id)
     if not path.is_file():
@@ -691,6 +820,7 @@ def run(
     campaign_comparison = _campaign_comparison_table(enriched_by_name)
 
     active = _load_active_campaigns(operator_id, active_campaigns)
+    marketing_plan = _load_marketing_plan(operator_id)
     by_type = {
         "promo": promo_metrics,
         "sponsored_listing": sponsored_metrics,
@@ -702,6 +832,13 @@ def run(
         enriched_by_name=enriched_by_name,
         campaign_name_metrics=campaign_name_metrics,
         by_type=by_type,
+    )
+
+    slot_attribution = _slot_attribution_table(
+        active_campaigns=active,
+        enriched_by_name=enriched_by_name,
+        reviews=reviews,
+        marketing_plan=marketing_plan,
     )
 
     planned_budget_by_name = _load_planned_budget_by_name(operator_id)
@@ -734,6 +871,7 @@ def run(
             }
             for k, v in enriched_by_name.items()
         },
+        "slot_attribution": slot_attribution,
     }
 
     if not reviews:
@@ -777,6 +915,8 @@ def run(
     )
     out = _sanitize_for_json(report.model_dump(mode="python"))
     out["summary_metrics"] = _sanitize_for_json(summary)
+    out["slot_attribution"] = _sanitize_for_json(slot_attribution)
+    out["campaign_history"] = _sanitize_for_json(build_campaign_history_from_review(out))
     out["mode"] = mode
     out["notes"] = notes
     out["next_review_date"] = next_review

@@ -1,23 +1,11 @@
 import { parseDate, minMaxDates } from '../utils/dateUtils';
 import { toNum } from '../utils/safeMath';
+import { FINANCIAL_ORDER_TIME_COL, findExactColumn, isPresentTimeValue } from '../constants/orderTimeColumns';
 
-const ORDER_PLACED_DATE_COLS = ['Order placed date', 'Order Placed Date', 'order placed date'];
 const TXN_DATE_COLS = ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Timestamp UTC date', 'Date', 'date', 'Timestamp'];
-const ORDER_PLACED_TIME_COLS = [
-  'Order placed time',
-  'Order Placed Time',
-  'order placed time',
-  'Order received local time',
-  'Order Received Local Time',
-];
-const TXN_TIME_COLS = ['Timestamp local time', 'Timestamp Local Time', 'timestamp local time', 'Timestamp UTC time'];
 
 function pickDateCol(columns) {
-  return findCol(columns, ORDER_PLACED_DATE_COLS) || findCol(columns, TXN_DATE_COLS);
-}
-
-function pickTimeCol(columns) {
-  return findCol(columns, ORDER_PLACED_TIME_COLS) || findCol(columns, TXN_TIME_COLS);
+  return findCol(columns, ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Date', 'date', 'Timestamp']);
 }
 const MERCHANT_STORE_COLS = ['Merchant store ID', 'Merchant Store ID'];
 const DD_STORE_ID_COLS = ['Store ID', 'store ID', 'DoorDash store ID', 'Doordash store ID'];
@@ -28,6 +16,8 @@ const ORDER_ID_COLS = ['DoorDash order ID', 'DoorDash Order ID', 'Doordash order
 const SUBTOTAL_COLS = ['Subtotal', 'subtotal'];
 const NET_TOTAL_COLS = ['Net total', 'Net total (for historical reference only)'];
 const MKT_FEE_COLS = ['Marketing fees | (including any applicable taxes)', 'Marketing fees'];
+const MKT_FEE_HIST_COLS = ['Marketing fees (for historical reference only) | (all discounts and fees)'];
+const AD_FEE_HIST_COLS = ['Ad fee (for historical reference only)'];
 const CUST_DISC_COLS = ['Customer discounts from marketing | (funded by you)', 'Customer discounts from marketing | (Funded by you)', 'Customer discounts from marketing'];
 const CUST_DISC_DD_COLS = ['Customer discounts from marketing | (funded by DoorDash)', 'Customer discounts from marketing | (Funded by DoorDash)'];
 const CUST_DISC_THIRD_PARTY_COLS = ['Customer discounts from marketing | (funded by a third-party)', 'Customer discounts from marketing | (Funded by a third-party)', 'Customer discounts from marketing | (funded by a third party)'];
@@ -91,10 +81,8 @@ function uniqueCount(rows, accessor) {
 export function normalizeDdFinancial(parsed) {
   const { data, columns } = parsed;
   const dateCol = pickDateCol(columns);
-  const timeCol = pickTimeCol(columns);
   const txnDateCol = findCol(columns, TXN_DATE_COLS);
-  const txnTimeCol = findCol(columns, TXN_TIME_COLS);
-  const orderReceivedTimeCol = findCol(columns, ['Order received local time', 'Order Received Local Time']);
+  const orderReceivedTimeCol = findExactColumn(columns, FINANCIAL_ORDER_TIME_COL);
   const merchantStoreCol = findCol(columns, MERCHANT_STORE_COLS);
   const ddStoreIdCol = findCol(columns, DD_STORE_ID_COLS, {
     exclude: ['merchant store id'],
@@ -106,6 +94,8 @@ export function normalizeDdFinancial(parsed) {
   const subtotalCol = findCol(columns, SUBTOTAL_COLS);
   const netTotalCol = findCol(columns, NET_TOTAL_COLS);
   const mktFeeCol = findCol(columns, MKT_FEE_COLS);
+  const mktFeeHistCol = findCol(columns, MKT_FEE_HIST_COLS);
+  const adFeeHistCol = findCol(columns, AD_FEE_HIST_COLS);
   const custDiscCol = findDiscCol(columns, CUST_DISC_COLS, 'funded by you');
   const custDiscDdCol = findDiscCol(columns, CUST_DISC_DD_COLS, 'funded by doordash');
   const custDiscThirdPartyCol = findDiscCol(columns, CUST_DISC_THIRD_PARTY_COLS, 'third-party');
@@ -140,12 +130,10 @@ export function normalizeDdFinancial(parsed) {
   return data
     .map(row => {
       let date = dateCol ? parseDate(row[dateCol]) : null;
-      if (!date && timeCol) date = parseDate(row[timeCol]);
       if (!date && txnDateCol) date = parseDate(row[txnDateCol]);
       const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
-      const placedTime = timeCol ? row[timeCol] : null;
-      const transactionTime = txnTimeCol ? row[txnTimeCol] : null;
-      const time = placedTime ?? transactionTime;
+      if (!isPresentTimeValue(orderReceivedTime)) return null;
+      const time = orderReceivedTime;
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';
       const ddStoreId = ddStoreIdCol ? sanitizeStoreId(row[ddStoreIdCol]) : '';
       const storeName = storeNameCol
@@ -166,7 +154,6 @@ export function normalizeDdFinancial(parsed) {
         date,
         time,
         orderReceivedTime,
-        transactionTime,
         storeId,
         merchantStoreId,
         ddStoreId,
@@ -175,6 +162,8 @@ export function normalizeDdFinancial(parsed) {
         subtotal: subtotalCol ? toNum(row[subtotalCol]) : 0,
         netTotal: netTotalCol ? toNum(row[netTotalCol]) : 0,
         marketingFees: mktFeeCol ? toNum(row[mktFeeCol]) : 0,
+        marketingFeesHistorical: mktFeeHistCol ? toNum(row[mktFeeHistCol]) : undefined,
+        adFeeHistorical: adFeeHistCol ? toNum(row[adFeeHistCol]) : undefined,
         customerDiscounts: custDiscCol ? toNum(row[custDiscCol]) : 0,
         customerDiscountsDoorDash: custDiscDdCol ? toNum(row[custDiscDdCol]) : 0,
         customerDiscountsThirdParty: custDiscThirdPartyCol ? toNum(row[custDiscThirdPartyCol]) : 0,
@@ -205,10 +194,8 @@ export function normalizeDdErrorCharges(parsed) {
   if (!data?.length) return [];
 
   const dateCol = pickDateCol(columns);
-  const timeCol = pickTimeCol(columns);
   const txnDateCol = findCol(columns, TXN_DATE_COLS);
-  const txnTimeCol = findCol(columns, TXN_TIME_COLS);
-  const orderReceivedTimeCol = findCol(columns, ['Order received local time', 'Order Received Local Time']);
+  const orderReceivedTimeCol = findExactColumn(columns, FINANCIAL_ORDER_TIME_COL);
   const merchantStoreCol = findCol(columns, MERCHANT_STORE_COLS);
   const ddStoreIdCol = findCol(columns, DD_STORE_ID_COLS, { exclude: ['merchant store id'] });
   const storeCol = merchantStoreCol || ddStoreIdCol || findCol(columns, STORE_COLS);
@@ -220,12 +207,9 @@ export function normalizeDdErrorCharges(parsed) {
   return data
     .map((row) => {
       let date = dateCol ? parseDate(row[dateCol]) : null;
-      if (!date && timeCol) date = parseDate(row[timeCol]);
       if (!date && txnDateCol) date = parseDate(row[txnDateCol]);
       const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
-      const placedTime = timeCol ? row[timeCol] : null;
-      const transactionTime = txnTimeCol ? row[txnTimeCol] : null;
-      const time = placedTime ?? transactionTime;
+      const time = isPresentTimeValue(orderReceivedTime) ? orderReceivedTime : null;
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';
       const ddStoreId = ddStoreIdCol ? sanitizeStoreId(row[ddStoreIdCol]) : '';
       const storeId = merchantStoreId || ddStoreId || (storeCol ? sanitizeStoreId(row[storeCol]) : '') || '';
@@ -237,7 +221,6 @@ export function normalizeDdErrorCharges(parsed) {
         date,
         time,
         orderReceivedTime,
-        transactionTime,
         storeId,
         merchantStoreId,
         ddStoreId,

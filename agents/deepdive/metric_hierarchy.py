@@ -11,17 +11,18 @@ from typing import Any
 
 import pandas as pd
 
+from shared.time_slots import SLOT_ORDER as DP_ORDER
+
 DAYPART_MAP = {
-    range(0, 5): "Early morning",
-    range(5, 11): "Breakfast",
-    range(11, 14): "Lunch",
-    range(14, 17): "Afternoon",
-    range(17, 20): "Dinner",
-    range(20, 24): "Late night",
+    range(0, 5): DP_ORDER[0],
+    range(5, 11): DP_ORDER[1],
+    range(11, 14): DP_ORDER[2],
+    range(14, 17): DP_ORDER[3],
+    range(17, 20): DP_ORDER[4],
+    range(20, 24): DP_ORDER[5],
 }
 
 DOW_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-DP_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 
 def _assign_daypart(hour: int) -> str:
@@ -57,8 +58,13 @@ def _prepare_orders(df: pd.DataFrame) -> pd.DataFrame | None:
         orders = orders[orders["Final order status"] == "Delivered"]
     if orders.empty:
         return None
-    ts_col = "Timestamp local time" if "Timestamp local time" in orders.columns else None
+    from shared.order_time_columns import find_financial_order_time_column, drop_rows_without_order_time
+
+    ts_col = find_financial_order_time_column(orders)
     if not ts_col:
+        return None
+    orders = drop_rows_without_order_time(orders, ts_col)
+    if orders.empty:
         return None
     orders["local_dt"] = pd.to_datetime(orders[ts_col], errors="coerce")
     orders = orders.dropna(subset=["local_dt"])

@@ -17,6 +17,15 @@ class RecommendedCampaign(BaseModel):
     target_items: list[str] = Field(default_factory=list)
     discount_pct: float = 0.0
     rationale: str = ""
+    # Slot-level ads (ads_planner DEFEND/GROW/HARVEST)
+    store_id: str = ""
+    day_of_week: str = ""
+    daypart: str = ""
+    tier: str = ""
+    slot_tags: list[str] = Field(default_factory=list)
+    bid_strategy: str = ""
+    bid_amount: float | None = None
+    target_audience: str = ""
 
 
 class CreatedCampaign(BaseModel):
@@ -27,3 +36,8 @@ class CreatedCampaign(BaseModel):
     scheduled_start: str = ""
     scheduled_end: str = ""
     error: str | None = None
+    store_id: str = ""
+    day_of_week: str = ""
+    daypart: str = ""
+    tier: str = ""
+    slot_tags: list[str] = Field(default_factory=list)

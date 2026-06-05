@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable, Optional, Tuple
 
 # Timeouts (seconds) for each browser-use agent phase
 AGENT_REPORTS_TIMEOUT = 900   # 15 min: login + create 2 reports + download both
+AGENT_SINGLE_REPORT_TIMEOUT = 600  # 10 min per report type (Data Run sequential mode)
 AGENT_LOGIN_TIMEOUT = 180     # 3 min: re-login after browser restart
 AGENT_RESET_TIMEOUT = 90      # 1.5 min: navigate to Marketing page between campaigns
 AGENT_CAMPAIGN_TIMEOUT = 720  # 12 min: create one campaign end-to-end (increased from 540 to handle many-slot campaigns)
@@ -45,7 +46,7 @@ def _build_campaign_tools():
 
     tools = Tools()
 
-    _GRID_ROW_NAMES = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+    _GRID_ROW_NAMES = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
     _GRID_COL_NAMES = ["Mon", "Tue", "Wed", "Thur", "Fri", "Sat", "Sun"]
 
     def _tag_label(tag: int) -> str:
@@ -58,11 +59,11 @@ def _build_campaign_tools():
         description=(
             "Set the DoorDash campaign schedule grid to exactly the desired state. "
             "Pass 'wanted_tags' as a comma-separated string of tag numbers (1-42) that should be CHECKED. "
-            "Grid layout: 6 rows (Early morning, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun). "
-            "Tag 1 = Mon/Early morning, Tag 2 = Tue/Early morning, ..., Tag 7 = Sun/Early morning, "
+            "Grid layout: 6 rows (Overnight, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun). "
+            "Tag 1 = Mon/Overnight, Tag 2 = Tue/Overnight, ..., Tag 7 = Sun/Overnight, "
             "Tag 8 = Mon/Breakfast, ..., Tag 42 = Sun/Late night. "
             "This action detects current cell states and only toggles cells that need to change, then clicks Save. "
-            "Example: wanted_tags='1,2,3,8,9' means check Mon/Tue/Wed Early morning + Mon/Tue Breakfast. "
+            "Example: wanted_tags='1,2,3,8,9' means check Mon/Tue/Wed Overnight + Mon/Tue Breakfast. "
             "IMPORTANT: Call this ONCE after the custom schedule grid is visible. Do NOT manually click any grid cells."
         ),
     )
@@ -883,6 +884,15 @@ def _build_campaign_tools():
     return tools
 
 # --- IN USE: Login → Report creation → Report download (Phase 1 of main flow) ---
+def _use_multilogin_session() -> bool:
+    try:
+        from shared.multilogin_browser import multilogin_enabled
+
+        return multilogin_enabled() or bool(os.getenv("MULTILOGIN_CDP_URL", "").strip())
+    except Exception:
+        return False
+
+
 def get_task_description_reports_only(
     email: str,
     password: str,
@@ -890,40 +900,33 @@ def get_task_description_reports_only(
     end_date: str,
 ) -> str:
     """Task that ends after downloading both reports (no campaign). Used so we can run analysis before campaign."""
-    if not password:
-        raise ValueError("DOORDASH_PASSWORD is not set. Add it to your .env file (see .env.example).")
-    return f"""
-You are automating the DoorDash Merchant Portal. Complete the following steps in order. Stop after downloading both reports — do NOT create a campaign.
+    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
 
-=== STEP 0: Navigate and log in (DO THIS EXACT ORDER — two-step login) ===
-The login has TWO steps. Do NOT enter the password in the email field. Do NOT click "Log In" until the password screen is visible.
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    entry, s = build_portal_entry_steps(resolved_email, resolved_password, step_num=0)
+    return f"""You are automating the DoorDash Merchant Portal. Complete the following steps in order. Stop after downloading both reports — do NOT create a campaign.
+{entry}
+=== STEP {s}: Generate Financial Report ===
+{s}. On the Reports page, click "Create report". Select "Financial report" RADIO BUTTON, click "Next".
+{s + 1}. LOCATIONS: Do NOT open or change store selection. Keep the default "All stores" selection as-is and click "Next".
+{s + 2}. Choose "By date range". In each date field, CLEAR existing value completely and TYPE the exact date. Set Start date exactly to {start_date} and End date exactly to {end_date}. Verify both fields still show these exact values before proceeding. Click "Create report". WAIT UNTIL the report appears in the list (it may take several seconds to generate).
 
-1. Go to exactly this URL: https://merchant-portal.doordash.com/merchant/login
-2. On the first screen: find the EMAIL input field (labeled "Email"). Enter ONLY the email, exactly: {email}
-3. Click the "Continue to Log In" button (the red button). WAIT UNTIL the page changes and you see the password screen.
-4. On the NEXT screen: find the PASSWORD input field. Enter ONLY the password there: {password}
-5. Click the "Log In" button. WAIT UNTIL the dashboard has fully loaded (you see sidebar navigation and main content).
+=== STEP {s + 3}: Download the Financial Report IMMEDIATELY ===
+{s + 3}. WAIT until the newly created Financial report row is visible and its DOWNLOAD icon is visible/clickable. If not ready, wait 10 seconds and check again (repeat up to 6 times). When ready, click the DOWNLOAD icon for that Financial row. WAIT UNTIL the download completes.
 
-=== STEP 1: Generate Financial Report ===
-6. In the LEFT SIDEBAR, click "Reports". WAIT UNTIL the Reports page loads. Click "Create report". Select "Financial report" RADIO BUTTON, click "Next".
-7. LOCATIONS: Do NOT open or change store selection. Keep the default "All stores" selection as-is and click "Next".
-8. Choose "By date range". In each date field, CLEAR existing value completely and TYPE the exact date. Set Start date exactly to {start_date} and End date exactly to {end_date}. Verify both fields still show these exact values before proceeding. Click "Create report". WAIT UNTIL the report appears in the list (it may take several seconds to generate).
+=== STEP {s + 4}: Generate Marketing Report ===
+{s + 4}. Click "Create report". Select "Marketing report" RADIO BUTTON, click "Next".
+{s + 5}. IMPORTANT: UNCHECK "Online Ordering". Keep "Marketplace" CHECKED. Click "Next".
+{s + 6}. LOCATIONS: keep default "All stores", click "Next".
+{s + 7}. By date range: Start {start_date}, End {end_date}. Verify BOTH "Sponsored Listings" and "Promotions" are checked. Click "Create report". WAIT UNTIL the report appears.
 
-=== STEP 2: Download the Financial Report IMMEDIATELY ===
-9. WAIT until the newly created Financial report row is visible and its DOWNLOAD icon is visible/clickable. If not ready, wait 10 seconds and check again (repeat up to 6 times). When ready, click the DOWNLOAD icon (arrow/download button) for that Financial row. WAIT UNTIL the download completes (file appears in downloads). IMPORTANT: wait at least 5 seconds after clicking download, and do NOT proceed until the financial report is fully downloaded.
-
-=== STEP 3: Generate Marketing Report ===
-10. Click "Create report". Select "Marketing report" RADIO BUTTON, click "Next".
-11. IMPORTANT: You MUST UNCHECK "Online Ordering" checkbox. Make sure "Online Ordering" is UNCHECKED and "Marketplace" remains CHECKED. Click "Next".
-12. LOCATIONS: Do NOT open or change store selection. Keep the default "All stores" selection as-is and click "Next".
-13. By date range: CLEAR both date fields and TYPE exact values Start {start_date}, End {end_date}. Verify both fields still show exact values. BEFORE clicking "Create report", verify BOTH "Sponsored Listings" and "Promotions" are checked (tick mark visible on both). If either is unchecked, click it to enable. Then click "Create report". WAIT UNTIL the report appears in the list.
-
-=== STEP 4: Download the Marketing Report IMMEDIATELY ===
-14. Before clicking Marketing download, re-confirm Financial download has completed. The Marketing report you just created should now be at the TOP of the reports list. Click the DOWNLOAD icon (arrow/download button) next to this TOPMOST "Marketing" report row. WAIT UNTIL the download completes (file appears in downloads).
+=== STEP {s + 8}: Download the Marketing Report IMMEDIATELY ===
+{s + 8}. Re-confirm Financial download completed. Click DOWNLOAD on the TOPMOST new Marketing report row. WAIT UNTIL download completes.
 
 === DONE (stop here — no campaign) ===
-When both reports are downloaded, use the done action to finish. Summarize: login, both reports created and downloaded.
+When both reports are downloaded, use the done action to finish.
 """
+
 
 def _get_retry_download_task(missing_reports: list[str]) -> str:
     """Generate a task to retry downloading missing reports from the already-open Reports page."""
@@ -992,6 +995,431 @@ def _get_regenerate_and_download_task(missing_reports: list[str], start_date: st
     )
 
 
+def _selected_report_meta(report_type_id: str) -> dict[str, Any]:
+    from shared.data_run_reports import DATA_RUN_REPORT_TYPES
+
+    key = (report_type_id or "").strip().lower()
+    meta = DATA_RUN_REPORT_TYPES.get(key)
+    if not meta:
+        raise ValueError(f"Unsupported report type: {report_type_id!r}")
+    return meta
+
+
+def _report_create_download_steps(
+    report_type_id: str,
+    *,
+    start_date: str,
+    end_date: str,
+    step_offset: int = 1,
+) -> tuple[str, int]:
+    """Return prompt steps for one report type; returns (text, next_step_number)."""
+    meta = _selected_report_meta(report_type_id)
+    portal_label = meta["portal_label"]
+    n = step_offset
+    lines = [f"=== {meta['label'].upper()} ==="]
+
+    if report_type_id == "marketing":
+        lines.extend(
+            [
+                f'{n}. Click "Create report". Select "{portal_label}" RADIO BUTTON, click "Next".',
+                f"{n + 1}. UNCHECK \"Online Ordering\". Keep \"Marketplace\" CHECKED. Click \"Next\".",
+                f"{n + 2}. Keep default \"All stores\", click \"Next\".",
+                (
+                    f'{n + 3}. Choose "By date range". CLEAR both date fields completely and TYPE '
+                    f"Start {start_date}, End {end_date}. Do NOT accept DoorDash defaults (e.g. last 7 days). "
+                    f'Verify BOTH fields still show exactly {start_date} and {end_date}. '
+                    f'Verify BOTH "Sponsored Listings" and "Promotions" are checked. Click "Create report". '
+                    f"WAIT until the new row appears and its Time frame column shows {start_date} – {end_date}."
+                ),
+                (
+                    f"{n + 4}. CONFIRM the TOPMOST new {portal_label} row Time frame is {start_date} – {end_date}. "
+                    f"If wrong dates, delete that row and recreate with the correct range. "
+                    f"Click DOWNLOAD on the correct row. WAIT until the .zip download completes."
+                ),
+            ]
+        )
+        return "\n".join(lines), n + 5
+
+    lines.extend(
+        [
+            f'{n}. Click "Create report". Select "{portal_label}" RADIO BUTTON, click "Next".',
+            f'{n + 1}. Keep default "All stores" (do not change store selection), click "Next".',
+            f"{n + 2}. Choose \"By date range\". CLEAR both date fields and TYPE Start {start_date}, End {end_date}. Verify values, then click \"Create report\". WAIT until the row appears.",
+            f"{n + 3}. WAIT until the new {portal_label} row DOWNLOAD icon is visible (poll every 10s up to 6 times). Click DOWNLOAD. WAIT until the .zip download completes.",
+        ]
+    )
+    return "\n".join(lines), n + 4
+
+
+def get_task_description_selected_reports(
+    email: str,
+    password: str,
+    start_date: str,
+    end_date: str,
+    report_types: list[str],
+) -> str:
+    """Browser-use task: login (if needed) then create + download selected report zips only."""
+    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+
+    ordered = list(report_types)
+    report_labels = ", ".join(_selected_report_meta(r)["label"] for r in ordered)
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    header = (
+        f"You are automating the DoorDash Merchant Portal. "
+        f"Download ONLY these report types as .zip files (do not unzip): {report_labels}.\n"
+        + build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0]
+    )
+
+    body_parts: list[str] = []
+    step = 1
+    for rid in ordered:
+        chunk, step = _report_create_download_steps(rid, start_date=start_date, end_date=end_date, step_offset=step)
+        body_parts.append(chunk)
+
+    footer = """
+=== DONE ===
+When every requested report .zip has finished downloading, use the done action.
+Do NOT open or extract zip files. Summarize which report types were downloaded.
+"""
+    return header + "\n".join(body_parts) + footer
+
+
+def get_task_description_one_selected_report(
+    email: str,
+    password: str,
+    start_date: str,
+    end_date: str,
+    report_type_id: str,
+    *,
+    include_portal_entry: bool = False,
+) -> str:
+    """Single report type: optional portal entry, then create + download one .zip."""
+    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    meta = _selected_report_meta(report_type_id)
+    parts: list[str] = [
+        f"You are automating DoorDash Merchant Portal. Download ONLY one {meta['label']} .zip "
+        f"for date range {start_date} to {end_date}. Complete this report fully before stopping.",
+    ]
+    if include_portal_entry:
+        parts.append(build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0])
+    else:
+        parts.append(
+            "\nYou should already be on the DoorDash Reports page. "
+            "If not, open Reports from the sidebar first.\n"
+        )
+    chunk, _ = _report_create_download_steps(
+        report_type_id, start_date=start_date, end_date=end_date, step_offset=1
+    )
+    parts.append(chunk)
+    parts.append(
+        "\n=== DONE ===\n"
+        f"When the {meta['label']} .zip has finished downloading, use the done action. "
+        "Do NOT start other report types."
+    )
+    return "\n".join(parts)
+
+
+def _discover_selected_downloads(
+    download_dir: Path,
+    report_types: list[str],
+    *,
+    baseline_files: set[Path] | None = None,
+    min_mtime: float | None = None,
+    zip_only: bool = True,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> tuple[dict[str, Optional[Path]], dict[str, Any]]:
+    """Map report type id → newest matching .zip (or file if zip_only=False)."""
+    from shared.data_run_reports import DATA_RUN_REPORT_TYPES, zip_filename_matches_date_range
+
+    download_dir = Path(download_dir)
+    found: dict[str, Optional[Path]] = {rid: None for rid in report_types}
+    if not download_dir.is_dir():
+        return found, {"considered_files": [], "filtered_out": []}
+
+    existing = baseline_files or set()
+    candidates: list[tuple[float, Path]] = []
+    filtered_out: list[str] = []
+    for f in _list_report_files(download_dir):
+        if zip_only and f.suffix.lower() != ".zip":
+            filtered_out.append(f"{f.name}:not_zip")
+            continue
+        st = f.stat()
+        if f in existing:
+            filtered_out.append(f"{f.name}:baseline")
+            continue
+        if min_mtime is not None and st.st_mtime < min_mtime:
+            filtered_out.append(f"{f.name}:old")
+            continue
+        if start_date and end_date and not zip_filename_matches_date_range(f, start_date, end_date):
+            filtered_out.append(f"{f.name}:date_mismatch")
+            continue
+        candidates.append((st.st_mtime, f))
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    assigned: set[Path] = set()
+    for rid in report_types:
+        meta = DATA_RUN_REPORT_TYPES[rid]
+        keywords = tuple(k.lower() for k in meta.get("filename_keywords") or ())
+        for _mtime, path in candidates:
+            if path in assigned:
+                continue
+            name_lower = path.name.lower()
+            if any(kw in name_lower for kw in keywords):
+                found[rid] = path
+                assigned.add(path)
+                break
+
+    diagnostics = {
+        "considered_files": [p.name for _m, p in candidates],
+        "filtered_out": filtered_out,
+        "detected": {rid: (found[rid].name if found[rid] else None) for rid in report_types},
+    }
+    return found, diagnostics
+
+
+def _get_retry_download_task_selected(missing: list[str]) -> str:
+    parts = []
+    for label in missing:
+        parts.append(
+            f'- Find the most recent "{label}" report row. WAIT for DOWNLOAD icon (poll 10s up to 6 times). '
+            f"Click DOWNLOAD and WAIT until the .zip completes."
+        )
+    return (
+        "You are on DoorDash Reports. Download these missing report types:\n"
+        + "\n".join(parts)
+        + "\nUse done when finished."
+    )
+
+
+def _get_regenerate_selected_task(
+    missing_type_ids: list[str],
+    start_date: str,
+    end_date: str,
+) -> str:
+    parts = []
+    for rid in missing_type_ids:
+        chunk, _ = _report_create_download_steps(rid, start_date=start_date, end_date=end_date, step_offset=1)
+        parts.append(chunk)
+    return (
+        "Regenerate and download ONLY these missing report types on DoorDash Reports:\n\n"
+        + "\n\n".join(parts)
+        + "\n\nUse done when all requested .zip files are downloaded."
+    )
+
+
+async def _cancel_agent_task(agent_task: asyncio.Task) -> None:
+    if not agent_task.done():
+        agent_task.cancel()
+        try:
+            await agent_task
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+
+
+async def _discover_report_path(
+    download_dir: Path,
+    report_type_id: str,
+    *,
+    baseline_files: set[Path],
+    min_mtime: float,
+    zip_only: bool,
+    start_date: str,
+    end_date: str,
+) -> Optional[Path]:
+    found, diag = _discover_selected_downloads(
+        download_dir,
+        [report_type_id],
+        baseline_files=baseline_files,
+        min_mtime=min_mtime,
+        zip_only=zip_only,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    path = found.get(report_type_id)
+    if path:
+        logger.info("DoorDash: discovered %s → %s", report_type_id, path.name)
+    elif diag.get("filtered_out"):
+        logger.info("DoorDash: %s not matched (filtered: %s)", report_type_id, diag.get("filtered_out"))
+    return path
+
+
+async def _run_single_report_agent(
+    *,
+    agent: Any,
+    download_dir: Path,
+    report_type_id: str,
+    baseline_files: set[Path],
+    run_started_at: float,
+    zip_only: bool,
+    start_date: str,
+    end_date: str,
+) -> Optional[Path]:
+    """Run one browser-use agent task; poll until this report's zip lands on disk."""
+    agent_task = asyncio.create_task(
+        asyncio.wait_for(agent.run(), timeout=AGENT_SINGLE_REPORT_TIMEOUT)
+    )
+    try:
+        while not agent_task.done():
+            path = await _discover_report_path(
+                download_dir,
+                report_type_id,
+                baseline_files=baseline_files,
+                min_mtime=run_started_at,
+                zip_only=zip_only,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if path:
+                logger.info("DoorDash: %s zip on disk — stopping agent early", report_type_id)
+                await _cancel_agent_task(agent_task)
+                return path
+            await asyncio.sleep(3)
+        history = await agent_task
+        if history and getattr(history, "final_result", None):
+            logger.info("DoorDash (%s): %s", report_type_id, history.final_result)
+    except asyncio.TimeoutError:
+        logger.warning("DoorDash: %s timed out after %ss", report_type_id, AGENT_SINGLE_REPORT_TIMEOUT)
+        await _cancel_agent_task(agent_task)
+    except Exception as exc:
+        logger.warning("DoorDash: %s agent failed: %s", report_type_id, exc)
+        await _cancel_agent_task(agent_task)
+    return await _discover_report_path(
+        download_dir,
+        report_type_id,
+        baseline_files=baseline_files,
+        min_mtime=run_started_at,
+        zip_only=zip_only,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+async def run_selected_reports(
+    download_dir: Path,
+    email: str,
+    password: str,
+    start_date: str,
+    end_date: str,
+    report_types: list[str],
+    *,
+    zip_only: bool = True,
+) -> dict[str, Optional[Path]]:
+    """
+    Login + create + download requested DoorDash report types **one at a time**.
+    Returns map of report_type_id → downloaded file path (.zip preferred).
+    """
+    from browser_use import Agent
+
+    from shared.data_run_reports import normalize_report_type_ids
+
+    ordered = normalize_report_type_ids(report_types)
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "DoorDash (browser-use): sequential selected reports | types=%s | %s to %s",
+        ordered,
+        start_date,
+        end_date,
+    )
+    baseline_files = set(_list_report_files(download_dir))
+    run_started_at = time.time()
+    llm = _get_llm()
+    browser = _get_browser(download_dir, doordash_email=email)
+    found: dict[str, Optional[Path]] = {rid: None for rid in ordered}
+
+    if _use_multilogin_session():
+        try:
+            await browser.start()
+            await browser.navigate_to("https://merchant-portal.doordash.com/merchant/reports")
+            await asyncio.sleep(3)
+            logger.info("Multilogin warmup: navigated to DoorDash Reports before agent run")
+        except Exception as warm_err:
+            logger.warning("Multilogin browser warmup failed: %s", warm_err)
+
+    try:
+        for idx, rid in enumerate(ordered):
+            logger.info(
+                "DoorDash: === report %d/%d: %s ===",
+                idx + 1,
+                len(ordered),
+                rid,
+            )
+            task = get_task_description_one_selected_report(
+                email=email,
+                password=password,
+                start_date=start_date,
+                end_date=end_date,
+                report_type_id=rid,
+                include_portal_entry=(idx == 0),
+            )
+            path = await _run_single_report_agent(
+                agent=Agent(task=task, llm=llm, browser=browser),
+                download_dir=download_dir,
+                report_type_id=rid,
+                baseline_files=baseline_files,
+                run_started_at=run_started_at,
+                zip_only=zip_only,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            if not path:
+                label = _selected_report_meta(rid)["retry_label"]
+                logger.warning("DoorDash: %s missing — retry download only", rid)
+                retry_agent = Agent(
+                    task=_get_retry_download_task_selected([label]),
+                    llm=llm,
+                    browser=browser,
+                )
+                try:
+                    await asyncio.wait_for(retry_agent.run(), timeout=300)
+                except Exception as retry_err:
+                    logger.warning("DoorDash retry download failed for %s: %s", rid, retry_err)
+                path = await _discover_report_path(
+                    download_dir,
+                    rid,
+                    baseline_files=baseline_files,
+                    min_mtime=run_started_at,
+                    zip_only=zip_only,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+
+            if not path:
+                logger.warning("DoorDash: %s still missing — regenerate + download", rid)
+                regen_agent = Agent(
+                    task=_get_regenerate_selected_task([rid], start_date, end_date),
+                    llm=llm,
+                    browser=browser,
+                )
+                try:
+                    await asyncio.wait_for(regen_agent.run(), timeout=420)
+                except Exception as regen_err:
+                    logger.warning("DoorDash regenerate failed for %s: %s", rid, regen_err)
+                path = await _discover_report_path(
+                    download_dir,
+                    rid,
+                    baseline_files=baseline_files,
+                    min_mtime=run_started_at,
+                    zip_only=zip_only,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+
+            found[rid] = path
+            if path:
+                logger.info("DoorDash: completed %s → %s", rid, path)
+            else:
+                logger.error("DoorDash: FAILED %s — no matching zip in %s", rid, download_dir)
+
+        return found
+    finally:
+        await _kill_browser(browser)
+
+
 def _inspect_marketing_zip(path: Optional[Path]) -> dict[str, Any]:
     """Inspect marketing zip for promotion/sponsored components."""
     if not path or path.suffix.lower() != ".zip":
@@ -1026,7 +1454,7 @@ def get_task_description_campaign_for_subtotal_combo(combo: dict) -> str:
     all_tags = set(range(1, 43))
     unselected_set = all_tags - selected_set
 
-    _GRID_ROWS = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+    _GRID_ROWS = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
     _GRID_COLS = ["Mon", "Tue", "Wed", "Thur", "Fri", "Sat", "Sun"]
 
     def _group_by_row(tag_set):
@@ -1069,11 +1497,19 @@ def get_task_description_campaign_for_subtotal_combo(combo: dict) -> str:
 - If set_schedule_grid returns PARTIAL (Save not found), click "Save" manually once, then proceed to STEP 4B.
 - If set_schedule_grid returns ERROR twice, do it manually: {manual_fallback}"""
 
+    session_email = str(combo.get("doordash_email") or os.getenv("DOORDASH_EMAIL", "")).strip()
+    session_password = str(combo.get("doordash_password") or os.getenv("DOORDASH_PASSWORD", "")).strip()
+    from shared.doordash_portal_tasks import build_campaign_session_preamble
+
+    preamble = build_campaign_session_preamble(session_email, session_password or None)
+
     return f"""
-ROLE: You are automating campaign creation on DoorDash Merchant Portal. You are already logged in.
+ROLE: You are automating campaign creation on DoorDash Merchant Portal.
+
+{preamble}
 
 RULES:
-- Do NOT go to the login page or create/download reports.
+- Do NOT create or download reports.
 - Do NOT click "Get started" (that is for BOGO, not discount campaigns).
 - Do NOT click "Create promotion" until step 6 explicitly says to.
 - If a modal fails to open after clicking Edit, wait 3s, scroll to make section visible, click Edit again ONCE.
@@ -1104,7 +1540,7 @@ STEP 3 — Set customer incentive:
 STEP 4 — Set schedule:
 - Click Edit (pencil) next to "Scheduling". Wait for modal with grid.
 - Click "Set a custom schedule". Wait for grid.
-- Grid: 6 rows (Early morning, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun).
+- Grid: 6 rows (Overnight, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun).
 {schedule_instructions}
 
 STEP 4B — Re-confirm Maximum discount amount (MANDATORY after schedule):
@@ -1145,44 +1581,18 @@ def _get_llm():
     return ChatGoogle(model="gemini-2.5-flash", api_key=api_key)
 
 
-def _get_browser(download_dir: Path, keep_alive: bool = False):
-    """
-    Browser with download path set to the given directory.
-    keep_alive=True keeps browser open for reuse.
+def _get_browser(
+    download_dir: Path,
+    keep_alive: bool = False,
+    *,
+    doordash_email: str | None = None,
+):
+    """Browser for DoorDash automation (Multilogin, CDP, or local Chrome)."""
+    from shared.browser_use_factory import create_browser_use_browser
 
-    Connection priority:
-      1. LOCAL_BROWSER_CDP_URL — Remote headless Chrome via CDP (GCP/cloud deployment)
-      2. Local Chrome executable (macOS laptop)
-      3. Default browser-use browser
-    """
-    from browser_use import Browser
-
-    downloads_path = str(download_dir.resolve())
-
-    # --- Remote CDP (headless Chrome on GCP VM, Browserless, etc.) ---
-    cdp_url = os.getenv("LOCAL_BROWSER_CDP_URL", "").strip()
-    if cdp_url:
-        logger.info("Connecting to remote Chrome via CDP: %s", cdp_url)
-        return Browser(
-            cdp_url=cdp_url,
-            downloads_path=downloads_path,
-            enable_default_extensions=False,
-            keep_alive=keep_alive,
-        )
-
-    # --- Local Chrome executable (laptop/macOS) ---
-    common = dict(
-        downloads_path=downloads_path,
-        enable_default_extensions=False,
-        keep_alive=keep_alive,
+    return create_browser_use_browser(
+        download_dir, keep_alive=keep_alive, doordash_email=doordash_email
     )
-    if os.name == "posix":
-        chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if Path(chrome).exists():
-            return Browser(executable_path=chrome, **common)
-
-    # --- Default browser-use browser ---
-    return Browser(**common)
 
 
 def _peek_zip_type(path: Path) -> str:
@@ -1304,15 +1714,10 @@ def _discover_downloads(
 
 
 async def _kill_browser(browser) -> None:
-    """Gracefully kill/close browser; swallows all errors."""
-    try:
-        kill_fn = getattr(browser, "kill", None) or getattr(browser, "close", None)
-        if callable(kill_fn):
-            result = kill_fn()
-            if asyncio.iscoroutine(result):
-                await result
-    except Exception as e:
-        logger.debug("Browser close: %s", e)
+    """Gracefully kill/close browser and stop Multilogin profile if applicable."""
+    from shared.browser_use_factory import close_browser_use_browser
+
+    await close_browser_use_browser(browser)
 
 
 async def run_reports_only(
@@ -1340,101 +1745,147 @@ async def run_reports_only(
     baseline_files = set(_list_report_files(download_dir))
     run_started_at = time.time()
     llm = _get_llm()
-    browser = _get_browser(download_dir)
-    agent = Agent(task=task, llm=llm, browser=browser)
-    history = await asyncio.wait_for(agent.run(), timeout=AGENT_REPORTS_TIMEOUT)
-    if history and history.final_result:
-        logger.info("DoorDash (browser-use): %s", history.final_result)
+    browser = _get_browser(download_dir, doordash_email=email)
+    try:
+        agent = Agent(task=task, llm=llm, browser=browser)
 
-    marketing_path, financial_path, diag = _discover_downloads(
-        download_dir,
-        baseline_files=baseline_files,
-        min_mtime=run_started_at,
-    )
-    logger.info(
-        "DoorDash (browser-use): discovery after initial run | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
-        diag.get("considered_files"),
-        diag.get("filtered_out"),
-        diag.get("marketing"),
-        diag.get("financial"),
-    )
+        async def _run_agent():
+            return await asyncio.wait_for(agent.run(), timeout=AGENT_REPORTS_TIMEOUT)
 
-    # Retry missing report(s) in deterministic sequence before giving up.
-    max_retries = 2
-    for attempt in range(1, max_retries + 1):
-        if financial_path and marketing_path:
-            break
-        missing: list[str] = []
-        if not financial_path:
-            missing.append("Financial")
-        if not marketing_path:
-            missing.append("Marketing")
-        logger.warning(
-            "DoorDash (browser-use): Missing report(s) after attempt %d: %s. Running retry sequence.",
-            attempt,
-            ", ".join(missing),
-        )
-        retry_task = _get_retry_download_task(missing)
-        retry_agent = Agent(task=retry_task, llm=llm, browser=browser)
+        agent_task = asyncio.create_task(_run_agent())
         try:
-            await asyncio.wait_for(retry_agent.run(), timeout=300)
-            marketing_path, financial_path, diag = _discover_downloads(
-                download_dir,
-                baseline_files=baseline_files,
-                min_mtime=run_started_at,
-            )
-            logger.info(
-                "DoorDash (browser-use): discovery after retry %d | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
-                attempt,
-                diag.get("considered_files"),
-                diag.get("filtered_out"),
-                diag.get("marketing"),
-                diag.get("financial"),
-            )
-        except Exception as retry_err:
-            logger.warning("DoorDash (browser-use): Retry download failed on attempt %d: %s", attempt, retry_err)
+            while not agent_task.done():
+                marketing_path, financial_path, _diag = _discover_downloads(
+                    download_dir,
+                    baseline_files=baseline_files,
+                    min_mtime=run_started_at,
+                )
+                if marketing_path and financial_path:
+                    logger.info(
+                        "DoorDash (browser-use): Both reports on disk — stopping browser-use early"
+                    )
+                    agent_task.cancel()
+                    try:
+                        await agent_task
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+                    except Exception as early_err:
+                        logger.debug(
+                            "DoorDash (browser-use): agent task ended after early stop: %s",
+                            early_err,
+                        )
+                    return (marketing_path, financial_path)
+                await asyncio.sleep(3)
 
-    if not (financial_path and marketing_path):
-        missing: list[str] = []
-        if not financial_path:
-            missing.append("Financial")
-        if not marketing_path:
-            missing.append("Marketing")
-        logger.warning(
-            "DoorDash (browser-use): Still missing after download retries: %s. Running regenerate-and-download fallback.",
-            ", ".join(missing),
+            history = await agent_task
+            if history and history.final_result:
+                logger.info("DoorDash (browser-use): %s", history.final_result)
+        finally:
+            if not agent_task.done():
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    pass
+
+        marketing_path, financial_path, diag = _discover_downloads(
+            download_dir,
+            baseline_files=baseline_files,
+            min_mtime=run_started_at,
         )
-        regen_task = _get_regenerate_and_download_task(missing, start_date, end_date)
-        regen_agent = Agent(task=regen_task, llm=llm, browser=browser)
-        try:
-            await asyncio.wait_for(regen_agent.run(), timeout=420)
-            marketing_path, financial_path, diag = _discover_downloads(
-                download_dir,
-                baseline_files=baseline_files,
-                min_mtime=run_started_at,
-            )
-            logger.info(
-                "DoorDash (browser-use): discovery after regeneration | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
-                diag.get("considered_files"),
-                diag.get("filtered_out"),
-                diag.get("marketing"),
-                diag.get("financial"),
-            )
-        except Exception as regen_err:
-            logger.warning("DoorDash (browser-use): Regenerate-and-download fallback failed: %s", regen_err)
-
-    if financial_path:
-        logger.info("DoorDash (browser-use): Financial report at %s", financial_path)
-    if marketing_path:
-        logger.info("DoorDash (browser-use): Marketing report at %s", marketing_path)
-        mdiag = _inspect_marketing_zip(marketing_path)
         logger.info(
-            "DoorDash (browser-use): Marketing zip diagnostics | promotion_csv=%s sponsored_csv=%s entries=%s",
-            mdiag.get("promotion_csv"),
-            mdiag.get("sponsored_csv"),
-            mdiag.get("entries"),
+            "DoorDash (browser-use): discovery after initial run | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
+            diag.get("considered_files"),
+            diag.get("filtered_out"),
+            diag.get("marketing"),
+            diag.get("financial"),
         )
-    return (marketing_path, financial_path)
+
+        # Retry missing report(s) in deterministic sequence before giving up.
+        max_retries = 2
+        for attempt in range(1, max_retries + 1):
+            if financial_path and marketing_path:
+                break
+            missing: list[str] = []
+            if not financial_path:
+                missing.append("Financial")
+            if not marketing_path:
+                missing.append("Marketing")
+            logger.warning(
+                "DoorDash (browser-use): Missing report(s) after attempt %d: %s. Running retry sequence.",
+                attempt,
+                ", ".join(missing),
+            )
+            retry_task = _get_retry_download_task(missing)
+            retry_agent = Agent(task=retry_task, llm=llm, browser=browser)
+            try:
+                await asyncio.wait_for(retry_agent.run(), timeout=300)
+                marketing_path, financial_path, diag = _discover_downloads(
+                    download_dir,
+                    baseline_files=baseline_files,
+                    min_mtime=run_started_at,
+                )
+                logger.info(
+                    "DoorDash (browser-use): discovery after retry %d | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
+                    attempt,
+                    diag.get("considered_files"),
+                    diag.get("filtered_out"),
+                    diag.get("marketing"),
+                    diag.get("financial"),
+                )
+            except Exception as retry_err:
+                logger.warning(
+                    "DoorDash (browser-use): Retry download failed on attempt %d: %s",
+                    attempt,
+                    retry_err,
+                )
+
+        if not (financial_path and marketing_path):
+            missing: list[str] = []
+            if not financial_path:
+                missing.append("Financial")
+            if not marketing_path:
+                missing.append("Marketing")
+            logger.warning(
+                "DoorDash (browser-use): Still missing after download retries: %s. Running regenerate-and-download fallback.",
+                ", ".join(missing),
+            )
+            regen_task = _get_regenerate_and_download_task(missing, start_date, end_date)
+            regen_agent = Agent(task=regen_task, llm=llm, browser=browser)
+            try:
+                await asyncio.wait_for(regen_agent.run(), timeout=420)
+                marketing_path, financial_path, diag = _discover_downloads(
+                    download_dir,
+                    baseline_files=baseline_files,
+                    min_mtime=run_started_at,
+                )
+                logger.info(
+                    "DoorDash (browser-use): discovery after regeneration | considered=%s filtered=%s detected={marketing:%s, financial:%s}",
+                    diag.get("considered_files"),
+                    diag.get("filtered_out"),
+                    diag.get("marketing"),
+                    diag.get("financial"),
+                )
+            except Exception as regen_err:
+                logger.warning(
+                    "DoorDash (browser-use): Regenerate-and-download fallback failed: %s",
+                    regen_err,
+                )
+
+        if financial_path:
+            logger.info("DoorDash (browser-use): Financial report at %s", financial_path)
+        if marketing_path:
+            logger.info("DoorDash (browser-use): Marketing report at %s", marketing_path)
+            mdiag = _inspect_marketing_zip(marketing_path)
+            logger.info(
+                "DoorDash (browser-use): Marketing zip diagnostics | promotion_csv=%s sponsored_csv=%s entries=%s",
+                mdiag.get("promotion_csv"),
+                mdiag.get("sponsored_csv"),
+                mdiag.get("entries"),
+            )
+        return (marketing_path, financial_path)
+    finally:
+        await _kill_browser(browser)
 
 
 # --- IN USE: Main flow — Login → Reports → Download → Analysis → Campaigns (subtotal+tags) for all stores/subtotals ---
@@ -1495,13 +1946,10 @@ async def run_reports_then_analysis_then_campaign(
             f"Using: {combined_path.name}"
         )
 
-        # Login only
-        login_task = (
-            f"Go to https://merchant-portal.doordash.com/merchant/login\n"
-            f"Enter email: {email}, click 'Continue to Log In'.\n"
-            f"On the next screen, enter password: {password}, click 'Log In'.\n"
-            f"Wait for the dashboard to load. Use done action to finish."
-        )
+        from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
+
+        resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+        login_task = build_compact_login_task(resolved_email, resolved_password)
         try:
             login_agent = Agent(task=login_task, llm=llm, browser=browser)
             await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
@@ -1679,13 +2127,10 @@ async def run_reports_then_analysis_then_campaign(
                     })
                 append_campaign_mappings_to_workbook(Path(combined_path), mappings)
 
-    # Template for re-login after browser restart
-    relogin_task = (
-        f"Go to https://merchant-portal.doordash.com/merchant/login\n"
-        f"Enter email: {email}, click 'Continue to Log In'.\n"
-        f"On the next screen, enter password: {password}, click 'Log In'.\n"
-        f"Wait for the dashboard to load. Use done action to finish."
-    )
+    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
+
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    relogin_task = build_compact_login_task(resolved_email, resolved_password)
 
     # Navigation reset run before each campaign to dismiss any leftover UI and land on Marketing page
     reset_task = (

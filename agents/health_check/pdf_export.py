@@ -64,18 +64,17 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Optional[Path]:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             try:
-                page.goto(html_path.as_uri(), wait_until="networkidle", timeout=120_000)
+                page.goto(html_path.as_uri(), wait_until="domcontentloaded", timeout=45_000)
             except Exception as nav_err:
-                logger.warning("html_to_pdf: networkidle %s — using domcontentloaded", nav_err)
-                page.goto(html_path.as_uri(), wait_until="domcontentloaded", timeout=120_000)
+                logger.warning("html_to_pdf: goto %s", nav_err)
             try:
                 page.wait_for_function(
                     "() => { const el = document.querySelector('#platforms'); "
                     "return el && el.innerHTML && el.innerHTML.length > 200; }",
-                    timeout=60_000,
+                    timeout=15_000,
                 )
             except Exception:
-                page.wait_for_timeout(2500)
+                page.wait_for_timeout(1500)
             page.pdf(
                 path=str(pdf_path),
                 format="A4",

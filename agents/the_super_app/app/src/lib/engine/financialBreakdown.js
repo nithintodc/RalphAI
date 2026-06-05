@@ -19,6 +19,26 @@ const FINANCIAL_METRICS = [
   'UE Profitability%',
 ];
 
+export const DD_BREAKDOWN_LINES = [
+  { key: 'DD Sales', label: 'Sales', isSales: true },
+  { key: 'DD Commission', label: 'Commission' },
+  { key: 'DD Ads Spend', label: 'Ads spend' },
+  { key: 'DD Promo Spend', label: 'Promo spend' },
+  { key: 'DD Error Charges', label: 'Error charges' },
+  { key: 'DD Adjustments', label: 'Adjustments' },
+  { key: 'DD Payouts', label: 'Payouts' },
+  { key: 'DD Profitability%', label: 'Profitability %', isProfitability: true },
+];
+
+export const UE_BREAKDOWN_LINES = [
+  { key: 'UE Sales', label: 'Sales', isSales: true },
+  { key: 'UE Error Charges', label: 'Error charges' },
+  { key: 'UE Promo', label: 'Promo' },
+  { key: 'UE Commissions', label: 'Commissions' },
+  { key: 'UE Payouts', label: 'Payouts' },
+  { key: 'UE Profitability%', label: 'Profitability %', isProfitability: true },
+];
+
 function round2(n) {
   return Math.round(n * 100) / 100;
 }
@@ -50,8 +70,7 @@ function loadWindows(data, preStart, preEnd, postStart, postEnd, excludedDates, 
   };
 }
 
-/** App2.0 / Monthly Reporter parity: `_compute_window_metrics` */
-function computeWindowMetrics(ddRows, ueRows) {
+function computeDdWindowMetrics(ddRows) {
   let ddSales = 0;
   let ddComm = 0;
   let ddAds = 0;
@@ -70,6 +89,21 @@ function computeWindowMetrics(ddRows, ueRows) {
     ddPayouts += Number(r.netTotal) || 0;
   }
 
+  const ddProf = ddSales !== 0 ? (ddPayouts / ddSales) * 100 : 0;
+
+  return {
+    'DD Sales': ddSales,
+    'DD Commission': ddComm,
+    'DD Ads Spend': ddAds,
+    'DD Promo Spend': ddPromo,
+    'DD Error Charges': ddErrors,
+    'DD Adjustments': ddAdj,
+    'DD Payouts': ddPayouts,
+    'DD Profitability%': ddProf,
+  };
+}
+
+function computeUeWindowMetrics(ueRows) {
   let ueSales = 0;
   let ueErr = 0;
   let uePromo = 0;
@@ -84,25 +118,26 @@ function computeWindowMetrics(ddRows, ueRows) {
     uePay += Number(r.totalPayout) || 0;
   }
 
-  const ddProf = ddSales !== 0 ? (ddPayouts / ddSales) * 100 : 0;
   const ueProf = ueSales !== 0 ? (uePay / ueSales) * 100 : 0;
 
   return {
-    Sales: ddSales + ueSales,
-    'DD Sales': ddSales,
-    'DD Commission': ddComm,
-    'DD Ads Spend': ddAds,
-    'DD Promo Spend': ddPromo,
-    'DD Error Charges': ddErrors,
-    'DD Adjustments': ddAdj,
-    'DD Payouts': ddPayouts,
-    'DD Profitability%': ddProf,
     'UE Sales': ueSales,
     'UE Error Charges': ueErr,
     'UE Promo': uePromo,
     'UE Commissions': ueComm,
     'UE Payouts': uePay,
     'UE Profitability%': ueProf,
+  };
+}
+
+/** App2.0 / Monthly Reporter parity: `_compute_window_metrics` */
+function computeWindowMetrics(ddRows, ueRows) {
+  const dd = computeDdWindowMetrics(ddRows);
+  const ue = computeUeWindowMetrics(ueRows);
+  return {
+    Sales: (dd['DD Sales'] || 0) + (ue['UE Sales'] || 0),
+    ...dd,
+    ...ue,
   };
 }
 
@@ -132,6 +167,139 @@ function buildSummaryRows(preM, postM, lyPreM, lyPostM) {
       'YoY%': round1(yoyG),
     };
   });
+}
+
+function buildPeriodTableRows(lines, metrics) {
+  const salesLine = lines.find((l) => l.isSales);
+  const salesVal = salesLine ? (metrics[salesLine.key] ?? 0) : 0;
+
+  return lines.map((line) => {
+    const value = metrics[line.key] ?? 0;
+    let sharePct = null;
+    if (line.isSales) sharePct = salesVal ? 100 : null;
+    else if (!line.isProfitability && salesVal) sharePct = round1((value / salesVal) * 100);
+
+    return {
+      metric: line.label,
+      value: line.isProfitability ? round1(value) : round2(value),
+      sharePct,
+      isProfitability: !!line.isProfitability,
+    };
+  });
+}
+
+function buildPvpTableRows(lines, preM, postM) {
+  return lines.map((line) => {
+    const pre = preM[line.key] ?? 0;
+    const post = postM[line.key] ?? 0;
+    let growthPct = null;
+    if (line.isProfitability) {
+      growthPct = round1(post - pre);
+    } else if (pre !== 0) {
+      growthPct = round1(((post - pre) / pre) * 100);
+    }
+    return {
+      metric: line.label,
+      pre: line.isProfitability ? round1(pre) : round2(pre),
+      post: line.isProfitability ? round1(post) : round2(post),
+      growthPct,
+      isProfitability: !!line.isProfitability,
+    };
+  });
+}
+
+function buildYoyTableRows(lines, lyPostM, postM) {
+  return lines.map((line) => {
+    const lyPost = lyPostM[line.key] ?? 0;
+    const post = postM[line.key] ?? 0;
+    let yoyPct = null;
+    if (line.isProfitability) {
+      yoyPct = round1(post - lyPost);
+    } else if (lyPost !== 0) {
+      yoyPct = round1(((post - lyPost) / lyPost) * 100);
+    }
+    return {
+      metric: line.label,
+      lyPost: line.isProfitability ? round1(lyPost) : round2(lyPost),
+      post: line.isProfitability ? round1(post) : round2(post),
+      yoyPct,
+      isProfitability: !!line.isProfitability,
+    };
+  });
+}
+
+function buildPlatformSection(platform, lines, windows, computeMetrics) {
+  const preM = computeMetrics(windows.pre);
+  const postM = computeMetrics(windows.post);
+  const lyPreM = computeMetrics(windows.lyPre);
+  const lyPostM = computeMetrics(windows.lyPost);
+
+  return {
+    platform,
+    pre: buildPeriodTableRows(lines, preM),
+    post: buildPeriodTableRows(lines, postM),
+    lyPre: buildPeriodTableRows(lines, lyPreM),
+    lyPost: buildPeriodTableRows(lines, lyPostM),
+    pvp: buildPvpTableRows(lines, preM, postM),
+    yoy: buildYoyTableRows(lines, lyPostM, postM),
+  };
+}
+
+/**
+ * DoorDash + Uber Eats breakdown sections (separate tables per platform).
+ */
+export function buildPlatformFinancialBreakdowns(ddFinancial, ueFinancial, config, storeId = null) {
+  const {
+    ddPreStart,
+    ddPreEnd,
+    ddPostStart,
+    ddPostEnd,
+    uePreStart,
+    uePreEnd,
+    uePostStart,
+    uePostEnd,
+    ddExcludedDates = [],
+    ueExcludedDates = [],
+    ddExcludedStores = [],
+    ueExcludedStores = [],
+  } = config || {};
+
+  const sections = [];
+
+  if (ddFinancial?.length && ddPreStart && ddPreEnd && ddPostStart && ddPostEnd) {
+    const ddW = loadWindows(
+      ddFinancial,
+      ddPreStart,
+      ddPreEnd,
+      ddPostStart,
+      ddPostEnd,
+      ddExcludedDates,
+      ddExcludedStores,
+      storeId,
+    );
+    sections.push(buildPlatformSection('dd', DD_BREAKDOWN_LINES, ddW, computeDdWindowMetrics));
+  }
+
+  const uePreS = uePreStart || ddPreStart;
+  const uePreE = uePreEnd || ddPreEnd;
+  const uePostS = uePostStart || ddPostStart;
+  const uePostE = uePostEnd || ddPostEnd;
+
+  if (ueFinancial?.length && uePreS && uePreE && uePostS && uePostE) {
+    const ueW = loadWindows(
+      ueFinancial,
+      uePreS,
+      uePreE,
+      uePostS,
+      uePostE,
+      ueExcludedDates,
+      ueExcludedStores,
+      storeId,
+    );
+    sections.push(buildPlatformSection('ue', UE_BREAKDOWN_LINES, ueW, computeUeWindowMetrics));
+  }
+
+  return sections;
 }
 
 /**
@@ -194,5 +362,5 @@ export function buildFinancialSummaryTable(ddFinancial, ueFinancial, config, sto
 }
 
 export function isProfitabilityMetric(metric) {
-  return metric === 'DD Profitability%' || metric === 'UE Profitability%';
+  return metric === 'DD Profitability%' || metric === 'UE Profitability%' || metric === 'Profitability %';
 }

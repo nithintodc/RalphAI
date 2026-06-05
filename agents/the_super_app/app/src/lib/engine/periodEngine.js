@@ -1,5 +1,6 @@
 import { filterByDateRange, filterExcludedDates, filterExcludedStores, aggregate } from './aggregator';
 import { getLastYearDates } from '../utils/dateUtils';
+import { buildStoreMetaLookup } from '../utils/storeMeta';
 
 export function buildFourWindowAggregation(rawData, config) {
   const {
@@ -28,7 +29,7 @@ export function buildFourWindowAggregation(rawData, config) {
   return result;
 }
 
-export function mergeFourWindows(windows, storeField, metricFields) {
+export function mergeFourWindows(windows, storeField, metricFields, storeMetaLookup = null) {
   const allStores = new Set();
   for (const win of Object.values(windows)) {
     for (const row of win) {
@@ -46,7 +47,12 @@ export function mergeFourWindows(windows, storeField, metricFields) {
 
   const merged = [];
   for (const store of allStores) {
-    const row = { storeId: store };
+    const meta = storeMetaLookup?.get(store);
+    const row = {
+      storeId: store,
+      storeName: meta?.storeName || '',
+      ddStoreId: meta?.ddStoreId || '',
+    };
     for (const metric of metricFields) {
       for (const win of ['pre', 'post', 'preLY', 'postLY']) {
         row[`${win}_${metric}`] = lookup[win]?.[store]?.[metric] || 0;
@@ -94,7 +100,7 @@ export function buildDdPlatformData(ddFinancial, config) {
     });
   }
 
-  return mergeFourWindows(renamed, 'storeId', Object.values(metricMap));
+  return mergeFourWindows(renamed, 'storeId', Object.values(metricMap), buildStoreMetaLookup(ddFinancial));
 }
 
 export function buildUePlatformData(ueFinancial, config) {
@@ -126,5 +132,5 @@ export function buildUePlatformData(ueFinancial, config) {
     });
   }
 
-  return mergeFourWindows(renamed, 'storeId', Object.values(metricMap));
+  return mergeFourWindows(renamed, 'storeId', Object.values(metricMap), buildStoreMetaLookup(ueFinancial));
 }

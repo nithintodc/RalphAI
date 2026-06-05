@@ -13,14 +13,12 @@ from typing import List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-from agents.campaign_params import STORE_ID_COL, normalize_merchant_store_id
-
 try:
     import pandas as pd
 except ImportError:
     pd = None
 
-SLOT_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+SLOT_ORDER = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 
 def _find_financial_detailed_in_zip(zip_path: Path) -> Optional[str]:
@@ -44,34 +42,15 @@ def _extract_financial_detailed_csv(zip_path: Path, output_dir: Path) -> Optiona
 
 
 def _get_time_slot(time_str) -> Optional[str]:
-    # Slot boundaries (minutes from midnight):
-    #   Early morning:  0:00 – 4:59   (0   – 299)
-    #   Breakfast:      5:00 – 10:59  (300 – 659)
-    #   Lunch:         11:00 – 13:59  (660 – 839)
-    #   Afternoon:     14:00 – 15:59  (840 – 959)
-    #   Dinner:        16:00 – 19:59  (960 – 1199)
-    #   Late night:    20:00 – 23:59  (1200+)
-    if pd.isna(time_str) or time_str == "":
-        return None
-    try:
-        time_obj = pd.to_datetime(time_str, errors="coerce")
-        if pd.isna(time_obj):
-            return None
-        total_minutes = time_obj.hour * 60 + time_obj.minute
-        if total_minutes < 300:
-            return "Early morning"
-        if total_minutes < 660:
-            return "Breakfast"
-        if total_minutes < 840:
-            return "Lunch"
-        if total_minutes < 960:
-            return "Afternoon"
-        if total_minutes < 1200:
-            return "Dinner"
-        return "Late night"
-    except Exception:
-        pass
-    return None
+    from shared.time_slots import slot_from_datetime
+
+    return slot_from_datetime(time_str)
+
+
+def _orders_with_time(df: pd.DataFrame, time_col: str) -> pd.DataFrame:
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    return drop_rows_without_order_time(df, time_col)
 
 
 def _resolve_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -81,11 +60,9 @@ def _resolve_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Op
         if c in df.columns:
             date_col = c
             break
-    time_col = None
-    for c in ["Timestamp local time", "Timestamp Local Time", "Order received local time"]:
-        if c in df.columns:
-            time_col = c
-            break
+    from shared.order_time_columns import find_financial_order_time_column
+
+    time_col = find_financial_order_time_column(df)
     subtotal_col = "Subtotal" if "Subtotal" in df.columns else None
     payout_col = None
     if "Net total" in df.columns:
@@ -96,13 +73,15 @@ def _resolve_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Op
     return date_col, time_col, subtotal_col, payout_col, order_col
 
 
+# Canonical column name for store identifier in outputs (financial raw data uses "Merchant store ID")
+MERCHANT_STORE_ID_LABEL = "Merchant Store ID"
 STORE_NAME_LABEL = "Store Name"
 
 
 def _resolve_store_col(df: pd.DataFrame) -> Optional[str]:
-    """Return store ID column name if present. Accepts DoorDash raw 'Merchant store ID' and other aliases."""
+    """Return store ID column name if present. Prefers 'Merchant store ID' from financial raw data."""
     df.columns = df.columns.str.strip()
-    for c in [STORE_ID_COL, "Merchant store ID", "Merchant Store ID", "Shop ID"]:
+    for c in ["Merchant store ID", "Store ID", "Shop ID"]:
         if c in df.columns:
             return c
     return None
@@ -124,7 +103,7 @@ def _build_store_id_to_name(df: pd.DataFrame, store_col: str, store_name_col: st
         sid = row[store_col]
         name = row[store_name_col]
         if pd.notna(sid) and pd.notna(name):
-            mapping[normalize_merchant_store_id(sid)] = str(name).strip()
+            mapping[str(sid).strip()] = str(name).strip()
     return mapping
 
 
@@ -181,7 +160,9 @@ def _build_day_of_week(df: pd.DataFrame, date_col: str, subtotal_col: str, payou
 
 def _build_slot_based(df: pd.DataFrame, time_col: str, subtotal_col: str, payout_col: str, order_col: str) -> pd.DataFrame:
     """Slot-based: per slot Sales, Payouts, Profitability, Orders, AOV."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df["_slot"] = df[time_col].apply(_get_time_slot)
     df = df.dropna(subset=["_slot"])
     df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
@@ -201,7 +182,9 @@ def _build_slot_based(df: pd.DataFrame, time_col: str, subtotal_col: str, payout
 
 def _build_day_slot(df: pd.DataFrame, date_col: str, time_col: str, subtotal_col: str, payout_col: str, order_col: str) -> pd.DataFrame:
     """Day-Slot: Day, Slot, Sales, Payouts, Profitability, Orders, AOV, uplift, Min.Subtotal, campaign recommendation. Sorted by Day then Slot."""
-    df = df.copy()
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col])
     df["_day"] = df[date_col].dt.day_name()
@@ -237,8 +220,10 @@ def _build_store_slot_agg(
     payout_col: str,
     order_col: Optional[str],
 ) -> pd.DataFrame:
-    """Aggregate by Store ID and Slot; columns Store ID, Slot, Sales, Payouts, Orders, Profitability, AOV."""
-    df = df.copy()
+    """Aggregate by Merchant Store ID and Slot; columns Merchant Store ID, Slot, Sales, Payouts, Orders, Profitability, AOV."""
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df["_slot"] = df[time_col].apply(_get_time_slot)
     df = df.dropna(subset=["_slot"])
     df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
@@ -248,8 +233,7 @@ def _build_store_slot_agg(
         Payouts=(payout_col, "sum"),
         Orders=(order_col, "nunique") if order_col else (subtotal_col, "count"),
     ).reset_index()
-    agg = agg.rename(columns={store_col: STORE_ID_COL, "_slot": "Slot"})
-    agg[STORE_ID_COL] = agg[STORE_ID_COL].map(normalize_merchant_store_id)
+    agg = agg.rename(columns={store_col: MERCHANT_STORE_ID_LABEL, "_slot": "Slot"})
     agg["Profitability"] = (agg["Payouts"] / agg["Sales"].replace(0, float("nan")) * 100).round(2)
     agg["AOV"] = (agg["Sales"] / agg["Orders"].replace(0, float("nan"))).round(2)
     return agg
@@ -264,8 +248,10 @@ def _build_day_slot_store_agg(
     payout_col: str,
     order_col: Optional[str],
 ) -> pd.DataFrame:
-    """Aggregate by Day-Slot and Store ID; columns Day-Slot, Store ID, Sales, Payouts, Orders, Profitability, AOV."""
-    df = df.copy()
+    """Aggregate by Day-Slot and Merchant Store ID; columns Day-Slot, Merchant Store ID, Sales, Payouts, Orders, Profitability, AOV."""
+    df = _orders_with_time(df, time_col)
+    if df.empty:
+        return pd.DataFrame()
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col])
     df["_day"] = df[date_col].dt.day_name()
@@ -279,8 +265,7 @@ def _build_day_slot_store_agg(
         Payouts=(payout_col, "sum"),
         Orders=(order_col, "nunique") if order_col else (subtotal_col, "count"),
     ).reset_index()
-    agg = agg.rename(columns={store_col: STORE_ID_COL})
-    agg[STORE_ID_COL] = agg[STORE_ID_COL].map(normalize_merchant_store_id)
+    agg = agg.rename(columns={store_col: MERCHANT_STORE_ID_LABEL})
     agg["Profitability"] = (agg["Payouts"] / agg["Sales"].replace(0, float("nan")) * 100).round(2)
     agg["AOV"] = (agg["Sales"] / agg["Orders"].replace(0, float("nan"))).round(2)
     return agg
@@ -294,7 +279,7 @@ def _build_store_metrics(
     order_col: Optional[str],
     store_id_to_name: Optional[dict] = None,
 ) -> pd.DataFrame:
-    """Per-store: Store ID, Store Name, Sales, Payouts, Orders, AOV, Profitability."""
+    """Per-store: Merchant Store ID, Store Name, Sales, Payouts, Orders, AOV, Profitability."""
     df = df.copy()
     df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
     df[payout_col] = pd.to_numeric(df[payout_col], errors="coerce").fillna(0)
@@ -303,14 +288,13 @@ def _build_store_metrics(
         Payouts=(payout_col, "sum"),
         Orders=(order_col, "nunique") if order_col else (subtotal_col, "count"),
     ).reset_index()
-    agg = agg.rename(columns={store_col: STORE_ID_COL})
-    agg[STORE_ID_COL] = agg[STORE_ID_COL].map(normalize_merchant_store_id)
+    agg = agg.rename(columns={store_col: MERCHANT_STORE_ID_LABEL})
     agg["Profitability"] = (agg["Payouts"] / agg["Sales"].replace(0, float("nan")) * 100).round(2)
     agg["AOV"] = (agg["Sales"] / agg["Orders"].replace(0, float("nan"))).round(2)
     if store_id_to_name:
-        agg[STORE_NAME_LABEL] = agg[STORE_ID_COL].map(store_id_to_name).fillna("")
-        return agg[[STORE_ID_COL, STORE_NAME_LABEL, "Sales", "Payouts", "Profitability", "Orders", "AOV"]]
-    return agg[[STORE_ID_COL, "Sales", "Payouts", "Profitability", "Orders", "AOV"]]
+        agg[STORE_NAME_LABEL] = agg[MERCHANT_STORE_ID_LABEL].astype(str).str.strip().map(store_id_to_name).fillna("")
+        return agg[[MERCHANT_STORE_ID_LABEL, STORE_NAME_LABEL, "Sales", "Payouts", "Profitability", "Orders", "AOV"]]
+    return agg[[MERCHANT_STORE_ID_LABEL, "Sales", "Payouts", "Profitability", "Orders", "AOV"]]
 
 
 def _build_campaign_recommendations(store_metrics: pd.DataFrame) -> pd.DataFrame:
@@ -322,7 +306,7 @@ def _build_campaign_recommendations(store_metrics: pd.DataFrame) -> pd.DataFrame
     """
     if store_metrics.empty or "AOV" not in store_metrics.columns:
         return pd.DataFrame()
-    out = store_metrics[[STORE_ID_COL, "AOV"]].copy()
+    out = store_metrics[[MERCHANT_STORE_ID_LABEL, "AOV"]].copy()
     aov = out["AOV"].astype(float).fillna(0)
     # B = MROUND(AOV, 5)
     B = (aov / 5).round() * 5
@@ -344,7 +328,7 @@ def _build_campaign_recommendations(store_metrics: pd.DataFrame) -> pd.DataFrame
     )
     return out[
         [
-            STORE_ID_COL,
+            MERCHANT_STORE_ID_LABEL,
             "AOV",
             "Min order (new cust) B",
             "Discount % (new cust) A",
@@ -400,7 +384,7 @@ def _write_excel(
     add_sheet(ws1, date_wise, "Date-wise: Sales, Payouts, Profitability, Orders, AOV")
     if store_wise is not None and not store_wise.empty:
         ws_store = wb.create_sheet("Store-wise")
-        add_sheet(ws_store, store_wise, "Store-wise: Sales, Payouts, Profitability, Orders, AOV (by Store ID)")
+        add_sheet(ws_store, store_wise, "Store-wise: Sales, Payouts, Profitability, Orders, AOV (by Merchant Store ID)")
     ws2 = wb.create_sheet("Day of week")
     add_sheet(ws2, day_of_week, "Day-of-week averages: Sales, Payouts, Profitability, Orders, AOV")
     ws3 = wb.create_sheet("Slot-based")
@@ -461,9 +445,6 @@ def run(
         return None
 
     store_col = _resolve_store_col(df)
-    if store_col and store_col != STORE_ID_COL:
-        df = df.rename(columns={store_col: STORE_ID_COL})
-        store_col = STORE_ID_COL
     store_name_col = _resolve_store_name_col(df)
     store_id_to_name: dict = {}
     if store_col and store_name_col:
@@ -481,8 +462,7 @@ def run(
             tbl = _build_day_slot(store_df, date_col, time_col, subtotal_col, payout_col, order_col)
             if not tbl.empty:
                 tbl = _format_dollar_columns(tbl, [c for c in DOLLAR_COLS + ["uplift"] if c in tbl.columns])
-                sid_key = normalize_merchant_store_id(store_id)
-                sheet_name = f"Day-Slot - {sid_key}"[:31]
+                sheet_name = f"Day-Slot - {store_id}"[:31]
                 day_slot_per_store.append((sheet_name, tbl))
     store_metrics = _build_store_metrics(df, store_col, subtotal_col, payout_col, order_col, store_id_to_name) if store_col else pd.DataFrame()
     store_wise = store_metrics.copy()
@@ -497,18 +477,18 @@ def run(
         if not store_slot_agg.empty:
             for metric in ["AOV", "Profitability", "Sales", "Payouts", "Orders"]:
                 if metric in store_slot_agg.columns:
-                    pt = store_slot_agg.pivot(index=STORE_ID_COL, columns="Slot", values=metric)
+                    pt = store_slot_agg.pivot(index=MERCHANT_STORE_ID_LABEL, columns="Slot", values=metric)
                     pt = pt.reindex(columns=[s for s in SLOT_ORDER if s in pt.columns])
                     pt = pt.reset_index()
                     if metric in DOLLAR_COLS:
-                        dollar_cols = [c for c in pt.columns if c != STORE_ID_COL]
+                        dollar_cols = [c for c in pt.columns if c != MERCHANT_STORE_ID_LABEL]
                         pt = _format_dollar_columns(pt, dollar_cols)
                     store_slot_pivots.append((f"Store-Slot {metric}", pt))
         day_slot_store_agg = _build_day_slot_store_agg(df, date_col, time_col, store_col, subtotal_col, payout_col, order_col)
         if not day_slot_store_agg.empty:
             for metric in ["AOV", "Profitability", "Sales", "Payouts", "Orders"]:
                 if metric in day_slot_store_agg.columns:
-                    pt = day_slot_store_agg.pivot(index="Day-Slot", columns=STORE_ID_COL, values=metric)
+                    pt = day_slot_store_agg.pivot(index="Day-Slot", columns=MERCHANT_STORE_ID_LABEL, values=metric)
                     pt = pt.reset_index()
                     if metric in DOLLAR_COLS:
                         dollar_cols = [c for c in pt.columns if c != "Day-Slot"]

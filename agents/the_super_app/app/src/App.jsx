@@ -13,6 +13,8 @@ import StoresScreen from './screens/dashboard/StoresScreen';
 import AbComparisonScreen from './screens/dashboard/AbComparisonScreen';
 import StoreDetailScreen from './screens/dashboard/StoreDetailScreen';
 import SlotsScreen from './screens/dashboard/SlotsScreen';
+import DaysScreen from './screens/dashboard/DaysScreen';
+import DaySlotScreen from './screens/dashboard/DaySlotScreen';
 import BucketsScreen from './screens/dashboard/BucketsScreen';
 import MarketingScreen from './screens/dashboard/MarketingScreen';
 import OperationsScreen from './screens/dashboard/OperationsScreen';
@@ -33,6 +35,8 @@ const DASHBOARD_SCREENS = {
   abComparison: AbComparisonScreen,
   storeDetail: StoreDetailScreen,
   slots: SlotsScreen,
+  days: DaysScreen,
+  daySlot: DaySlotScreen,
   buckets: BucketsScreen,
   marketing: MarketingScreen,
   operations: OperationsScreen,
@@ -106,6 +110,7 @@ export default function App() {
         spreadsheetUrl,
         googleSheets: result.googleSheets,
         docFilename: report.docFilename ?? null,
+        pdfFilename: report.pdfFilename ?? null,
         docUrl,
         googleDoc: report.googleDoc ?? null,
         canOpenPdf: !!reportSnapshot.current,

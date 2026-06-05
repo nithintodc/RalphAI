@@ -10,6 +10,7 @@ import {
   listWowWeekOptions,
   listYearOptions,
 } from '../../lib/utils/analysisPeriodSelectors';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -37,10 +38,6 @@ const SINGLE_TABS = [
   { id: 'singleYear', label: 'Year' },
 ];
 
-function isSingleMode(mode) {
-  return String(mode || '').startsWith('single');
-}
-
 export default function DateFilterDropdown({ onClose, onApply }) {
   const config = useConfigStore();
   const ddFinancial = useDataStore((s) => s.ddFinancial);
@@ -59,7 +56,7 @@ export default function DateFilterDropdown({ onClose, onApply }) {
   const yearOpts = useMemo(() => listYearOptions(bounds), [bounds]);
 
   const initialMode = config.dateAnalysisMode || 'pvp';
-  const [periodKind, setPeriodKind] = useState(isSingleMode(initialMode) ? 'single' : 'compare');
+  const [periodKind, setPeriodKind] = useState(isSinglePeriodMode(initialMode) ? 'single' : 'compare');
   const [mode, setMode] = useState(initialMode);
 
   const [preRange, setPreRange] = useState(() => formatSlashDateRange(config.ddPreStart, config.ddPreEnd));
@@ -110,8 +107,8 @@ export default function DateFilterDropdown({ onClose, onApply }) {
   const switchKind = (kind) => {
     setPeriodKind(kind);
     if (kind === 'single') {
-      if (!isSingleMode(mode)) setMode('singleRange');
-    } else if (isSingleMode(mode)) {
+      if (!isSinglePeriodMode(mode)) setMode('singleRange');
+    } else if (isSinglePeriodMode(mode)) {
       setMode('pvp');
     }
   };

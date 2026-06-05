@@ -24,11 +24,11 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # constants
 # ----------------------------------------------------------------------------
-TIME_SLOTS = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+TIME_SLOTS = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 SLOT_HOUR_RANGES = {
-    "Early morning": "12 AM – 4:59 AM",
+    "Overnight": "12 AM – 4:59 AM",
     "Breakfast":     "5 AM – 10:59 AM",
     "Lunch":         "11 AM – 1:59 PM",
     "Afternoon":     "2 PM – 4:59 PM",
@@ -38,7 +38,7 @@ SLOT_HOUR_RANGES = {
 
 
 def slot_tag_to_dayslot(tag: int) -> tuple[str, str]:
-    """Tag numbering: 1 = Mon Early morning, 2 = Tue Early morning, ..., 8 = Mon Breakfast, ..., 42 = Sun Late night."""
+    """Tag numbering: 1 = Mon Overnight, 2 = Tue Overnight, ..., 8 = Mon Breakfast, ..., 42 = Sun Late night."""
     tag = int(tag)
     time_idx = (tag - 1) // 7
     day_idx = (tag - 1) % 7
@@ -46,7 +46,7 @@ def slot_tag_to_dayslot(tag: int) -> tuple[str, str]:
 
 
 def hour_to_slot(h: int) -> str:
-    if 0 <= h < 5:   return "Early morning"
+    if 0 <= h < 5:   return "Overnight"
     if 5 <= h < 11:  return "Breakfast"
     if 11 <= h < 14: return "Lunch"
     if 14 <= h < 17: return "Afternoon"
@@ -82,7 +82,7 @@ def extract_short_id(name: str | None) -> str | None:
 @st.cache_data(show_spinner=False)
 def load_financial(file_bytes: bytes) -> pd.DataFrame:
     usecols = [
-        "Timestamp local date", "Timestamp local time", "Store name", "Merchant store ID",
+        "Timestamp local date", "Order received local time", "Store name", "Merchant store ID",
         "Transaction type", "DoorDash order ID", "Subtotal",
         "Customer discounts from marketing | (funded by you)",
         "Marketing fees | (including any applicable taxes)",
@@ -90,7 +90,7 @@ def load_financial(file_bytes: bytes) -> pd.DataFrame:
     df = pd.read_csv(io.BytesIO(file_bytes), usecols=usecols, low_memory=False)
     df = df[df["Transaction type"] == "Order"].copy()
     df["Date"] = pd.to_datetime(df["Timestamp local date"], errors="coerce")
-    df["LocalDT"] = pd.to_datetime(df["Timestamp local time"], errors="coerce")
+    df["LocalDT"] = pd.to_datetime(df["Order received local time"], errors="coerce")
     df["Hour"] = df["LocalDT"].dt.hour
     df = df.dropna(subset=["Date", "Hour"])
     df["Hour"] = df["Hour"].astype(int)
@@ -253,7 +253,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**Slot tag legend** (1-42):")
     st.markdown(
-        "- 1 = Mon Early morning, 2 = Tue Early morning, ..., 7 = Sun Early morning\n"
+        "- 1 = Mon Overnight, 2 = Tue Overnight, ..., 7 = Sun Overnight\n"
         "- 8 = Mon Breakfast, ..., 14 = Sun Breakfast\n"
         "- 15-21 = Lunch · 22-28 = Afternoon · 29-35 = Dinner · 36-42 = Late night"
     )

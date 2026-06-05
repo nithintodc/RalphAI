@@ -12,10 +12,21 @@
  */
 
 import { format } from 'date-fns';
-import { buildSlotAnalysis, SLOT_DEFINITIONS } from '../engine/slots';
+import { buildSlotAnalysis, SLOT_DEFINITIONS, getSlotTimeRange } from '../engine/slots';
 import { loadBrandLogosAsDataUri } from '../brand/brandLogos';
 import { pivotDowntimeByStore } from '../utils/opsProductPivot';
 import { buildNewCustomersSummary } from '../engine/newCustomers';
+
+import { resolveDocExportUrl } from './exportApi.js';
+import { buildExportFilename } from './exportFilename.js';
+import {
+  buildAlignedExportStoreTables,
+  combinedExportStoreId,
+  combinedExportStoreName,
+  EXPORT_NA,
+  exportStoreName,
+  legacyStoreIdCell,
+} from './storeExportLayout.js';
 
 const GOOGLE_SHEETS_EXPORT_URL = import.meta.env.VITE_GOOGLE_SHEETS_EXPORT_URL;
 const GOOGLE_DOC_EXPORT_URL = import.meta.env.VITE_GOOGLE_DOC_EXPORT_URL;
@@ -211,42 +222,64 @@ function baselineRows(summaryTables, logos) {
     </tr>`).join('');
 }
 
-function storePrePostRows(stores, metric = 'sales') {
-  return (stores || []).map(s => `<tr>
-    <td>${escapeHtml(s.storeId)}</td>
-    ${td(s[`pre_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
+function storePrePostRows(stores, metric = 'sales', platform = 'combined', dominantPlatform = 'dd') {
+  return (stores || []).map((s) => {
+    const storeId = platform === 'combined'
+      ? combinedExportStoreId(s, dominantPlatform)
+      : legacyStoreIdCell(s, platform);
+    const storeName = platform === 'combined'
+      ? combinedExportStoreName(s, dominantPlatform)
+      : exportStoreName(s);
+    const na = s._isNa;
+    return `<tr>
+    <td>${escapeHtml(storeId)}</td>
+    <td>${escapeHtml(storeName)}</td>
+    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[`pre_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
     ${deltaCell(s[`${metric}_prevspost`], 'usd')}
     ${deltaCell(s[`${metric}_ly_prevspost`], 'usd')}
     ${pctDeltaCell(s[`${metric}_growth_pct`])}
-    ${pctDeltaCell(s[`${metric}_ly_growth_pct`])}
-  </tr>`).join('') || emptyRow(7);
+    ${pctDeltaCell(s[`${metric}_ly_growth_pct`])}`}
+  </tr>`;
+  }).join('') || emptyRow(8);
 }
 
-function storeYoyRows(stores, metric = 'sales') {
-  return (stores || []).map(s => `<tr>
-    <td>${escapeHtml(s.storeId)}</td>
-    ${td(s[`postLY_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
+function storeYoyRows(stores, metric = 'sales', platform = 'combined', dominantPlatform = 'dd') {
+  return (stores || []).map((s) => {
+    const storeId = platform === 'combined'
+      ? combinedExportStoreId(s, dominantPlatform)
+      : legacyStoreIdCell(s, platform);
+    const storeName = platform === 'combined'
+      ? combinedExportStoreName(s, dominantPlatform)
+      : exportStoreName(s);
+    const na = s._isNa;
+    return `<tr>
+    <td>${escapeHtml(storeId)}</td>
+    <td>${escapeHtml(storeName)}</td>
+    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[`postLY_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
     ${deltaCell(s[`${metric}_yoy`], 'usd')}
-    ${pctDeltaCell(s[`${metric}_yoy_pct`])}
-  </tr>`).join('') || emptyRow(5);
+    ${pctDeltaCell(s[`${metric}_yoy_pct`])}`}
+  </tr>`;
+  }).join('') || emptyRow(6);
 }
 
 function slotPrePostRows(rows) {
   return (rows || []).map(r => `<tr>
     <td>${escapeHtml(r.slot)}</td>
+    <td>${escapeHtml(getSlotTimeRange(r.slot))}</td>
     ${td(r.pre, 'usd')}${td(r.post, 'usd')}
     ${deltaCell(r.prevspost, 'usd')}
     ${pctDeltaCell(r.growthPct)}
-  </tr>`).join('') || emptyRow(5);
+  </tr>`).join('') || emptyRow(6);
 }
 
 function slotYoyRows(rows) {
   return (rows || []).map(r => `<tr>
     <td>${escapeHtml(r.slot)}</td>
+    <td>${escapeHtml(getSlotTimeRange(r.slot))}</td>
     ${td(r.postLY, 'usd')}${td(r.post, 'usd')}
     ${deltaCell(r.yoy, 'usd')}
     ${pctDeltaCell(r.yoyPct)}
-  </tr>`).join('') || emptyRow(5);
+  </tr>`).join('') || emptyRow(6);
 }
 
 function marketingSourceRows(marketingTables) {
@@ -266,14 +299,21 @@ function marketingSourceRows(marketingTables) {
   return out || emptyRow(6);
 }
 
-function markupCells(storeTables) {
+function markupTableRows(storeTables) {
   const stores = storeTables?.combined || storeTables?.dd || storeTables?.ue || [];
   if (!stores.length) {
-    return Array.from({ length: 8 }, () =>
-      `<div class="markup-cell"><span class="markup-store">[Store #]</span><span class="markup-pct">[XX%]</span></div>`).join('');
+    return Array.from({ length: 3 }, () =>
+      '<tr><td>[Store Name]</td><td>[XX%]</td></tr>').join('');
   }
-  return stores.map(s =>
-    `<div class="markup-cell"><span class="markup-store">${escapeHtml(s.storeId)}</span><span class="markup-pct">—</span></div>`).join('');
+  return stores.map((s) =>
+    `<tr><td>${escapeHtml(s.storeId)}</td><td>—</td></tr>`).join('');
+}
+
+function markupTable(storeTables) {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Store Name</th><th>Markup</th></tr></thead>
+    <tbody>${markupTableRows(storeTables)}</tbody>
+  </table></div>`;
 }
 
 function emptyRow(cols) {
@@ -424,10 +464,6 @@ function reportCss() {
   .chart-canvas-wrap{position:relative;height:280px;}
   canvas{display:block;}
   .chart-caption{font-size:10px;color:var(--text-subtle);text-align:center;margin-top:12px;font-style:italic;}
-  .markup-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
-  .markup-cell{background:var(--surface);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;}
-  .markup-store{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;}
-  .markup-pct{font-size:13px;font-weight:600;color:var(--accent);}
   .report-footer{border-top:1px solid var(--border);padding:20px 0 0;display:flex;justify-content:space-between;align-items:center;}
   .footer-left,.footer-right{font-size:10px;color:var(--text-subtle);}
   .totals-row td{font-weight:600!important;color:var(--text)!important;border-top:2px solid var(--border-light)!important;}
@@ -468,7 +504,7 @@ function buildSlotDefinitionsScreenSection() {
     <div class="section">
       <div class="section-header gold"><div class="section-title">Day Part Definitions</div></div>
       <p class="text-xs" style="color:var(--text-subtle);margin:0 0 12px;font-size:11px;line-height:1.5">
-        DoorDash dayparts use <strong>Order placed time</strong>; Uber Eats uses <strong>Order Accept Time</strong>.
+        DoorDash financial dayparts use <strong>Order received local time</strong>; SALES_BY_ORDER uses <strong>Order placed time</strong>. Uber Eats uses <strong>Order Accept Time</strong>.
       </p>
       <div class="table-wrap"><table>
         <thead><tr><th>Day part</th><th>Time window</th></tr></thead>
@@ -481,7 +517,7 @@ function buildSlotDefinitionsWordSection() {
   const body = SLOT_DEFINITIONS.map(({ name, range }) =>
     `<tr>${wLabelTd(name)}${wLabelTd(range)}</tr>`).join('');
   return `${wSectionHeader('Day Part Definitions', '09', W.accentBar)}
-    ${wSub('Time windows (DoorDash: Order placed time · Uber Eats: Order Accept Time)')}
+    ${wSub('Time windows (DoorDash financial: Order received local time · SALES_BY_ORDER: Order placed time · Uber Eats: Order Accept Time)')}
     ${wDataTable(['Day part', 'Time window'], body)}`;
 }
 
@@ -527,6 +563,13 @@ function kpiCard(label, value, deltaPct, hasData, deltaSuffix = 'YoY') {
 function buildReportBody(data, config, variant, logos = null) {
   const summaryTables = data.summaryTables || {};
   const storeTables = data.storeTables || {};
+  const alignedStores = buildAlignedExportStoreTables(storeTables, config?.ddToUeStoreMap || {});
+  const exportStoreTables = {
+    combined: alignedStores.combined,
+    dd: alignedStores.dd,
+    ue: alignedStores.ue,
+  };
+  const dominantPlatform = alignedStores.dominantPlatform;
   const marketingTables = data.marketingTables || {};
   const ddSlot = platformSlotAnalysis(data, config, 'dd');
   const ueSlot = platformSlotAnalysis(data, config, 'ue');
@@ -586,28 +629,28 @@ function buildReportBody(data, config, variant, logos = null) {
     ${badgeClass ? platformBadgeHtml(badgeClass, label, badgeClass.toUpperCase(), logos) : ''}
     <div class="subsection-title">${label} — Pre vs Post</div>
     <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
-      <thead><tr><th>Store ID</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
-      <tbody>${storePrePostRows(storeTables[key])}</tbody>
+      <thead><tr><th>Store ID</th><th>Store Name</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
+      <tbody>${storePrePostRows(exportStoreTables[key], 'sales', key, dominantPlatform)}</tbody>
     </table></div>
     <div class="subsection-title">${label} — YoY</div>
     <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
-      <thead><tr><th>Store ID</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${storeYoyRows(storeTables[key])}</tbody>
+      <thead><tr><th>Store ID</th><th>Store Name</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+      <tbody>${storeYoyRows(exportStoreTables[key], 'sales', key, dominantPlatform)}</tbody>
     </table></div>`;
 
   const daypartBlock = (slot, label, badgeClass, logo) => slot ? `
     ${platformBadgeHtml(badgeClass, label, logo, logos)}
     <div class="subsection-title">Sales — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
+    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
       <tbody>${slotPrePostRows(slot.salesPrePost)}</tbody></table></div>
     <div class="subsection-title">Sales — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
       <tbody>${slotYoyRows(slot.salesYoY)}</tbody></table></div>
     <div class="subsection-title">Payouts — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
+    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
       <tbody>${slotPrePostRows(slot.payoutsPrePost)}</tbody></table></div>
     <div class="subsection-title">Payouts — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
       <tbody>${slotYoyRows(slot.payoutsYoY)}</tbody></table></div>` : '';
 
   const printBar = variant === 'screen'
@@ -655,7 +698,7 @@ function buildReportBody(data, config, variant, logos = null) {
 
     <div class="section">
       <div class="section-header gold"><div class="section-title">Store Level Markups</div><div class="section-num">02</div></div>
-      <div class="markup-grid">${markupCells(storeTables)}</div>
+      ${markupTable(storeTables)}
     </div>
 
     <div class="section">
@@ -922,10 +965,10 @@ const UE_ACCENT = { bg: W.posBg, text: '#04864a' };
 
 const PVP_METRIC_HEADERS = ['Metric', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
 const YOY_METRIC_HEADERS = ['Metric', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
-const STORE_PVP_HEADERS = ['Store ID', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
-const STORE_YOY_HEADERS = ['Store ID', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
-const SLOT_PVP_HEADERS = ['Daypart', 'Pre', 'Post', 'Δ ($)', 'Growth %'];
-const SLOT_YOY_HEADERS = ['Daypart', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
+const STORE_PVP_HEADERS = ['Store ID', 'Store Name', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
+const STORE_YOY_HEADERS = ['Store ID', 'Store Name', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
+const SLOT_PVP_HEADERS = ['Daypart', 'Slot time', 'Pre', 'Post', 'Δ ($)', 'Growth %'];
+const SLOT_YOY_HEADERS = ['Daypart', 'Slot time', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
 
 function buildAppendixWordSection(data) {
   const rows = getDowntimeStoreRows(data);
@@ -961,21 +1004,41 @@ function wMetricYoy(summary) {
     return `<tr>${wLabelTd(METRIC_LABELS[m])}${wValTd(r.postLY, k)}${wValTd(r.post, k)}${wDeltaTd(r.yoy, k)}${wDeltaTd(r.yoyPct, 'pct')}</tr>`;
   }).join('') || wEmpty(5);
 }
-function wStorePvp(stores) {
-  return (stores || []).map(s =>
-    `<tr>${wLabelTd(s.storeId)}${wValTd(s.pre_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_prevspost, 'usd')}${wDeltaTd(s.sales_ly_prevspost, 'usd')}${wDeltaTd(s.sales_growth_pct, 'pct')}${wDeltaTd(s.sales_ly_growth_pct, 'pct')}</tr>`).join('') || wEmpty(7);
+function wStorePvp(stores, platform = 'combined', dominantPlatform = 'dd') {
+  return (stores || []).map((s) => {
+    const storeId = platform === 'combined'
+      ? combinedExportStoreId(s, dominantPlatform)
+      : legacyStoreIdCell(s, platform);
+    const storeName = platform === 'combined'
+      ? combinedExportStoreName(s, dominantPlatform)
+      : exportStoreName(s);
+    if (s._isNa) {
+      return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'pct')}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
+    }
+    return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(s.pre_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_prevspost, 'usd')}${wDeltaTd(s.sales_ly_prevspost, 'usd')}${wDeltaTd(s.sales_growth_pct, 'pct')}${wDeltaTd(s.sales_ly_growth_pct, 'pct')}</tr>`;
+  }).join('') || wEmpty(8);
 }
-function wStoreYoy(stores) {
-  return (stores || []).map(s =>
-    `<tr>${wLabelTd(s.storeId)}${wValTd(s.postLY_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_yoy, 'usd')}${wDeltaTd(s.sales_yoy_pct, 'pct')}</tr>`).join('') || wEmpty(5);
+function wStoreYoy(stores, platform = 'combined', dominantPlatform = 'dd') {
+  return (stores || []).map((s) => {
+    const storeId = platform === 'combined'
+      ? combinedExportStoreId(s, dominantPlatform)
+      : legacyStoreIdCell(s, platform);
+    const storeName = platform === 'combined'
+      ? combinedExportStoreName(s, dominantPlatform)
+      : exportStoreName(s);
+    if (s._isNa) {
+      return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
+    }
+    return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(s.postLY_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_yoy, 'usd')}${wDeltaTd(s.sales_yoy_pct, 'pct')}</tr>`;
+  }).join('') || wEmpty(6);
 }
 function wSlotPvp(rows) {
   return (rows || []).map(r =>
-    `<tr>${wLabelTd(r.slot)}${wValTd(r.pre, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.prevspost, 'usd')}${wDeltaTd(r.growthPct, 'pct')}</tr>`).join('') || wEmpty(5);
+    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.pre, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.prevspost, 'usd')}${wDeltaTd(r.growthPct, 'pct')}</tr>`).join('') || wEmpty(6);
 }
 function wSlotYoy(rows) {
   return (rows || []).map(r =>
-    `<tr>${wLabelTd(r.slot)}${wValTd(r.postLY, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.yoy, 'usd')}${wDeltaTd(r.yoyPct, 'pct')}</tr>`).join('') || wEmpty(5);
+    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.postLY, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.yoy, 'usd')}${wDeltaTd(r.yoyPct, 'pct')}</tr>`).join('') || wEmpty(6);
 }
 function wBaseline(summaryTables, logos) {
   const rows = [
@@ -1021,24 +1084,25 @@ function wMetaGrid(cells) {
   }
   return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-bottom:32px">${rows}</table>`;
 }
-function wMarkupGrid(stores) {
-  const cells = stores.length
-    ? stores.map(s => ({ id: s.storeId, pct: '—' }))
-    : Array.from({ length: 8 }, () => ({ id: '[Store #]', pct: '[XX%]' }));
-  let rows = '';
-  for (let i = 0; i < cells.length; i += 4) {
-    const group = cells.slice(i, i + 4);
-    while (group.length < 4) group.push(null);
-    rows += '<tr>' + group.map(c => c
-      ? `<td style="border:1px solid ${W.border};padding:9px 14px;width:25%"><table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="font-family:${W.mono};font-size:11px;color:${W.muted};text-align:left;border:none;padding:0">${escapeHtml(c.id)}</td><td style="font-family:${W.mono};font-size:12px;font-weight:bold;color:${W.accentText};text-align:right;border:none;padding:0">${escapeHtml(c.pct)}</td></tr></table></td>`
-      : `<td style="border:1px solid ${W.border}"></td>`).join('') + '</tr>';
+function wMarkupRows(stores) {
+  if (!stores.length) {
+    return Array.from({ length: 3 }, () =>
+      `<tr>${wLabelTd('[Store Name]')}${wValTd('[XX%]', 'text')}</tr>`).join('');
   }
-  return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-bottom:14px">${rows}</table>`;
+  return stores.map((s) =>
+    `<tr>${wLabelTd(s.storeId)}${wValTd('—', 'text')}</tr>`).join('');
 }
 
 function buildWordReportHtml(data, config, logos = null) {
   const summaryTables = data.summaryTables || {};
   const storeTables = data.storeTables || {};
+  const alignedStores = buildAlignedExportStoreTables(storeTables, config?.ddToUeStoreMap || {});
+  const exportStoreTables = {
+    combined: alignedStores.combined,
+    dd: alignedStores.dd,
+    ue: alignedStores.ue,
+  };
+  const dominantPlatform = alignedStores.dominantPlatform;
   const marketingTables = data.marketingTables || {};
   const ddSlot = platformSlotAnalysis(data, config, 'dd');
   const ueSlot = platformSlotAnalysis(data, config, 'ue');
@@ -1114,7 +1178,7 @@ function buildWordReportHtml(data, config, logos = null) {
     ${wSub('Pre-TODC YoY Baseline (Sales)')}
     ${wDataTable(['Platform', 'Prior Year', 'Current Year', 'Δ ($)', 'Δ (%)'], wBaseline(summaryTables, logos))}`;
 
-  const markups = `${wSectionHeader('Store Level Markups', '02', W.accentBar)}${wMarkupGrid(storeTables.combined || storeTables.dd || storeTables.ue || [])}`;
+  const markups = `${wSectionHeader('Store Level Markups', '02', W.accentBar)}${wDataTable(['Store Name', 'Markup'], wMarkupRows(storeTables.combined || storeTables.dd || storeTables.ue || []))}`;
 
   const combined = `${wSectionHeader('Combined Performance', '03', W.accentBar)}
     ${wSub('Pre vs Post')}${wDataTable(PVP_METRIC_HEADERS, wMetricPvp(summaryTables.combined))}
@@ -1127,8 +1191,8 @@ function buildWordReportHtml(data, config, logos = null) {
 
   const storeBlock = (key, label, accent, badge, logo, badgeColor, platformKey) => `
     ${badge ? wBadge(label, logo, badgeColor, logos, platformKey) : wSub(label)}
-    ${wSub(`${label} — Pre vs Post`)}${wDataTable(STORE_PVP_HEADERS, wStorePvp(storeTables[key]), accent)}
-    ${wSub(`${label} — YoY`)}${wDataTable(STORE_YOY_HEADERS, wStoreYoy(storeTables[key]), accent)}`;
+    ${wSub(`${label} — Pre vs Post`)}${wDataTable(STORE_PVP_HEADERS, wStorePvp(exportStoreTables[key], key, dominantPlatform), accent)}
+    ${wSub(`${label} — YoY`)}${wDataTable(STORE_YOY_HEADERS, wStoreYoy(exportStoreTables[key], key, dominantPlatform), accent)}`;
 
   const stores = `${wSectionHeader('Store Level Analysis', '06', W.accentBar)}
     ${storeBlock('combined', 'Combined', null, false)}
@@ -1196,10 +1260,6 @@ ${buildReportBody(data, config, 'screen', logos)}
 
 /* ── Output sinks ────────────────────────────────────────────────────────── */
 
-function timestamp() {
-  return format(new Date(), 'yyyyMMdd_HHmmss');
-}
-
 function downloadBlob(content, filename, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -1223,18 +1283,22 @@ export async function downloadReportDoc(data, config, baseName, logos = null) {
 export async function openReportForPdf(data, config) {
   const logos = await loadBrandLogosAsDataUri();
   const html = buildReportHtml(data, config, { variant: 'screen', logos });
+  const pdfName = buildExportFilename(config, 'pdf', { ext: 'pdf' });
   const win = window.open('', '_blank');
   if (!win) return false;
   win.document.open();
   win.document.write(html);
   win.document.close();
+  win.document.title = pdfName;
   return true;
 }
 
 async function pushReportToGoogleDoc(filename, html) {
-  const targetUrl = GOOGLE_DOC_EXPORT_URL
-    || (GOOGLE_SHEETS_EXPORT_URL ? GOOGLE_SHEETS_EXPORT_URL.replace(/\/export\/?$/, '/export-doc') : null)
-    || defaultExportDocUrl();
+  const targetUrl = resolveDocExportUrl(
+    GOOGLE_DOC_EXPORT_URL,
+    GOOGLE_SHEETS_EXPORT_URL,
+    defaultExportDocUrl,
+  );
 
   const response = await fetch(targetUrl, {
     method: 'POST',
@@ -1267,7 +1331,8 @@ function extractDocUrl(gd) {
  * The PDF path is offered interactively from the modal (openReportForPdf).
  */
 export async function exportPartnershipReport(data, config) {
-  const baseName = `TODC_Partnership_Report_${timestamp()}`;
+  const docFilename = buildExportFilename(config, 'doc', { ext: 'doc' });
+  const baseName = docFilename.replace(/\.doc$/i, '');
   const logos = await loadBrandLogosAsDataUri();
   await downloadReportDoc(data, config, baseName, logos);
 
@@ -1279,7 +1344,8 @@ export async function exportPartnershipReport(data, config) {
     googleDoc = { error: err.message || String(err) };
   }
   return {
-    docFilename: `${baseName}.doc`,
+    docFilename,
+    pdfFilename: buildExportFilename(config, 'pdf', { ext: 'pdf' }),
     googleDoc,
     docUrl: extractDocUrl(googleDoc),
   };

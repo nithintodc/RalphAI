@@ -4,6 +4,7 @@ Health Check register bundle: week1/2 DD+UE registers, WoW registers, HTML, PDF,
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -185,6 +186,20 @@ def build_operator_register_bundle(
         Path(promo_wow) if promo_wow else None,
         Path(ads_wow) if ads_wow else None,
     )
+    slot_review_json = campaign_wow.get("slot_level_review_json")
+    if slot_review_json and Path(slot_review_json).is_file():
+        result["register_files"]["slot_level_review_json"] = slot_review_json
+        if campaign_wow.get("slot_level_review_csv"):
+            result["register_files"]["slot_level_review_csv"] = campaign_wow["slot_level_review_csv"]
+        from agents.health_check.slot_level_review import slot_level_review_for_html
+
+        try:
+            slot_payload = json.loads(Path(slot_review_json).read_text(encoding="utf-8"))
+            slot_html = slot_level_review_for_html(slot_payload)
+            if slot_html:
+                campaigns_html = {**(campaigns_html or {}), "slotReview": slot_html}
+        except json.JSONDecodeError:
+            pass
 
     html_path = build_register_wow_report_html(
         dd_analysis,
@@ -192,7 +207,7 @@ def build_operator_register_bundle(
         output_path=output_dir / REGISTER_FILES["html"],
         title_suffix=operator_name,
         ue_has_data=result["platform"] == "dd+ue",
-        campaigns_analysis=campaigns_html if campaigns_html.get("promo") or campaigns_html.get("ads") else None,
+        campaigns_analysis=campaigns_html if campaigns_html else None,
     )
     if html_path:
         result["wow_viz_html"] = str(html_path)
@@ -207,7 +222,8 @@ def build_operator_register_bundle(
     pdf_path: Optional[Path] = None
     pdf_url: Optional[str] = None
     result["pdf_export_ok"] = False
-    if html_path:
+    skip_pdf = os.getenv("HEALTHCHECK_SKIP_PDF", "").strip().lower() in ("1", "true", "yes", "on")
+    if html_path and not skip_pdf:
         pdf_path = html_to_pdf(Path(html_path), output_dir / REGISTER_FILES["pdf"])
         if pdf_path and pdf_path.is_file():
             result["register_files"]["pdf"] = str(pdf_path)
@@ -246,6 +262,16 @@ def build_operator_register_bundle(
             pdf_url=pdf_url,
             html_url=slack_browser_url if not pdf_url else None,
         )
+        if slot_review_json and Path(slot_review_json).is_file():
+            from agents.health_check.slot_level_review import build_slot_review_slack_block
+
+            try:
+                slot_payload = json.loads(Path(slot_review_json).read_text(encoding="utf-8"))
+                slot_block = build_slot_review_slack_block(slot_payload, operator_name=operator_name)
+                if slot_block:
+                    slack_text = f"{slack_text}\n\n{slot_block}"
+            except json.JSONDecodeError:
+                pass
         slack_notify(slack_text)
         result["wow_slack_sent"] = True
 

@@ -361,15 +361,47 @@ function renderCampaignTable(rows, title) {
   return html + '</tbody></table></section>';
 }
 
+function renderSlotReview(SR) {
+  if (!SR || (!SR.keep?.length && !SR.pause?.length && !SR.monitor?.length)) return '';
+  const th = SR.thresholds || {};
+  let html = `<section class="platform"><h2 class="platform-title">Step 5 — Slot-level review</h2>
+    <p class="subtitle">${SR.weekLabels?.prior || '?'} → ${SR.weekLabels?.current || '?'} · `
+    + `Keep when ROAS ≥ ${th.keep_roas_gte || 5}× · Pause/reduce when ROAS &lt; ${th.pause_roas_lt || 2}×</p>`;
+  if (SR.transitionSummary) {
+    html += `<p class="subtitle"><strong>Slot vs prior blanket:</strong> ${SR.transitionSummary}</p>`;
+  }
+  if (SR.actionCounts) {
+    html += `<p class="subtitle">Actions: ${SR.actionCounts.keep_increase_budget || 0} keep/increase · `
+      + `${SR.actionCounts.pause_or_reduce_bid || 0} pause/reduce · ${SR.actionCounts.monitor || 0} monitor</p>`;
+  }
+  function slotTable(rows, title) {
+    if (!rows?.length) return '';
+    let t = `<h3 style="margin:16px 0 8px;color:#c9d1d9">${title}</h3><table><thead><tr>`
+      + `<th>Slot</th><th>Store</th><th>Campaign</th><th>ROAS</th><th>Action</th></tr></thead><tbody>`;
+    for (const r of rows) {
+      t += `<tr><td>${r.slot}</td><td>${r.storeId}</td><td>${r.name}</td>`
+        + `<td class="num">${Number(r.roas).toFixed(1)}×</td><td>${r.action}</td></tr>`;
+    }
+    return t + '</tbody></table>';
+  }
+  html += slotTable(SR.keep, 'ROAS ≥ 5× — keep & increase budget');
+  html += slotTable(SR.pause, 'ROAS &lt; 2× — pause or reduce bid');
+  html += slotTable(SR.monitor, 'Monitor (2×–5×)');
+  return html + '</section>';
+}
+
 const C = ROOT.campaigns;
+let campaignsHtml = '';
 if (C && (C.promo?.length || C.ads?.length)) {
-  document.getElementById('campaigns').innerHTML =
+  campaignsHtml +=
     '<h2 style="font-size:22px;color:#58a6ff;margin:32px 0 16px">Campaign WoW (Promo &amp; Ads)</h2>' +
     renderCampaignTable(C.promo, 'Promo campaigns') +
     renderCampaignTable(C.ads, 'Ads campaigns');
-} else {
-  document.getElementById('campaigns').innerHTML = '';
 }
+if (C?.slotReview) {
+  campaignsHtml += renderSlotReview(C.slotReview);
+}
+document.getElementById('campaigns').innerHTML = campaignsHtml;
 </script>
 </body>
 </html>

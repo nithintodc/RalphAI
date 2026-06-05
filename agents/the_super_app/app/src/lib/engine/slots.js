@@ -1,14 +1,15 @@
 import { differenceInCalendarDays } from 'date-fns';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
 import { safeDivide, round } from '../utils/safeMath';
-import { assignBucket, BUCKET_RANGES, classifyOrder, classifyUeOrder, sumPromoDiscountsFromRows } from './buckets';
+import { assignBucket, BUCKET_RANGES, classifyDdOrder, classifyUeOrder, sumDdOrderMarketingSignals } from './buckets';
+import { isPresentTimeValue } from '../constants/orderTimeColumns';
 
 const SLOT_RANGES = [
   { name: 'Overnight', min: 0, max: 299, range: '12:00 AM – 4:59 AM' },
   { name: 'Breakfast', min: 300, max: 659, range: '5:00 AM – 10:59 AM' },
   { name: 'Lunch', min: 660, max: 839, range: '11:00 AM – 1:59 PM' },
-  { name: 'Afternoon', min: 840, max: 959, range: '2:00 PM – 4:59 PM' },
-  { name: 'Dinner', min: 960, max: 1199, range: '5:00 PM – 7:59 PM' },
+  { name: 'Afternoon', min: 840, max: 1019, range: '2:00 PM – 4:59 PM' },
+  { name: 'Dinner', min: 1020, max: 1199, range: '5:00 PM – 7:59 PM' },
   { name: 'Late Night', min: 1200, max: 1439, range: '8:00 PM – 11:59 PM' },
 ];
 
@@ -21,12 +22,44 @@ export const SLOT_DEFINITIONS = SLOT_RANGES.map(({ name, range }) => ({ name, ra
 export const SLOT_NAMES = ['Overnight', 'Breakfast', 'Lunch', 'Afternoon', 'Dinner', 'Late Night'];
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+export const SLOT_TIME_COLUMN_LABEL = 'Slot time';
+
+const SLOT_TIME_BY_NAME = Object.fromEntries(SLOT_RANGES.map(({ name, range }) => [name, range]));
+
+/** Time window for a day-part name (also matches when embedded in a longer label). */
+export function getSlotTimeRange(slotName) {
+  if (slotName == null || slotName === '') return '';
+  const s = String(slotName).trim();
+  if (SLOT_TIME_BY_NAME[s]) return SLOT_TIME_BY_NAME[s];
+  const lower = s.toLowerCase();
+  for (const name of SLOT_NAMES) {
+    if (lower === name.toLowerCase()) return SLOT_TIME_BY_NAME[name];
+  }
+  for (const name of SLOT_NAMES) {
+    if (s.includes(name)) return SLOT_TIME_BY_NAME[name];
+  }
+  return '';
+}
+
+export const SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%'];
+export const SLOT_EXPORT_HEADERS_YOY = ['Slot', 'Slot time', 'LY Post', 'Post', 'YoY', 'YoY%'];
+export const LEGACY_SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%'];
+export const LEGACY_SLOT_EXPORT_HEADERS_YOY = ['Slot', 'Slot time', 'Last year post', 'Post', 'YoY', 'Growth%'];
+
 /** Primary slot tables — daily avg for $ metrics; AOV and profitability are ratios. */
 export const SLOT_DISPLAY_METRICS = [
   { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: true },
   { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: true },
   { key: 'aov', label: 'AOV', valueKind: 'usd2', dailyAvg: false },
   { key: 'profitability', label: 'Profitability %', valueKind: 'pct', dailyAvg: false },
+];
+
+/** Slots screen — Pre/Post and YoY growth tables only. */
+export const SLOT_CORE_METRICS = [
+  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: true },
+  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: true },
+  { key: 'aov', label: 'AOV', valueKind: 'usd2', dailyAvg: false },
+  { key: 'orders', label: 'Orders', valueKind: 'int', dailyAvg: false },
 ];
 
 /** Row keys on `buildSlotAnalysis` for export / extended views. */
@@ -71,6 +104,7 @@ function buildDdOrdersWithSlots(rawData, timeField) {
   for (const [orderId, rs] of byOrder) {
     if (!orderId) continue;
     const t = rs[0][timeField];
+    if (!isPresentTimeValue(t)) continue;
     const slot = getSlot(t, 'dd');
     if (!SLOT_NAMES.includes(slot)) continue;
     const sales = rs.reduce((s, r) => s + (r.subtotal || 0), 0);
@@ -79,10 +113,10 @@ function buildDdOrdersWithSlots(rawData, timeField) {
     const cd = rs.reduce((s, r) => s + (r.customerDiscounts || 0), 0);
     const cdDd = rs.reduce((s, r) => s + (r.customerDiscountsDoorDash || 0), 0);
     const cd3p = rs.reduce((s, r) => s + (r.customerDiscountsThirdParty || 0), 0);
-    const promoDiscount = sumPromoDiscountsFromRows(rs);
+    const mktSignals = sumDdOrderMarketingSignals(rs);
     const adsSpend = mktFees;
     const mktSpend = Math.abs(mktFees) + Math.abs(cd) + Math.abs(cdDd) + Math.abs(cd3p);
-    const orderType = classifyOrder(mktFees, promoDiscount);
+    const orderType = classifyDdOrder(mktSignals);
     const bucket = assignBucket(sales);
     out.push({
       orderId,

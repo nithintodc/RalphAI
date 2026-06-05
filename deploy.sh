@@ -136,12 +136,18 @@ build_cloud_run_secret_flags() {
   add_secret() {
     local env_name="$1"
     local secret_name="$2"
-    if gcloud secrets describe "${secret_name}" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
-      if [[ -n "${SECRET_FLAGS}" ]]; then SECRET_FLAGS+=","; fi
-      SECRET_FLAGS+="${env_name}=${secret_name}:latest"
-    else
+    if ! gcloud secrets describe "${secret_name}" --project="${GCP_PROJECT_ID}" >/dev/null 2>&1; then
       warn "Skipping secret ${secret_name} (not in Secret Manager)"
+      return
     fi
+    if ! gcloud secrets versions list "${secret_name}" \
+      --project="${GCP_PROJECT_ID}" --limit=1 --format='value(name)' \
+      | grep -q .; then
+      warn "Skipping secret ${secret_name} (no enabled version)"
+      return
+    fi
+    if [[ -n "${SECRET_FLAGS}" ]]; then SECRET_FLAGS+=","; fi
+    SECRET_FLAGS+="${env_name}=${secret_name}:latest"
   }
   add_secret "ANTHROPIC_API_KEY" "ANTHROPIC_API_KEY"
   add_secret "AIRTABLE_PAT" "AIRTABLE_PAT"
@@ -171,15 +177,15 @@ deploy_cloud_run() {
     ok "Skipping build — using existing image ${IMAGE}"
   fi
 
-  # Path A: UI + API same host — skip .env CORS_ORIGINS (commas break gcloud --set-env-vars).
+  # Path A: UI + API same host — gcloud --env-vars-file requires YAML (not KEY=VALUE).
   ENV_FILE="$(mktemp)"
   {
-    echo "LOG_LEVEL=INFO"
-    echo "GOOGLE_SHARED_DRIVE_NAME=${GOOGLE_SHARED_DRIVE_NAME}"
-    [[ -n "${AIRTABLE_BASE_ID:-}" ]]  && echo "AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID}"
-    [[ -n "${AIRTABLE_TABLE_ID:-}" ]] && echo "AIRTABLE_TABLE_ID=${AIRTABLE_TABLE_ID}"
+    echo "LOG_LEVEL: INFO"
+    echo "GOOGLE_SHARED_DRIVE_NAME: ${GOOGLE_SHARED_DRIVE_NAME}"
+    [[ -n "${AIRTABLE_BASE_ID:-}" ]]  && echo "AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID}"
+    [[ -n "${AIRTABLE_TABLE_ID:-}" ]] && echo "AIRTABLE_TABLE_ID: ${AIRTABLE_TABLE_ID}"
     if [[ -n "${CLOUD_RUN_CORS_ORIGINS:-}" ]]; then
-      echo "CORS_ORIGINS=${CLOUD_RUN_CORS_ORIGINS}"
+      echo "CORS_ORIGINS: ${CLOUD_RUN_CORS_ORIGINS}"
     fi
   } >"$ENV_FILE"
 
@@ -201,6 +207,20 @@ deploy_cloud_run() {
   )
   if [[ -n "${SECRET_FLAGS:-}" ]]; then
     DEPLOY_ARGS+=(--update-secrets="${SECRET_FLAGS}")
+  fi
+  # Drop secrets that have no enabled version (would block revision startup).
+  REMOVE_SECRETS=""
+  for stale in ANTHROPIC_API_KEY SLACK_BOT_TOKEN SLACK_SIGNING_SECRET; do
+    if gcloud run services describe "${SERVICE_NAME}" \
+      --region="${GCP_REGION}" --project="${GCP_PROJECT_ID}" \
+      --format='yaml(spec.template.spec.containers[0].env)' 2>/dev/null \
+      | grep -q "name: ${stale}"; then
+      [[ -n "${REMOVE_SECRETS}" ]] && REMOVE_SECRETS+=","
+      REMOVE_SECRETS+="${stale}"
+    fi
+  done
+  if [[ -n "${REMOVE_SECRETS}" ]]; then
+    DEPLOY_ARGS+=(--remove-secrets="${REMOVE_SECRETS}")
   fi
   gcloud "${DEPLOY_ARGS[@]}"
   rm -f "$ENV_FILE"

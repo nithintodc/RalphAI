@@ -30,12 +30,12 @@ COL_TXN_TYPE = "Transaction type"
 COL_BUSINESS = "Business name"
 
 DAY_PARTS = (
-    "Early morning",   # 00:00–05:59
-    "Breakfast",       # 06:00–10:59
-    "Lunch",           # 11:00–14:59
-    "Afternoon",       # 15:00–16:59
-    "Dinner",          # 17:00–21:59
-    "Late night",      # 22:00–23:59
+    "Overnight",   # 12:00 AM – 4:59 AM
+    "Breakfast",       # 5:00 AM – 10:59 AM
+    "Lunch",           # 11:00 AM – 1:59 PM
+    "Afternoon",       # 2:00 PM – 4:59 PM
+    "Dinner",          # 5:00 PM – 7:59 PM
+    "Late night",      # 8:00 PM – 11:59 PM
 )
 
 
@@ -131,15 +131,15 @@ def assign_day_part(hour: pd.Series) -> pd.Series:
     def one(hv: int) -> str:
         if hv < 0:
             return "Unknown"
-        if hv < 6:
+        if hv < 5:
             return DAY_PARTS[0]
         if hv < 11:
             return DAY_PARTS[1]
-        if hv < 15:
+        if hv < 14:
             return DAY_PARTS[2]
         if hv < 17:
             return DAY_PARTS[3]
-        if hv < 22:
+        if hv < 20:
             return DAY_PARTS[4]
         return DAY_PARTS[5]
 
@@ -229,7 +229,7 @@ def load_and_prepare(
         "Timestamp local date",
         "Date",
     )
-    time_col = _find_col(df, COL_ORDER_TIME, "Timestamp local time")
+    time_col = _find_col(df, COL_ORDER_TIME)
     txn_col = _find_col(df, COL_TXN_TYPE)
 
     business_col = COL_BUSINESS if COL_BUSINESS in df.columns else None
@@ -237,6 +237,12 @@ def load_and_prepare(
     orders = df.loc[df[txn_col].astype(str).str.strip().eq("Order")].copy()
     if orders.empty:
         raise ValueError("No rows with Transaction type == 'Order'.")
+
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    orders = drop_rows_without_order_time(orders, time_col)
+    if orders.empty:
+        raise ValueError(f"No Order rows with non-null {COL_ORDER_TIME!r}.")
 
     orders = attach_store_name_column(orders, platform="dd")
     store_col = STORE_NAME_COL

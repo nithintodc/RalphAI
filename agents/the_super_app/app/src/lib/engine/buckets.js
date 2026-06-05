@@ -15,12 +15,63 @@ export const BUCKET_RANGES = [
   { label: '$50+', min: 51, max: Infinity },
 ];
 
+/** Ads fee must be strictly greater than this (|mkt fees| > threshold). */
+export const DD_ADS_FEE_THRESHOLD = 0.99;
+const ZERO_EPS = 0.005;
+
 export function assignBucket(subtotal) {
   if (subtotal < 0) return null;
   return BUCKET_RANGES.find(b => subtotal >= b.min && subtotal <= b.max)?.label || null;
 }
 
-/** Sum all marketing discount columns for one order (App3.0 / DD financial export). */
+function isMarketingZero(value) {
+  return Math.abs(value || 0) < ZERO_EPS;
+}
+
+function absMoney(value) {
+  return Math.abs(value || 0);
+}
+
+/**
+ * Sum DD marketing signals for one order (all financial line items).
+ * Historical fields are null when that column was not in the export.
+ */
+export function sumDdOrderMarketingSignals(rows) {
+  let marketingFees = 0;
+  let customerDiscountsYou = 0;
+  let customerDiscountsDoorDash = 0;
+  let customerDiscountsThirdParty = 0;
+  let marketingFeesHistorical = null;
+  let adFeeHistorical = null;
+  let hasHistCol = false;
+  let hasAdHistCol = false;
+
+  for (const r of rows || []) {
+    marketingFees += r.marketingFees || 0;
+    customerDiscountsYou += r.customerDiscounts || 0;
+    customerDiscountsDoorDash += r.customerDiscountsDoorDash || 0;
+    customerDiscountsThirdParty += r.customerDiscountsThirdParty || 0;
+    if (r.marketingFeesHistorical != null) {
+      hasHistCol = true;
+      marketingFeesHistorical = (marketingFeesHistorical || 0) + (r.marketingFeesHistorical || 0);
+    }
+    if (r.adFeeHistorical != null) {
+      hasAdHistCol = true;
+      adFeeHistorical = (adFeeHistorical || 0) + (r.adFeeHistorical || 0);
+    }
+  }
+
+  return {
+    marketingFees,
+    customerDiscountsYou,
+    customerDiscountsDoorDash,
+    customerDiscountsThirdParty,
+    marketingFeesHistorical: hasHistCol ? marketingFeesHistorical : null,
+    adFeeHistorical: hasAdHistCol ? adFeeHistorical : null,
+  };
+}
+
+/** Sum all marketing discount columns for one order (absolute total). */
 export function sumPromoDiscountsFromRows(rows) {
   let total = 0;
   for (const r of rows || []) {
@@ -32,18 +83,52 @@ export function sumPromoDiscountsFromRows(rows) {
 }
 
 /**
- * Classify order origin: organic, promo, ads, or promo_ads (both).
- * Promo = any non-zero marketing discount (you, DoorDash, or third-party funded).
+ * Classify DD order: organic, promo, ads, or promo_ads.
+ * @param {object} signals — from sumDdOrderMarketingSignals
  */
-export function classifyOrder(marketingFees, customerDiscounts) {
-  const EPSILON = 0.01;
-  const discInputs = Array.isArray(customerDiscounts) ? customerDiscounts : [customerDiscounts];
-  const hasPromo = discInputs.some((d) => Math.abs(d || 0) >= EPSILON);
-  const hasAds = Math.abs(marketingFees || 0) >= EPSILON;
-  if (hasPromo && hasAds) return 'promo_ads';
-  if (hasPromo) return 'promo';
-  if (hasAds) return 'ads';
+export function classifyDdOrder(signals) {
+  const mktAbs = absMoney(signals.marketingFees);
+  const cdYou = absMoney(signals.customerDiscountsYou);
+  const cdDd = absMoney(signals.customerDiscountsDoorDash);
+  const cd3p = absMoney(signals.customerDiscountsThirdParty);
+
+  const hasHistCol = signals.marketingFeesHistorical != null;
+  const hasAdHistCol = signals.adFeeHistorical != null;
+  const histMkt = hasHistCol ? absMoney(signals.marketingFeesHistorical) : 0;
+  const adHist = hasAdHistCol ? absMoney(signals.adFeeHistorical) : 0;
+
+  if (
+    isMarketingZero(signals.marketingFees)
+    && cdYou === 0
+    && cdDd === 0
+    && cd3p === 0
+    && (!hasHistCol || histMkt === 0)
+    && (!hasAdHistCol || adHist === 0)
+  ) {
+    return 'organic';
+  }
+
+  const hasPromoSignal = cdYou > 0 || cdDd > 0 || cd3p > 0 || (hasHistCol && histMkt > 0);
+  const hasAdsSignal = mktAbs > DD_ADS_FEE_THRESHOLD;
+
+  if (hasAdsSignal && hasPromoSignal) return 'promo_ads';
+  if (hasAdsSignal) return 'ads';
+  if (hasPromoSignal) return 'promo';
+  if (mktAbs > 0) return 'ads';
   return 'organic';
+}
+
+/** @deprecated Use classifyDdOrder(sumDdOrderMarketingSignals(rows)). */
+export function classifyOrder(marketingFees, customerDiscounts) {
+  const discInputs = Array.isArray(customerDiscounts) ? customerDiscounts : [customerDiscounts];
+  return classifyDdOrder({
+    marketingFees,
+    customerDiscountsYou: discInputs[0] || 0,
+    customerDiscountsDoorDash: discInputs[1] || 0,
+    customerDiscountsThirdParty: discInputs[2] || 0,
+    marketingFeesHistorical: null,
+    adFeeHistorical: null,
+  });
 }
 
 /**
@@ -85,7 +170,7 @@ function buildOrderLevel(records, platform = 'dd') {
       : 0;
     const orderType = platform === 'ue'
       ? classifyUeOrder(customerDiscounts, marketingAdjustment)
-      : classifyOrder(marketingFees, customerDiscounts);
+      : classifyDdOrder(sumDdOrderMarketingSignals(rows));
     out.push({
       orderId,
       date: rows[0].date,

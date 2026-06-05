@@ -42,7 +42,7 @@ export default function App2DateWiseScreen() {
           <div>
             <h2 className="text-sm font-semibold text-[var(--text)]">Date × day-part detail</h2>
             <p className="text-xs text-[var(--text-subtle)] mt-0.5 leading-relaxed">
-              Store × month × week × calendar date × day-part (Early morning … Late night),{' '}
+              Store × month × week × calendar date × day-part (Overnight … Late night),{' '}
               <strong>Post</strong> period only. Matches the &quot;Detail — Post period&quot; block in the workbook export.
             </p>
           </div>

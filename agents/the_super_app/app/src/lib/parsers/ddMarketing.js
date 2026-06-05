@@ -23,12 +23,11 @@ export function normalizeDdPromotion(parsed) {
   const campaignNameCol = findCol(columns, ['Campaign Name', 'Campaign name']);
   const ordersCol = findCol(columns, ['Orders', 'orders']);
   const salesCol = findCol(columns, ['Sales', 'sales']);
-  const spendCol = findCol(columns, [
-    'Marketing fees | (including any applicable taxes)',
-    'Marketing fees',
+  const discountCol = findCol(columns, [
     'Customer discounts from marketing | (Funded by you)',
     'Customer discounts from marketing | (funded by you)',
-    'Spend',
+    'Sum of Customer discounts from marketing | (Funded by you)',
+    'Sum of Customer discounts from marketing | (funded by you)',
   ]);
   const newCustCol = findCol(columns, ['New customers acquired', 'New Customers Acquired', 'new customers acquired']);
 
@@ -38,6 +37,7 @@ export function normalizeDdPromotion(parsed) {
       const storeId = storeCol ? String(row[storeCol] || '').trim() : null;
       if (!date) return null;
       const selfServeRaw = selfServeCol ? String(row[selfServeCol] || '').trim().toLowerCase() : '';
+      const customerDiscounts = discountCol ? Math.abs(toNum(row[discountCol])) : 0;
       return {
         date,
         storeId,
@@ -46,7 +46,8 @@ export function normalizeDdPromotion(parsed) {
         campaignName: campaignNameCol ? row[campaignNameCol] : null,
         orders: ordersCol ? toNum(row[ordersCol]) : 0,
         sales: salesCol ? toNum(row[salesCol]) : 0,
-        spend: spendCol ? Math.abs(toNum(row[spendCol])) : 0,
+        customerDiscounts,
+        spend: customerDiscounts,
         newCustomers: newCustCol ? toNum(row[newCustCol]) : 0,
         source: 'promotion',
       };
@@ -63,10 +64,10 @@ export function normalizeDdSponsored(parsed) {
   const campaignNameCol = findCol(columns, ['Campaign Name', 'Campaign name']);
   const ordersCol = findCol(columns, ['Orders', 'orders']);
   const salesCol = findCol(columns, ['Sales', 'sales']);
-  const spendCol = findCol(columns, [
+  const feesCol = findCol(columns, [
     'Marketing fees | (including any applicable taxes)',
     'Marketing fees',
-    'Spend',
+    'Sum of Marketing fees | (including any applicable taxes)',
   ]);
 
   return data
@@ -75,6 +76,7 @@ export function normalizeDdSponsored(parsed) {
       const storeId = storeCol ? String(row[storeCol] || '').trim() : null;
       if (!date) return null;
       const selfServeRaw = selfServeCol ? String(row[selfServeCol] || '').trim().toLowerCase() : '';
+      const marketingFees = feesCol ? Math.abs(toNum(row[feesCol])) : 0;
       return {
         date,
         storeId,
@@ -83,7 +85,8 @@ export function normalizeDdSponsored(parsed) {
         campaignName: campaignNameCol ? row[campaignNameCol] : null,
         orders: ordersCol ? toNum(row[ordersCol]) : 0,
         sales: salesCol ? toNum(row[salesCol]) : 0,
-        spend: spendCol ? Math.abs(toNum(row[spendCol])) : 0,
+        marketingFees,
+        spend: marketingFees,
         newCustomers: 0,
         source: 'sponsored',
       };

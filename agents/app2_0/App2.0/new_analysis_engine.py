@@ -9,10 +9,13 @@ import pandas as pd
 
 from utils import (
     DD_DATE_COLUMN_VARIATIONS,
+    attach_store_name_column,
     filter_excluded_dates,
     filter_master_file_by_date_range,
     find_date_column,
-    normalize_store_id_column,
+    finalize_ue_canonical_store_id_column,
+    get_dd_financial_store_name_column,
+    STORE_NAME_COL,
 )
 
 
@@ -54,11 +57,12 @@ GC_BUCKET_ORDER = [
 ]
 
 SLOT_ORDER = [
+    "Overnight",
     "Breakfast",
     "Lunch",
     "Afternoon",
     "Dinner",
-    "Late Night",
+    "Late night",
     "All Day",
     "Unknown",
 ]
@@ -110,22 +114,11 @@ def first_matching_column(
 
 def derive_slot(timestamp_series: pd.Series) -> pd.Series:
     """Convert timestamps into operational meal slots."""
-    hours = timestamp_series.dt.hour.fillna(-1)
-    slots = []
-    for hour in hours:
-        if 5 <= hour < 11:
-            slots.append("Breakfast")
-        elif 11 <= hour < 15:
-            slots.append("Lunch")
-        elif 15 <= hour < 18:
-            slots.append("Afternoon")
-        elif 18 <= hour < 23:
-            slots.append("Dinner")
-        elif 0 <= hour < 5 or hour >= 23:
-            slots.append("Late Night")
-        else:
-            slots.append("Unknown")
-    return pd.Series(slots, index=timestamp_series.index)
+    from shared.time_slots import assign_day_part
+
+    hours = timestamp_series.dt.hour
+    slots = assign_day_part(hours)
+    return slots.where(hours.notna(), "Unknown")
 
 
 def apply_temporal_columns(df: pd.DataFrame, date_col: str, timestamp_col: str | None = None) -> pd.DataFrame:
@@ -150,12 +143,12 @@ def standardize_order_frame(frame: pd.DataFrame, platform: str, period: str) -> 
         if metric not in result.columns:
             result[metric] = 0.0
         result[metric] = pd.to_numeric(result[metric], errors="coerce").fillna(0.0)
-    result["Store ID"] = result["Store ID"].astype(str)
-    result["Store Label"] = result["Platform"] + " | " + result["Store ID"]
+    result[STORE_NAME_COL] = result[STORE_NAME_COL].astype(str)
+    result["Store Label"] = result["Platform"] + " | " + result[STORE_NAME_COL]
     return result[
         [
             "Platform",
-            "Store ID",
+            STORE_NAME_COL,
             "Store Label",
             "Period",
             "Date",
@@ -184,30 +177,44 @@ def load_dd_order_level(file_path: Path, start_date: str, end_date: str, exclude
         return pd.DataFrame()
 
     date_col = find_date_column(filtered, DD_DATE_COLUMN_VARIATIONS)
-    store_col = first_matching_column(filtered, exact=["merchant store id", "store id"])
     order_col = first_matching_column(filtered, exact=["doordash order id", "order id"])
     timestamp_col = first_matching_column(
         filtered,
-        exact=["order received local time", "timestamp local time"],
+        exact=["order received local time"],
     )
     sales_col = first_matching_column(filtered, exact=["subtotal"])
     payout_col = first_matching_column(filtered, exact=["net total"]) or first_matching_column(
         filtered,
         contains_all=["net total"],
     )
-    if not all([date_col, store_col, order_col, sales_col]):
+    if not all([date_col, order_col, sales_col, timestamp_col]):
         return pd.DataFrame()
 
-    dd_frame = filtered[[date_col, store_col, order_col, sales_col] + ([timestamp_col] if timestamp_col else []) + ([payout_col] if payout_col else [])].copy()
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    dd_frame = filtered.copy()
+    if "Transaction type" in dd_frame.columns:
+        dd_frame = dd_frame[dd_frame["Transaction type"].astype(str).str.strip().eq("Order")]
+    dd_frame = attach_store_name_column(dd_frame, platform="dd")
+    keep_cols = [date_col, STORE_NAME_COL, order_col, sales_col]
+    if timestamp_col:
+        keep_cols.append(timestamp_col)
+    if payout_col:
+        keep_cols.append(payout_col)
+    dd_frame = dd_frame[keep_cols].copy()
+    dd_frame = drop_rows_without_order_time(dd_frame, timestamp_col)
+    if dd_frame.empty:
+        return pd.DataFrame()
     dd_frame = apply_temporal_columns(dd_frame, date_col, timestamp_col)
-    dd_frame["Store ID"] = dd_frame[store_col].astype(str)
     dd_frame["Order ID"] = dd_frame[order_col].astype(str)
     dd_frame["Sales"] = pd.to_numeric(dd_frame[sales_col], errors="coerce").fillna(0.0)
     dd_frame["Payouts"] = pd.to_numeric(dd_frame[payout_col], errors="coerce").fillna(0.0) if payout_col else 0.0
     dd_frame["Orders"] = 1.0
 
     order_level = (
-        dd_frame.groupby(["Store ID", "Order ID", "Date", "Day", "Slot"], as_index=False)[["Sales", "Payouts", "Orders"]]
+        dd_frame.groupby([STORE_NAME_COL, "Order ID", "Date", "Day", "Slot"], as_index=False)[
+            ["Sales", "Payouts", "Orders"]
+        ]
         .sum()
     )
     return order_level
@@ -268,7 +275,7 @@ def load_ue_order_level(file_path: Path, start_date: str, end_date: str, exclude
         exact=["total payout"],
         contains_all=["total payout"],
     )
-    if not all([date_col, store_col, order_col, sales_col]):
+    if not all([date_col, order_col, sales_col]):
         return pd.DataFrame()
 
     ue_frame = raw.copy()
@@ -283,14 +290,16 @@ def load_ue_order_level(file_path: Path, start_date: str, end_date: str, exclude
         return pd.DataFrame()
 
     ue_frame = apply_temporal_columns(ue_frame, date_col, timestamp_col)
-    ue_frame["Store ID"] = ue_frame[store_col].astype(str)
+    ue_frame = attach_store_name_column(ue_frame, platform="ue")
     ue_frame["Order ID"] = ue_frame[order_col].astype(str)
     ue_frame["Sales"] = pd.to_numeric(ue_frame[sales_col], errors="coerce").fillna(0.0)
     ue_frame["Payouts"] = pd.to_numeric(ue_frame[payout_col], errors="coerce").fillna(0.0) if payout_col else 0.0
     ue_frame["Orders"] = 1.0
 
     order_level = (
-        ue_frame.groupby(["Store ID", "Order ID", "Date", "Day", "Slot"], as_index=False)[["Sales", "Payouts", "Orders"]]
+        ue_frame.groupby([STORE_NAME_COL, "Order ID", "Date", "Day", "Slot"], as_index=False)[
+            ["Sales", "Payouts", "Orders"]
+        ]
         .sum()
     )
     return order_level
@@ -318,14 +327,14 @@ def load_dd_marketing_daily(marketing_folder_path: Path | None, start_date: str,
     def process_frame(frame: pd.DataFrame, default_todc_col: str | None) -> pd.DataFrame:
         frame.columns = frame.columns.str.strip()
         date_col = first_matching_column(frame, exact=["date"])
-        store_col = first_matching_column(frame, exact=["store id", "shop id"])
+        frame = attach_store_name_column(frame, platform="auto")
         sales_col = first_matching_column(frame, exact=["sales"])
         orders_col = first_matching_column(frame, exact=["orders"])
         fees_col = first_matching_column(frame, contains_all=["marketing fees"])
         corp_col = first_matching_column(frame, contains_any=["doordash marketing credit"])
         third_party_col = first_matching_column(frame, contains_all=["third-party contribution"])
         todc_col = default_todc_col
-        if date_col is None or store_col is None:
+        if date_col is None or STORE_NAME_COL not in frame.columns:
             return pd.DataFrame()
 
         frame[date_col] = pd.to_datetime(frame[date_col], errors="coerce")
@@ -339,7 +348,7 @@ def load_dd_marketing_daily(marketing_folder_path: Path | None, start_date: str,
             return pd.DataFrame()
 
         result = pd.DataFrame()
-        result["Store ID"] = frame[store_col].astype(str)
+        result[STORE_NAME_COL] = frame[STORE_NAME_COL].astype(str)
         result["Date"] = frame[date_col].dt.normalize()
         result["Sales"] = pd.to_numeric(frame[sales_col], errors="coerce").fillna(0.0) if sales_col else 0.0
         result["Orders"] = pd.to_numeric(frame[orders_col], errors="coerce").fillna(0.0) if orders_col else 0.0
@@ -350,7 +359,9 @@ def load_dd_marketing_daily(marketing_folder_path: Path | None, start_date: str,
         result["TODC Spend"] = fees + todc
         result["Corp Spend"] = corp + third_party
         result["Spends"] = result["TODC Spend"] + result["Corp Spend"]
-        return result.groupby(["Store ID", "Date"], as_index=False)[["Sales", "Orders", "Spends", "Corp Spend", "TODC Spend"]].sum()
+        return result.groupby([STORE_NAME_COL, "Date"], as_index=False)[
+            ["Sales", "Orders", "Spends", "Corp Spend", "TODC Spend"]
+        ].sum()
 
     for path in promo_files:
         promo_frame = pd.read_csv(path)
@@ -369,10 +380,12 @@ def load_dd_marketing_daily(marketing_folder_path: Path | None, start_date: str,
             frames.append(processed)
 
     if not frames:
-        return pd.DataFrame(columns=["Store ID", "Date", "Spends", "Corp Spend", "TODC Spend"])
+        return pd.DataFrame(columns=[STORE_NAME_COL, "Date", "Spends", "Corp Spend", "TODC Spend"])
 
     combined = pd.concat(frames, ignore_index=True)
-    return combined.groupby(["Store ID", "Date"], as_index=False)[["Sales", "Orders", "Spends", "Corp Spend", "TODC Spend"]].sum()
+    return combined.groupby([STORE_NAME_COL, "Date"], as_index=False)[
+        ["Sales", "Orders", "Spends", "Corp Spend", "TODC Spend"]
+    ].sum()
 
 
 def load_dd_campaign_performance(marketing_folder_path: Path | None, start_date: str, end_date: str, excluded_dates=None) -> pd.DataFrame:
@@ -387,11 +400,11 @@ def load_dd_campaign_performance(marketing_folder_path: Path | None, start_date:
         date_col = first_matching_column(frame, exact=["date"])
         campaign_id_col = first_matching_column(frame, exact=["campaign id"])
         campaign_name_col = first_matching_column(frame, exact=["campaign name"])
-        store_col = first_matching_column(frame, exact=["store id", "shop id"])
+        frame = attach_store_name_column(frame, platform="auto")
         sales_col = first_matching_column(frame, exact=["sales"])
         orders_col = first_matching_column(frame, exact=["orders"])
         spend_col = first_matching_column(frame, contains_all=["marketing fees"])
-        if not all([date_col, campaign_id_col, campaign_name_col]):
+        if not all([date_col, campaign_id_col, campaign_name_col]) or STORE_NAME_COL not in frame.columns:
             return pd.DataFrame()
 
         frame[date_col] = pd.to_datetime(frame[date_col], errors="coerce")
@@ -408,7 +421,7 @@ def load_dd_campaign_performance(marketing_folder_path: Path | None, start_date:
         result["Campaign ID"] = frame[campaign_id_col].astype(str)
         result["Campaign Name"] = frame[campaign_name_col].astype(str)
         result["Source"] = source
-        result["Store ID"] = frame[store_col].astype(str) if store_col else "Unknown"
+        result[STORE_NAME_COL] = frame[STORE_NAME_COL].astype(str)
         result["Sales"] = pd.to_numeric(frame[sales_col], errors="coerce").fillna(0.0) if sales_col else 0.0
         result["Orders"] = pd.to_numeric(frame[orders_col], errors="coerce").fillna(0.0) if orders_col else 0.0
         result["Spend"] = pd.to_numeric(frame[spend_col], errors="coerce").fillna(0.0) if spend_col else 0.0
@@ -425,7 +438,7 @@ def load_dd_campaign_performance(marketing_folder_path: Path | None, start_date:
             frames.append(prepared)
 
     if not frames:
-        return pd.DataFrame(columns=["Campaign ID", "Campaign Name", "Source", "Store ID", "Sales", "Orders", "Spend", "ROAS", "Cost per Order", "Campaign Label"])
+        return pd.DataFrame(columns=["Campaign ID", "Campaign Name", "Source", STORE_NAME_COL, "Sales", "Orders", "Spend", "ROAS", "Cost per Order", "Campaign Label"])
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.groupby(["Campaign ID", "Campaign Name", "Source"], as_index=False)[["Sales", "Orders", "Spend"]].sum()
@@ -441,34 +454,34 @@ def allocate_marketing_to_slots(order_frame: pd.DataFrame, marketing_daily: pd.D
         return order_frame
 
     slot_base = (
-        order_frame.groupby(["Store ID", "Date", "Slot"], as_index=False)[["Sales", "Orders"]]
+        order_frame.groupby([STORE_NAME_COL, "Date", "Slot"], as_index=False)[["Sales", "Orders"]]
         .sum()
         .rename(columns={"Sales": "Slot Sales", "Orders": "Slot Orders"})
     )
     slot_day = (
-        slot_base.groupby(["Store ID", "Date"], as_index=False)[["Slot Sales", "Slot Orders"]]
+        slot_base.groupby([STORE_NAME_COL, "Date"], as_index=False)[["Slot Sales", "Slot Orders"]]
         .sum()
         .rename(columns={"Slot Sales": "Day Sales", "Slot Orders": "Day Orders"})
     )
-    slot_base = slot_base.merge(slot_day, on=["Store ID", "Date"], how="left")
+    slot_base = slot_base.merge(slot_day, on=[STORE_NAME_COL, "Date"], how="left")
     weight_base = slot_base["Day Sales"].where(slot_base["Day Sales"] != 0, slot_base["Day Orders"])
     slot_base["allocation_weight"] = safe_divide(slot_base["Slot Sales"], weight_base)
     slot_base["allocation_weight"] = slot_base["allocation_weight"].replace([float("inf"), float("-inf")], 0).fillna(0)
 
     zero_weight_mask = slot_base["allocation_weight"] == 0
     if zero_weight_mask.any():
-        counts = slot_base.groupby(["Store ID", "Date"])["Slot"].transform("count").replace(0, 1)
+        counts = slot_base.groupby([STORE_NAME_COL, "Date"])["Slot"].transform("count").replace(0, 1)
         slot_base.loc[zero_weight_mask, "allocation_weight"] = 1 / counts[zero_weight_mask]
 
-    marketing_slots = slot_base.merge(marketing_daily, on=["Store ID", "Date"], how="inner")
+    marketing_slots = slot_base.merge(marketing_daily, on=[STORE_NAME_COL, "Date"], how="inner")
     if marketing_slots.empty:
         return order_frame
 
     for metric in ["Spends", "Corp Spend", "TODC Spend"]:
         marketing_slots[metric] = marketing_slots[metric] * marketing_slots["allocation_weight"]
 
-    allocated = marketing_slots[["Store ID", "Date", "Slot", "Spends", "Corp Spend", "TODC Spend"]]
-    return order_frame.merge(allocated, on=["Store ID", "Date", "Slot"], how="left", suffixes=("", "_allocated")).fillna(
+    allocated = marketing_slots[[STORE_NAME_COL, "Date", "Slot", "Spends", "Corp Spend", "TODC Spend"]]
+    return order_frame.merge(allocated, on=[STORE_NAME_COL, "Date", "Slot"], how="left", suffixes=("", "_allocated")).fillna(
         {"Spends": 0.0, "Corp Spend": 0.0, "TODC Spend": 0.0}
     )
 

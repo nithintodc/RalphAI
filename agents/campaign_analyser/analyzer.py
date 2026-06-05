@@ -5,7 +5,7 @@ Slices DoorDash financial transactions into the 6 time-slots × 7 days = 42-slot
 grid, joins to the campaign plan (Slot Tags 1-42), and determines which campaigns
 are firing, which aren't, and why.
 
-Slot numbering: 1 = Mon Early morning, 2 = Tue Early morning, ...,
+Slot numbering: 1 = Mon Overnight, 2 = Tue Overnight, ...,
 8 = Mon Breakfast, ..., 42 = Sun Late night.
 """
 
@@ -17,17 +17,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-TIME_SLOTS = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+from shared.time_slots import SLOT_ORDER as TIME_SLOTS, SLOT_RANGES as SLOT_HOUR_RANGES
 
-SLOT_HOUR_RANGES = {
-    "Early morning": "12 AM – 4:59 AM",
-    "Breakfast":     "5 AM – 10:59 AM",
-    "Lunch":         "11 AM – 1:59 PM",
-    "Afternoon":     "2 PM – 4:59 PM",
-    "Dinner":        "5 PM – 7:59 PM",
-    "Late night":    "8 PM – 11:59 PM",
-}
+DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def _read_bytes(src: str | Path | bytes) -> bytes:
@@ -37,7 +29,7 @@ def _read_bytes(src: str | Path | bytes) -> bytes:
 
 
 def slot_tag_to_dayslot(tag: int) -> tuple[str, str]:
-    """Tag numbering: 1 = Mon Early morning, ..., 42 = Sun Late night."""
+    """Tag numbering: 1 = Mon Overnight, ..., 42 = Sun Late night."""
     tag = int(tag)
     time_idx = (tag - 1) // 7
     day_idx = (tag - 1) % 7
@@ -45,12 +37,9 @@ def slot_tag_to_dayslot(tag: int) -> tuple[str, str]:
 
 
 def hour_to_slot(h: int) -> str:
-    if 0 <= h < 5:   return "Early morning"
-    if 5 <= h < 11:  return "Breakfast"
-    if 11 <= h < 14: return "Lunch"
-    if 14 <= h < 17: return "Afternoon"
-    if 17 <= h < 20: return "Dinner"
-    return "Late night"
+    from shared.time_slots import slot_from_hour
+
+    return slot_from_hour(h) or "Late night"
 
 
 def parse_slot_tags(s) -> list[tuple[str, str]]:
@@ -80,7 +69,7 @@ def extract_short_id(name: str | None) -> str | None:
 # ----------------------------------------------------------------------------
 def load_financial(src: str | Path | bytes) -> pd.DataFrame:
     usecols = [
-        "Timestamp local date", "Timestamp local time", "Store name", "Merchant store ID",
+        "Timestamp local date", "Order received local time", "Store name", "Merchant store ID",
         "Transaction type", "DoorDash order ID", "Subtotal",
         "Customer discounts from marketing | (funded by you)",
         "Marketing fees | (including any applicable taxes)",
@@ -88,7 +77,7 @@ def load_financial(src: str | Path | bytes) -> pd.DataFrame:
     df = pd.read_csv(io.BytesIO(_read_bytes(src)), usecols=usecols, low_memory=False)
     df = df[df["Transaction type"] == "Order"].copy()
     df["Date"] = pd.to_datetime(df["Timestamp local date"], errors="coerce")
-    df["LocalDT"] = pd.to_datetime(df["Timestamp local time"], errors="coerce")
+    df["LocalDT"] = pd.to_datetime(df["Order received local time"], errors="coerce")
     df["Hour"] = df["LocalDT"].dt.hour
     df = df.dropna(subset=["Date", "Hour"])
     df["Hour"] = df["Hour"].astype(int)

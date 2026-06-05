@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useConfigStore } from '../../stores/configStore';
 import { useDataStore } from '../../stores/dataStore';
@@ -10,14 +10,90 @@ import {
   getDdSalesStoreIds,
   hasAnyDdSales,
   suggestPrePostFromBounds,
+  suggestSinglePeriodFromBounds,
 } from '../../lib/utils/uploadedDataBounds';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import { parseDate, formatDateShort, dateToKey, parseSlashDateRange, formatSlashDateRange } from '../../lib/utils/dateUtils';
 import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
 import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
 import { buildDdStoreCatalog, buildUeStoreCatalog, buildSuggestedMapRows, mapRowsToStoreMap, mapRowsToTagMap } from '../../lib/utils/storeCatalog';
+import { buildAnalysisScope, applyStoreTableScope, buildScopedExcludedStores, getIncludedStoreIdsFromMapRows } from '../../lib/utils/abStoreFilter';
 import StoreMapEditor from '../../components/config/StoreMapEditor';
 import OperatorSelect from '../../components/config/OperatorSelect';
 import PlatformLogo from '../../components/ui/PlatformLogo';
+
+function PeriodKindToggle({ kind, onChange }) {
+  return (
+    <div className="flex gap-1 p-0.5 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] w-fit max-w-full">
+      <button
+        type="button"
+        onClick={() => onChange('compare')}
+        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer
+          ${kind === 'compare'
+            ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm border border-[var(--border)]'
+            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+          }`}
+      >
+        Pre vs Post
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('single')}
+        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer
+          ${kind === 'single'
+            ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm border border-[var(--border)]'
+            : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+          }`}
+      >
+        Single period
+      </button>
+    </div>
+  );
+}
+
+function SinglePeriodRange({ start, end, onApply }) {
+  const canon = formatSlashDateRange(start, end);
+  const [input, setInput] = useState(canon);
+
+  const getInclusiveDayCount = (range) => {
+    if (!range?.start || !range?.end) return null;
+    const s = Date.UTC(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
+    const e = Date.UTC(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
+    return Math.floor((e - s) / 86400000) + 1;
+  };
+
+  const parsed = parseSlashDateRange(input);
+  const dayCount = getInclusiveDayCount(parsed);
+
+  const commit = () => {
+    const r = parseSlashDateRange(input);
+    if (r) onApply(r.start, r.end);
+    else setInput(canon);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 max-w-full">
+      <label className="text-xs text-[var(--text-muted)]">Period</label>
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+        placeholder="1/1/2026-3/31/2026"
+        className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+      />
+      {dayCount != null && (
+        <p className="text-[10px] text-[var(--text-subtle)]">{dayCount} day{dayCount === 1 ? '' : 's'} (inclusive)</p>
+      )}
+      <p className="text-[10px] text-[var(--text-subtle)] leading-snug">
+        One date block — no Pre vs Post comparison. Dashboard shows Register and Post-period tables only.
+      </p>
+    </div>
+  );
+}
 
 function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
   const preCanon = formatSlashDateRange(preStart, preEnd);
@@ -210,9 +286,17 @@ export default function ConfigScreen() {
   const config = useConfigStore();
   const setDdDates = useConfigStore((s) => s.setDdDates);
   const setUeDates = useConfigStore((s) => s.setUeDates);
+  const setDateAnalysisMode = useConfigStore((s) => s.setDateAnalysisMode);
+  const dateAnalysisMode = useConfigStore((s) => s.dateAnalysisMode);
   const ddPreStart = useConfigStore((s) => s.ddPreStart);
+  const ddPostStart = useConfigStore((s) => s.ddPostStart);
   const uePreStart = useConfigStore((s) => s.uePreStart);
+  const uePostStart = useConfigStore((s) => s.uePostStart);
   const syncDates = useConfigStore((s) => s.syncDates);
+  const [periodKind, setPeriodKind] = useState(
+    () => (isSinglePeriodMode(dateAnalysisMode) ? 'single' : 'compare'),
+  );
+  const isSinglePeriod = periodKind === 'single';
   const dataStore = useDataStore();
   const { setScreen } = useUiStore();
   const [analyzeError, setAnalyzeError] = useState('');
@@ -253,8 +337,48 @@ export default function ConfigScreen() {
   const [editedMapRows, setEditedMapRows] = useState(null);
   const mapRows = editedMapRows ?? suggestedMapRows;
 
+  const setMapRows = useCallback((next) => {
+    setEditedMapRows((prev) => {
+      const base = prev ?? suggestedMapRows;
+      return typeof next === 'function' ? next(base) : next;
+    });
+  }, [suggestedMapRows]);
+
   useEffect(() => {
-    if (!hasDdPeriods || ddPreStart || !ddRange.min || !ddRange.max) return;
+    setEditedMapRows(null);
+  }, [ddCatalog, ueCatalog]);
+
+  const applySinglePeriod = (setter) => (start, end) => {
+    setter(start, end, start, end);
+    setDateAnalysisMode('singleRange');
+  };
+
+  const switchPeriodKind = (kind) => {
+    setPeriodKind(kind);
+    if (kind === 'single') {
+      setDateAnalysisMode('singleRange');
+      const postStart = hasDdPeriods ? config.ddPostStart : config.uePostStart;
+      const postEnd = hasDdPeriods ? config.ddPostEnd : config.uePostEnd;
+      if (postStart && postEnd) {
+        if (hasDdPeriods) setDdDates(postStart, postEnd, postStart, postEnd);
+        else setUeDates(postStart, postEnd, postStart, postEnd);
+      }
+    } else {
+      setDateAnalysisMode('pvp');
+    }
+  };
+
+  useEffect(() => {
+    if (!hasDdPeriods || !ddRange.min || !ddRange.max) return;
+    if (isSinglePeriod) {
+      if (ddPostStart) return;
+      const suggested = suggestSinglePeriodFromBounds(ddRange);
+      if (!suggested) return;
+      setDdDates(suggested.start, suggested.end, suggested.start, suggested.end);
+      setDateAnalysisMode('singleRange');
+      return;
+    }
+    if (ddPreStart) return;
     const suggested = suggestPrePostFromBounds(ddRange);
     if (!suggested) return;
     setDdDates(
@@ -263,10 +387,19 @@ export default function ConfigScreen() {
       suggested.postStart,
       suggested.postEnd,
     );
-  }, [hasDdPeriods, ddRange, ddPreStart, setDdDates]);
+  }, [hasDdPeriods, ddRange, ddPreStart, ddPostStart, isSinglePeriod, setDdDates, setDateAnalysisMode]);
 
   useEffect(() => {
-    if (!ueOnly || uePreStart || !ueRange.min || !ueRange.max) return;
+    if (!ueOnly || !ueRange.min || !ueRange.max) return;
+    if (isSinglePeriod) {
+      if (uePostStart) return;
+      const suggested = suggestSinglePeriodFromBounds(ueRange);
+      if (!suggested) return;
+      setUeDates(suggested.start, suggested.end, suggested.start, suggested.end);
+      setDateAnalysisMode('singleRange');
+      return;
+    }
+    if (uePreStart) return;
     const suggested = suggestPrePostFromBounds(ueRange);
     if (!suggested) return;
     setUeDates(
@@ -275,7 +408,7 @@ export default function ConfigScreen() {
       suggested.postStart,
       suggested.postEnd,
     );
-  }, [ueOnly, ueRange, uePreStart, setUeDates]);
+  }, [ueOnly, ueRange, uePreStart, uePostStart, isSinglePeriod, setUeDates, setDateAnalysisMode]);
 
   const canRunFullAnalysis = hasDd || hasUe;
   const canAnalyze = config.isConfigured()
@@ -286,7 +419,11 @@ export default function ConfigScreen() {
   const handleAnalyze = () => {
     setAnalyzeError('');
     if (!config.isConfigured()) {
-      setAnalyzeError('Set Pre and Post date ranges for at least one platform.');
+      setAnalyzeError(
+        isSinglePeriod
+          ? 'Set a period date range for at least one platform.'
+          : 'Set Pre and Post date ranges for at least one platform.',
+      );
       return;
     }
     if (!config.operatorName?.trim()) {
@@ -298,39 +435,56 @@ export default function ConfigScreen() {
     try {
       const storeMap = mapRowsToStoreMap(mapRows);
       const tagMap = mapRowsToTagMap(mapRows);
+      const includedStoreIds = [...getIncludedStoreIdsFromMapRows(mapRows)];
       config.setDdToUeStoreMap(storeMap);
       config.setStoreTagMap(tagMap);
+      config.setIncludedStoreIds(includedStoreIds);
+
+      const scope = buildAnalysisScope({ ...config, storeTagMap: tagMap, ddToUeStoreMap: storeMap, includedStoreIds }, mapRows);
+      const scopeDdExcluded = buildScopedExcludedStores(ddStores, 'dd', scope);
+      const scopeUeExcluded = buildScopedExcludedStores(ueStores, 'ue', scope);
+      const ddExcludedStores = [...new Set([...(config.ddExcludedStores || []), ...scopeDdExcluded])];
+      const ueExcludedStores = [...new Set([...(config.ueExcludedStores || []), ...scopeUeExcluded])];
 
       const ddConfig = {
-        preStart: config.ddPreStart, preEnd: config.ddPreEnd,
-        postStart: config.ddPostStart, postEnd: config.ddPostEnd,
+        preStart: isSinglePeriod ? config.ddPostStart : config.ddPreStart,
+        preEnd: isSinglePeriod ? config.ddPostEnd : config.ddPreEnd,
+        postStart: config.ddPostStart,
+        postEnd: config.ddPostEnd,
         excludedDates: config.ddExcludedDates,
-        excludedStores: config.ddExcludedStores,
+        excludedStores: ddExcludedStores,
       };
       const ueConfig = {
-        preStart: config.uePreStart, preEnd: config.uePreEnd,
-        postStart: config.uePostStart, postEnd: config.uePostEnd,
+        preStart: isSinglePeriod ? config.uePostStart : config.uePreStart,
+        preEnd: isSinglePeriod ? config.uePostEnd : config.uePreEnd,
+        postStart: config.uePostStart,
+        postEnd: config.uePostEnd,
         excludedDates: config.ueExcludedDates,
-        excludedStores: config.ueExcludedStores,
+        excludedStores: ueExcludedStores,
       };
 
       let ddStore = [];
       let ueStore = [];
 
-      if (hasDd && ddConfig.preStart) {
+      const ddReady = isSinglePeriod ? ddConfig.postStart : ddConfig.preStart;
+      const ueReady = isSinglePeriod ? ueConfig.postStart : ueConfig.preStart;
+
+      if (hasDd && ddReady) {
         ddStore = buildDdPlatformData(dataStore.ddFinancial, ddConfig);
         ddStore = addDerivedMetrics(ddStore);
       }
 
-      if (hasUe && ueConfig.preStart) {
+      if (hasUe && ueReady) {
         ueStore = buildUePlatformData(dataStore.ueFinancial, ueConfig);
         ueStore = addDerivedMetrics(ueStore);
       }
 
-      const combined = buildCombinedStoreTables(ddStore, ueStore, storeMap);
-      const summaries = buildSummaryTables(ddStore, ueStore);
+      let combined = buildCombinedStoreTables(ddStore, ueStore, storeMap);
+      let storeTables = { dd: ddStore, ue: ueStore, combined };
+      storeTables = applyStoreTableScope(storeTables, scope);
+      const summaries = buildSummaryTables(storeTables.dd, storeTables.ue);
 
-      dataStore.setStoreTables({ dd: ddStore, ue: ueStore, combined });
+      dataStore.setStoreTables(storeTables);
       dataStore.setSummaryTables(summaries);
       dataStore.setProcessing(false);
       setScreen('dashboard');
@@ -372,6 +526,15 @@ export default function ConfigScreen() {
           <div className="card min-w-0">
             <div className="flex flex-col gap-3 mb-4">
               <h3 className="font-semibold text-[var(--text)]">Analysis Periods</h3>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-[var(--text-muted)]">Analysis mode</label>
+                <PeriodKindToggle kind={periodKind} onChange={switchPeriodKind} />
+                <p className="text-[10px] text-[var(--text-subtle)] leading-snug">
+                  {isSinglePeriod
+                    ? 'Single block of dates — Register and Post tables only (no Pre comparison).'
+                    : 'Compare two windows — Pre vs Post deltas across the dashboard.'}
+                </p>
+              </div>
               <SyncToggle
                 synced={config.syncDates}
                 onToggle={() => config.setSyncDates(!config.syncDates)}
@@ -419,14 +582,23 @@ export default function ConfigScreen() {
                       Sales ZIP only — date ranges come from your sales file. Upload <strong>Financial</strong> to run full analysis (Overview, Register, Buckets, etc.).
                     </p>
                   )}
-                  <PeriodRangePair
-                    key={`combined-${config.ddPreStart || config.uePreStart || ''}-${config.ddPreEnd || config.uePreEnd || ''}-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}`}
-                    preStart={hasDdPeriods ? config.ddPreStart : config.uePreStart}
-                    preEnd={hasDdPeriods ? config.ddPreEnd : config.uePreEnd}
-                    postStart={hasDdPeriods ? config.ddPostStart : config.uePostStart}
-                    postEnd={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
-                    onApply={hasDdPeriods ? config.setDdDates : setUeDates}
-                  />
+                  {isSinglePeriod ? (
+                    <SinglePeriodRange
+                      key={`combined-single-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}`}
+                      start={hasDdPeriods ? config.ddPostStart : config.uePostStart}
+                      end={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
+                      onApply={hasDdPeriods ? applySinglePeriod(config.setDdDates) : applySinglePeriod(setUeDates)}
+                    />
+                  ) : (
+                    <PeriodRangePair
+                      key={`combined-${config.ddPreStart || config.uePreStart || ''}-${config.ddPreEnd || config.uePreEnd || ''}-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}`}
+                      preStart={hasDdPeriods ? config.ddPreStart : config.uePreStart}
+                      preEnd={hasDdPeriods ? config.ddPreEnd : config.uePreEnd}
+                      postStart={hasDdPeriods ? config.ddPostStart : config.uePostStart}
+                      postEnd={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
+                      onApply={hasDdPeriods ? config.setDdDates : setUeDates}
+                    />
+                  )}
                 </div>
               )}
 
@@ -449,14 +621,23 @@ export default function ConfigScreen() {
                       Sales ZIP only — date ranges come from your sales file. Upload <strong>Financial</strong> to run full analysis (Overview, Register, Buckets, etc.).
                     </p>
                   )}
-                  <PeriodRangePair
-                    key={`dd-${config.ddPreStart || ''}-${config.ddPreEnd || ''}-${config.ddPostStart || ''}-${config.ddPostEnd || ''}`}
-                    preStart={config.ddPreStart}
-                    preEnd={config.ddPreEnd}
-                    postStart={config.ddPostStart}
-                    postEnd={config.ddPostEnd}
-                    onApply={config.setDdDates}
-                  />
+                  {isSinglePeriod ? (
+                    <SinglePeriodRange
+                      key={`dd-single-${config.ddPostStart || ''}-${config.ddPostEnd || ''}`}
+                      start={config.ddPostStart}
+                      end={config.ddPostEnd}
+                      onApply={applySinglePeriod(config.setDdDates)}
+                    />
+                  ) : (
+                    <PeriodRangePair
+                      key={`dd-${config.ddPreStart || ''}-${config.ddPreEnd || ''}-${config.ddPostStart || ''}-${config.ddPostEnd || ''}`}
+                      preStart={config.ddPreStart}
+                      preEnd={config.ddPreEnd}
+                      postStart={config.ddPostStart}
+                      postEnd={config.ddPostEnd}
+                      onApply={config.setDdDates}
+                    />
+                  )}
                 </div>
               )}
 
@@ -473,14 +654,23 @@ export default function ConfigScreen() {
                       </span>
                     )}
                   </div>
-                  <PeriodRangePair
-                    key={`ue-${config.uePreStart || ''}-${config.uePreEnd || ''}-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
-                    preStart={config.uePreStart}
-                    preEnd={config.uePreEnd}
-                    postStart={config.uePostStart}
-                    postEnd={config.uePostEnd}
-                    onApply={setUeDates}
-                  />
+                  {isSinglePeriod ? (
+                    <SinglePeriodRange
+                      key={`ue-single-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
+                      start={config.uePostStart}
+                      end={config.uePostEnd}
+                      onApply={applySinglePeriod(setUeDates)}
+                    />
+                  ) : (
+                    <PeriodRangePair
+                      key={`ue-${config.uePreStart || ''}-${config.uePreEnd || ''}-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
+                      preStart={config.uePreStart}
+                      preEnd={config.uePreEnd}
+                      postStart={config.uePostStart}
+                      postEnd={config.uePostEnd}
+                      onApply={setUeDates}
+                    />
+                  )}
                 </div>
               )}
 
@@ -580,7 +770,7 @@ export default function ConfigScreen() {
               ddFinancial={dataStore.ddFinancial}
               ueFinancial={dataStore.ueFinancial}
               rows={mapRows}
-              setRows={setEditedMapRows}
+              setRows={setMapRows}
             />
           </div>
         )}

@@ -10,7 +10,7 @@ from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows
 
 def _financial_header() -> str:
     return (
-        "Transaction type,Final order status,Timestamp local time,Store ID,Merchant store ID,Store name,"
+        "Transaction type,Final order status,Order received local time,Store ID,Merchant store ID,Store name,"
         "Subtotal,Net total,Marketing fees | (including any applicable taxes),"
         "Customer discounts from marketing | (funded by you),Merchant Supplied ID\n"
     )
@@ -42,7 +42,7 @@ def test_build_ads_plan_prefers_merchant_store_id_over_store_id(tmp_path: Path) 
 def test_build_ads_plan_falls_back_to_dd_store_id(tmp_path: Path) -> None:
     """With no merchant-supplied column, behavior matches legacy DD Store ID."""
     lines = [
-        "Transaction type,Final order status,Timestamp local time,Store ID,Store name,"
+        "Transaction type,Final order status,Order received local time,Store ID,Store name,"
         "Subtotal,Net total,Marketing fees | (including any applicable taxes),"
         "Customer discounts from marketing | (funded by you)\n"
     ]

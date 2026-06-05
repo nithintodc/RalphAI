@@ -28,7 +28,7 @@ htmlcov
 *.temp
 
 # Other agents / design / docs (not in production image)
-agents/deepdive/**
+# deepdive is required by api.main — do not exclude
 agents/reporting_browser_use/**
 agents/reporting_browser_use_*/
 agents/app2_0/**

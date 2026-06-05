@@ -39,9 +39,8 @@ const METRIC_PATTERNS = [
   [/net\s*sales/i, 4],
   [/quantity/i, 3],
   [/qty/i, 3],
+  [/total\s*sold/i, 3],
   [/units?\s*sold/i, 3],
-  [/orders/i, 2],
-  [/count/i, 1],
 ];
 
 const ERROR_CHARGE_ORDER = [
@@ -54,6 +53,16 @@ const PMIX_DATE_ORDER = [
   /^end\s*date$/i,
   /order\s*date/i,
   /business\s*date/i,
+];
+
+/** Quantity column for product-mix AOV (gross sales ÷ total sold). Avoid /count/i — matches "Discounts". */
+const PMIX_QTY_ORDER = [
+  /^total\s*sold$/i,
+  /units?\s*sold/i,
+  /^items?\s*sold$/i,
+  /^quantity$/i,
+  /\bqty\b/i,
+  /item\s*count/i,
 ];
 
 /** Normalized store key on product-mix rows (merchant id when known). */
@@ -85,6 +94,10 @@ export function normalizeProductMixStoreRows(rows, columns, ddStoreIdToMerchant 
   });
 
   return { rows: out, storeCol: PMIX_STORE_KEY, labelByKey };
+}
+
+export function pickProductMixQtyColumn(columns) {
+  return pickColumnByRegexOrder(columns, PMIX_QTY_ORDER);
 }
 
 export function pickProductMixDateColumn(columns) {
@@ -244,6 +257,16 @@ export function minutesToDayHourMinute(totalMinutes) {
   const hours = Math.floor((t % 1440) / 60);
   const minutes = t % 60;
   return { days, hours, minutes, totalMinutes: t };
+}
+
+/** e.g. 9230 min → "6days 9hr 50min" (omits zero parts). */
+export function formatDurationDHM(totalMinutes) {
+  const { days, hours, minutes } = minutesToDayHourMinute(totalMinutes);
+  const parts = [];
+  if (days) parts.push(`${days}day${days === 1 ? '' : 's'}`);
+  if (hours) parts.push(`${hours}hr`);
+  if (minutes || !parts.length) parts.push(`${minutes}min`);
+  return parts.join(' ');
 }
 
 const KEY_SEP = '\x1e';
@@ -896,4 +919,95 @@ export function discoverCountPivotCatalog(rows, columns, { maxMatrices = 8, maxM
   }
 
   return { catalogLines: lines, matrices };
+}
+
+/** Store rows × reason/category columns (downtime minutes or event counts). */
+export function pivotStoreReasonMatrix(rows, columns, { maxReasonCols = 12, valueKind = 'duration' } = {}) {
+  const storeCol = pickStoreColumn(columns);
+  const dateCol = pickDateColumn(columns, [storeCol]);
+  let reasonCol = pickCategoryColumn(columns, [storeCol, dateCol].filter(Boolean));
+  if (!reasonCol) {
+    const inferred = inferCategoricalColumns(rows, columns, {
+      exclude: [storeCol, dateCol].filter(Boolean),
+      maxUniq: 36,
+    });
+    reasonCol = inferred[0]?.col ?? null;
+  }
+  if (!storeCol || !reasonCol || !rows?.length) return null;
+
+  if (valueKind === 'duration') {
+    const downtimeCols = resolveDowntimeSumColumns(
+      rows,
+      columns,
+      new Set([storeCol, reasonCol, dateCol].filter(Boolean)),
+    );
+    if (!downtimeCols.length) return null;
+    const m = pivotRowColDuration(rows, storeCol, reasonCol, downtimeCols, {
+      maxCols: maxReasonCols,
+      colMode: 'volume',
+    });
+    return { ...m, storeCol, reasonCol, valueKind: 'duration', downtimeCols };
+  }
+
+  const m = pivotRowColCount(rows, storeCol, reasonCol, { maxCols: maxReasonCols, colMode: 'volume' });
+  return { ...m, storeCol, reasonCol, valueKind: 'count' };
+}
+
+/** Top N dates per store by downtime, cancellations, or other numeric metric. */
+export function pivotTopDatesPerStore(rows, columns, { topPerStore = 5, valueKind = 'duration' } = {}) {
+  const storeCol = pickStoreColumn(columns);
+  const ex = new Set([storeCol].filter(Boolean));
+  const dateCol = pickDateColumn(columns, [...ex]);
+  if (!storeCol || !dateCol || !rows?.length) {
+    return { storeCol, dateCol, valueCol: null, valueKind, rows: [] };
+  }
+  ex.add(dateCol);
+
+  let getValue;
+  let valueCol = null;
+  if (valueKind === 'duration') {
+    const downtimeCols = resolveDowntimeSumColumns(rows, columns, ex);
+    if (!downtimeCols.length) return { storeCol, dateCol, valueCol: null, valueKind, rows: [] };
+    valueCol = downtimeCols.join(' + ');
+    getValue = (row) => downtimeCols.reduce((s, c) => s + parseDurationToMinutes(row[c]), 0);
+  } else if (valueKind === 'count') {
+    const sumCol = pickCountSumColumn(rows, columns, storeCol);
+    if (sumCol) {
+      valueCol = sumCol;
+      getValue = (row) => Number(String(row[sumCol]).replace(/[$,%\s,]/g, '')) || 0;
+    } else {
+      valueCol = '__events__';
+      getValue = () => 1;
+    }
+  } else {
+    valueCol = pickMetricColumn(rows, columns, [...ex]);
+    if (!valueCol) return { storeCol, dateCol, valueCol: null, valueKind, rows: [] };
+    getValue = (row) => Number(String(row[valueCol]).replace(/[$,%\s,]/g, '')) || 0;
+  }
+
+  const byStore = new Map();
+  for (const row of rows) {
+    const store = String(row[storeCol] || '').trim() || '—';
+    const date = String(row[dateCol] || '').trim() || '—';
+    const v = getValue(row);
+    if (!byStore.has(store)) byStore.set(store, new Map());
+    const dm = byStore.get(store);
+    dm.set(date, (dm.get(date) || 0) + v);
+  }
+
+  const out = [];
+  for (const [store, dateMap] of byStore) {
+    const top = [...dateMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, topPerStore);
+    for (const [date, total] of top) {
+      if (total <= 0) continue;
+      out.push({
+        store,
+        date,
+        total,
+        display: valueKind === 'duration' ? formatDurationDHM(total) : total,
+      });
+    }
+  }
+  out.sort((a, b) => a.store.localeCompare(b.store, undefined, { numeric: true }) || b.total - a.total);
+  return { storeCol, dateCol, valueCol, valueKind, rows: out };
 }

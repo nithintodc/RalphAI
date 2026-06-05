@@ -15,17 +15,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from shared.time_slots import SLOT_ORDER as DP_ORDER
+
 DAYPART_MAP = {
-    range(0, 5): "Early morning",
-    range(5, 11): "Breakfast",
-    range(11, 14): "Lunch",
-    range(14, 17): "Afternoon",
-    range(17, 20): "Dinner",
-    range(20, 24): "Late night",
+    range(0, 5): DP_ORDER[0],
+    range(5, 11): DP_ORDER[1],
+    range(11, 14): DP_ORDER[2],
+    range(14, 17): DP_ORDER[3],
+    range(17, 20): DP_ORDER[4],
+    range(20, 24): DP_ORDER[5],
 }
 
 DOW_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-DP_ORDER = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 TIER_THRESHOLDS = {
     "DEFEND": 0.70,
@@ -393,7 +394,7 @@ def build_ads_plan(csv_path: str) -> dict:
     required = [
         "Transaction type",
         "Final order status",
-        "Timestamp local time",
+        "Order received local time",
         "Store ID",
         "Store name",
         "Subtotal",
@@ -407,7 +408,13 @@ def build_ads_plan(csv_path: str) -> dict:
 
     orders = df[(df["Transaction type"] == "Order") & (df["Final order status"] == "Delivered")].copy()
 
-    orders["local_dt"] = pd.to_datetime(orders["Timestamp local time"])
+    from shared.order_time_columns import drop_rows_without_order_time
+
+    orders = drop_rows_without_order_time(orders, "Order received local time")
+    if orders.empty:
+        raise ValueError("No delivered Order rows with non-null Order received local time.")
+
+    orders["local_dt"] = pd.to_datetime(orders["Order received local time"])
     orders["hour"] = orders["local_dt"].dt.hour
     orders["dow"] = orders["local_dt"].dt.day_name()
     orders["daypart"] = orders["hour"].apply(assign_daypart)

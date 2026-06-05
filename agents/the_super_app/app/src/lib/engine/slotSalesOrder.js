@@ -1,6 +1,6 @@
 import { filterByDateRange, filterExcludedDates } from './aggregator';
 import { safeDivide, round } from '../utils/safeMath';
-import { SLOT_NAMES, DAY_NAMES } from './slots';
+import { SLOT_NAMES, DAY_NAMES, getSlotTimeRange, SLOT_TIME_COLUMN_LABEL } from './slots';
 
 function aggregateBucket(orders) {
   const n = orders.length;
@@ -138,25 +138,28 @@ export const DASHPASS_EXPORT_METRICS = [
 ];
 
 export function slotSalesOrderExportHeaders() {
-  return ['Row', ...SLOT_SALES_ORDER_EXPORT_METRICS.map((c) => c.label)];
+  return ['Row', SLOT_TIME_COLUMN_LABEL, ...SLOT_SALES_ORDER_EXPORT_METRICS.map((c) => c.label)];
 }
 
 export function slotSalesOrderExportRow(label, row) {
-  return [label, ...SLOT_SALES_ORDER_EXPORT_METRICS.map((c) => row?.[c.key] ?? '')];
+  const slotTime = row?.slot ? getSlotTimeRange(row.slot) : getSlotTimeRange(label);
+  return [label, slotTime, ...SLOT_SALES_ORDER_EXPORT_METRICS.map((c) => row?.[c.key] ?? '')];
 }
 
 export function dashPassExportHeaders() {
-  return ['Row', ...DASHPASS_EXPORT_METRICS.map((c) => c.label)];
+  return ['Row', SLOT_TIME_COLUMN_LABEL, ...DASHPASS_EXPORT_METRICS.map((c) => c.label)];
 }
 
 export function dashPassExportRow(label, row) {
-  return [label, ...DASHPASS_EXPORT_METRICS.map((c) => row?.[c.key] ?? '')];
+  const slotTime = row?.slot ? getSlotTimeRange(row.slot) : getSlotTimeRange(label);
+  return [label, slotTime, ...DASHPASS_EXPORT_METRICS.map((c) => row?.[c.key] ?? '')];
 }
 
 export function orderVolumeExportHeaders() {
-  return ['Row', 'Orders'];
+  return ['Row', SLOT_TIME_COLUMN_LABEL, 'Orders'];
 }
 
 export function orderVolumeExportRow(label, row) {
-  return [label, row?.orders ?? ''];
+  const slotTime = row?.slot ? getSlotTimeRange(row.slot) : getSlotTimeRange(label);
+  return [label, slotTime, row?.orders ?? ''];
 }

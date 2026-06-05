@@ -37,15 +37,15 @@ def get_time_slot(time_str):
         # Define slot boundaries (in minutes since midnight)
         if total_minutes >= 0 and total_minutes < 300:  # 12:00 AM - 4:59 AM
             return 'Overnight'
-        elif total_minutes >= 300 and total_minutes < 659:  # 5:00 AM - 10:59 AM
+        elif total_minutes >= 300 and total_minutes < 660:  # 5:00 AM - 10:59 AM
             return 'Breakfast'
-        elif total_minutes >= 659 and total_minutes < 839:  # 11:00 AM - 1:59 PM
+        elif total_minutes >= 660 and total_minutes < 840:  # 11:00 AM - 1:59 PM
             return 'Lunch'
-        elif total_minutes >= 839 and total_minutes < 959:  # 2:00 PM - 4:59 PM
+        elif total_minutes >= 840 and total_minutes < 1020:  # 2:00 PM - 4:59 PM
             return 'Afternoon'
-        elif total_minutes >= 959 and total_minutes < 1159:  # 5:00 PM - 7:59 PM
+        elif total_minutes >= 1020 and total_minutes < 1200:  # 5:00 PM - 7:59 PM
             return 'Dinner'
-        elif total_minutes >= 1159:  # 8:00 PM - 11:59 PM
+        elif total_minutes >= 1200:  # 8:00 PM - 11:59 PM
             return 'Late night'
         else:
             return None
@@ -80,20 +80,17 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_24_start, post_24_end = get_last_year_dates(post_start_date, post_end_date)
         post_24_df = filter_master_file_by_date_range(file_path, post_24_start, post_24_end, date_col_variations, excluded_dates)
         
-        # Check for required columns
-        time_col = 'Timestamp local time'
-        if time_col not in pre_df.columns and not pre_df.empty:
-            # Try variations
-            time_col_variations = ['Timestamp local time', 'Timestamp Local Time', 'timestamp local time', 
-                                  'Order received local time', 'Order Received Local Time']
-            time_col = None
-            for col in time_col_variations:
-                if col in pre_df.columns:
-                    time_col = col
-                    break
-            
-            if time_col is None:
-                st.error(f"Time column not found. Available columns: {list(pre_df.columns)[:10]}")
+        # Check for required columns (financial: Order received local time only)
+        from shared.order_time_columns import (
+            FINANCIAL_ORDER_TIME_COL,
+            find_financial_order_time_column,
+            drop_rows_without_order_time,
+        )
+
+        probe = pre_df if not pre_df.empty else post_df if not post_df.empty else post_24_df
+        time_col = find_financial_order_time_column(probe)
+        if time_col is None:
+            st.error(f"Required column {FINANCIAL_ORDER_TIME_COL!r} not found. Available columns: {list(probe.columns)[:10]}")
                 empty_table = pd.DataFrame({
                     'Slot': slot_order,
                     'Pre': [0.0] * len(slot_order),
@@ -125,7 +122,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         pre_slot_sales = {}
         pre_slot_payouts = {}
         if not pre_df.empty:
-            pre_df = pre_df.copy()
+            pre_df = drop_rows_without_order_time(pre_df.copy(), time_col)
+        if not pre_df.empty:
             pre_df['Slot'] = pre_df[time_col].apply(get_time_slot)
             pre_df = pre_df.dropna(subset=['Slot'])
             pre_df[sales_col] = pd.to_numeric(pre_df[sales_col], errors='coerce')
@@ -148,7 +146,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_slot_sales = {}
         post_slot_payouts = {}
         if not post_df.empty:
-            post_df = post_df.copy()
+            post_df = drop_rows_without_order_time(post_df.copy(), time_col)
+        if not post_df.empty:
             post_df['Slot'] = post_df[time_col].apply(get_time_slot)
             post_df = post_df.dropna(subset=['Slot'])
             post_df[sales_col] = pd.to_numeric(post_df[sales_col], errors='coerce')
@@ -171,7 +170,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_24_slot_sales = {}
         post_24_slot_payouts = {}
         if not post_24_df.empty:
-            post_24_df = post_24_df.copy()
+            post_24_df = drop_rows_without_order_time(post_24_df.copy(), time_col)
+        if not post_24_df.empty:
             post_24_df['Slot'] = post_24_df[time_col].apply(get_time_slot)
             post_24_df = post_24_df.dropna(subset=['Slot'])
             post_24_df[sales_col] = pd.to_numeric(post_24_df[sales_col], errors='coerce')

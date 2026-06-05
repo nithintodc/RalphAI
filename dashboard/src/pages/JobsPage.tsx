@@ -9,7 +9,6 @@ import {
   XCircle,
   Calendar,
 } from "lucide-react";
-
 type AgentDef = {
   id: string;
   name: string;

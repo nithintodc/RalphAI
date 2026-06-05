@@ -22,7 +22,7 @@ def _sample_week_rows(week_label: str, sales_base: float) -> pd.DataFrame:
                 "Week": week_label,
                 "Date": "2025-12-01",
                 "Day": "Monday",
-                "Day part": "Early morning",
+                "Day part": "Overnight",
                 "Sales": sales_base,
                 "Payouts": 40.0,
                 "Mkt Spend": 0.0,

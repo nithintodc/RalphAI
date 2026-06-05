@@ -20,15 +20,6 @@ from bucketing_analysis import (
 
 UNASSIGNED_SLOT = "Unassigned"
 
-DAYPART_TO_SLOT = {
-    "Early morning": "Overnight",
-    "Breakfast": "Breakfast",
-    "Lunch": "Lunch",
-    "Afternoon": "Afternoon",
-    "Dinner": "Dinner",
-    "Late night": "Late night",
-}
-
 SLOT_ORDER = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 
 
@@ -63,15 +54,15 @@ def get_time_slot(time_str):
         # Define slot boundaries (in minutes since midnight)
         if total_minutes >= 0 and total_minutes < 300:  # 12:00 AM - 4:59 AM
             return 'Overnight'
-        elif total_minutes >= 300 and total_minutes < 659:  # 5:00 AM - 10:59 AM
+        elif total_minutes >= 300 and total_minutes < 660:  # 5:00 AM - 10:59 AM
             return 'Breakfast'
-        elif total_minutes >= 659 and total_minutes < 839:  # 11:00 AM - 1:59 PM
+        elif total_minutes >= 660 and total_minutes < 840:  # 11:00 AM - 1:59 PM
             return 'Lunch'
-        elif total_minutes >= 839 and total_minutes < 959:  # 2:00 PM - 4:59 PM
+        elif total_minutes >= 840 and total_minutes < 1020:  # 2:00 PM - 4:59 PM
             return 'Afternoon'
-        elif total_minutes >= 959 and total_minutes < 1159:  # 5:00 PM - 7:59 PM
+        elif total_minutes >= 1020 and total_minutes < 1200:  # 5:00 PM - 7:59 PM
             return 'Dinner'
-        elif total_minutes >= 1159:  # 8:00 PM - 11:59 PM
+        elif total_minutes >= 1200:  # 8:00 PM - 11:59 PM
             return 'Late night'
         else:
             return None
@@ -84,37 +75,23 @@ def _slot_from_dd_row(df):
     if df is None or df.empty:
         return pd.Series(dtype=object)
     date_col = _find_col(df, "Timestamp local date", "Timestamp Local Date", "Timestamp Local date")
-    time_col = _find_col(
-        df,
-        "Order received local time",
-        "Timestamp local time",
-        "Timestamp Local Time",
-        "Order Received Local Time",
-    )
-    combined = _dd_build_order_datetime(df[date_col], df[time_col])
-    hours = pd.Series(-1, index=df.index, dtype=int)
+    from shared.order_time_columns import FINANCIAL_ORDER_TIME_COL, drop_rows_without_order_time
+
+    time_col = _find_col(df, FINANCIAL_ORDER_TIME_COL)
+    work = drop_rows_without_order_time(df, time_col)
+    if work.empty:
+        return pd.Series(UNASSIGNED_SLOT, index=df.index, dtype=object)
+
+    combined = _dd_build_order_datetime(work[date_col], work[time_col])
+    hours = pd.Series(-1, index=work.index, dtype=int)
     ok = combined.notna()
     if ok.any():
         hours.loc[ok] = combined.loc[ok].dt.hour
 
-    for col in (
-        time_col,
-        "Timestamp local time",
-        "Timestamp Local Time",
-        "Timestamp",
-        "timestamp",
-    ):
-        still = hours < 0
-        if not still.any() or col not in df.columns:
-            continue
-        fb = hour_from_series(df.loc[still, col])
-        for idx, hv in fb.items():
-            if pd.notna(hv):
-                hours.loc[idx] = int(hv)
-
-    day_parts = assign_day_part(hours)
-    slots = day_parts.map(DAYPART_TO_SLOT)
-    return slots.fillna(UNASSIGNED_SLOT)
+    slots = assign_day_part(hours)
+    out = pd.Series(UNASSIGNED_SLOT, index=df.index, dtype=object)
+    out.loc[work.index] = slots.fillna(UNASSIGNED_SLOT)
+    return out
 
 
 def _prepare_dd_order_rows(df, selected_stores=None):

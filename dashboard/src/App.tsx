@@ -16,6 +16,8 @@ import { HealthCheckPage } from "./pages/HealthCheckPage";
 import { JobsPage } from "./pages/JobsPage";
 import { InternalAppPage } from "./pages/InternalAppPage";
 import { StoreMapPage } from "./pages/StoreMapPage";
+import { ReportingBrowserUsePage } from "./pages/ReportingBrowserUsePage";
+import { OperatorProfileMappingPage } from "./pages/OperatorProfileMappingPage";
 
 export default function App() {
   return (
@@ -39,9 +41,14 @@ export default function App() {
         <Route path="/agents/strategist" element={<StrategistPage />} />
         <Route path="/agents/health-check" element={<HealthCheckPage />} />
         <Route path="/agents/campaign-killer" element={<CampaignKillerPage />} />
+        <Route
+          path="/agents/reporting-browser-use/:forkId"
+          element={<ReportingBrowserUsePage />}
+        />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/operator-mapping" element={<OperatorProfileMappingPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from shared.decision_matrix import evaluate_wow_row
+
 logger = logging.getLogger(__name__)
 
 WOW_METRICS = [
@@ -110,6 +112,12 @@ def _master_columns() -> list[str]:
         cols.extend([m, f"{m} WoW Δ", f"{m} WoW %"])
     cols.extend(
         [
+            "matrix_sales",
+            "matrix_orders",
+            "matrix_profitability",
+            "matrix_organic_orders",
+            "matrix_promo_ads_orders",
+            "matrix_action",
             "reco_kill_ads",
             "reco_lower_basket",
             "reco_kill_campaign",
@@ -202,7 +210,13 @@ def build_master_sheet(
             flat.append(d if d is not None else "")
             flat.append(p if p is not None else "")
 
+        matrix_eval = evaluate_wow_row(metric_delta)
+        matrix_dirs = matrix_eval.get("directions") or {}
+
         recommendations: list[str] = []
+        matrix_action = matrix_eval.get("matrix_action")
+        if matrix_action:
+            recommendations.append(matrix_action)
 
         # Rule 1: If Orders inf by both > 0 and WoW % > 0 -> kill ads.
         reco_kill_ads = "N"
@@ -249,8 +263,11 @@ def build_master_sheet(
                 except (TypeError, ValueError):
                     pass
 
-        # Priority: both kill rules => High. any kill => Medium. otherwise if only adjust => Low.
-        if reco_kill_ads == "Y" and reco_kill_campaign == "Y":
+        # Legacy heuristics (GC bucket / both-orders rules); matrix takes precedence when matched.
+        if matrix_eval.get("matched"):
+            final_recommendation = matrix_eval["final_recommendation"]
+            recommendation_priority = matrix_eval["recommendation_priority"]
+        elif reco_kill_ads == "Y" and reco_kill_campaign == "Y":
             recommendation_priority = "High"
             final_recommendation = "High priority: kill ads and kill campaign"
         elif reco_kill_ads == "Y" or reco_kill_campaign == "Y":
@@ -268,6 +285,12 @@ def build_master_sheet(
 
         flat.extend(
             [
+                matrix_dirs.get("sales") or "",
+                matrix_dirs.get("orders") or "",
+                matrix_dirs.get("profitability") or "",
+                matrix_dirs.get("organic_orders") or "",
+                matrix_dirs.get("promo_ads_orders") or "",
+                matrix_action or "",
                 reco_kill_ads,
                 reco_lower_basket,
                 reco_kill_campaign,

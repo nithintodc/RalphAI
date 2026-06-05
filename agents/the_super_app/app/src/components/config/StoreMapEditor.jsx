@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Plus, RotateCw } from 'lucide-react';
+import { Plus, RotateCw, X } from 'lucide-react';
 import {
   buildDdStoreCatalog,
   buildUeStoreCatalog,
@@ -7,6 +7,13 @@ import {
   applyUeSelection,
   formatUeOptionLabel,
 } from '../../lib/utils/storeCatalog';
+import { STORE_TAG_LABELS } from '../../lib/export/exportSheetSummaries';
+
+const TAG_OPTIONS = [
+  { value: '', label: '— none —' },
+  { value: 'A', label: `A (${STORE_TAG_LABELS.A})` },
+  { value: 'B', label: `B (${STORE_TAG_LABELS.B})` },
+];
 
 export default function StoreMapEditor({
   ddFinancial,
@@ -17,11 +24,16 @@ export default function StoreMapEditor({
   const ddCatalog = useMemo(() => buildDdStoreCatalog(ddFinancial), [ddFinancial]);
   const ueCatalog = useMemo(() => buildUeStoreCatalog(ueFinancial), [ueFinancial]);
   const ddById = useMemo(() => new Map(ddCatalog.map((d) => [d.id, d])), [ddCatalog]);
+  const safeRows = rows ?? [];
 
   const unmatchedUe = useMemo(() => {
-    const mapped = new Set(rows.map((r) => r.ueId).filter(Boolean));
+    const mapped = new Set(safeRows.map((r) => r.ueId).filter(Boolean));
     return ueCatalog.filter((s) => !mapped.has(s.id));
-  }, [ueCatalog, rows]);
+  }, [ueCatalog, safeRows]);
+
+  const clearAllTags = () => {
+    setRows((prev) => prev.map((r) => ({ ...r, tag: '' })));
+  };
 
   const resetSuggested = () => {
     setRows(buildSuggestedMapRows(ddCatalog, ueCatalog, {}));
@@ -32,6 +44,10 @@ export default function StoreMapEditor({
   };
   const onTagChange = (index, tag) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, tag: String(tag ?? '').trim() } : r)));
+  };
+
+  const removeRow = (index) => {
+    setRows((prev) => prev.filter((_, i) => i !== index));
   };
 
   const onDdChange = (index, ddId) => {
@@ -61,6 +77,7 @@ export default function StoreMapEditor({
         ueId: '',
         ueName: '',
         isManual: true,
+        tag: '',
       };
       return [...prev, applyUeSelection(base, initialUeId, ueCatalog)];
     });
@@ -100,6 +117,13 @@ export default function StoreMapEditor({
           <Plus size={12} />
           Add manual mapping row
         </button>
+        <button
+          type="button"
+          onClick={clearAllTags}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+        >
+          Clear all tags
+        </button>
         <span className="text-[10px] text-[var(--text-subtle)] self-center">
           {ddCatalog.length} DoorDash · {ueCatalog.length} Uber Eats stores detected
         </span>
@@ -115,10 +139,11 @@ export default function StoreMapEditor({
               <th className="py-2 px-2 text-left font-semibold text-[var(--text-muted)] w-28">UE Store ID</th>
               <th className="py-2 px-2 text-left font-semibold text-[var(--text-muted)] min-w-[160px]">UE Store Name</th>
               <th className="py-2 px-2 text-left font-semibold text-[var(--text-muted)] w-24">Tag</th>
+              <th className="py-2 px-2 text-center font-semibold text-[var(--text-muted)] w-10" aria-label="Remove" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
+            {safeRows.map((row, i) => (
                 <tr key={`${row.ddId}-${i}`} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-2)]/60">
                   <td className="py-1.5 px-2 font-mono text-[var(--text-muted)]" title={row.ddStoreId}>
                     {row.ddStoreId || '—'}
@@ -175,15 +200,25 @@ export default function StoreMapEditor({
                   </td>
                   <td className="py-1.5 px-2">
                     <select
-                      value={row.tag || ''}
+                      value={row.tag ?? ''}
                       onChange={(e) => onTagChange(i, e.target.value)}
-                      className={`${ueSelectClass} max-w-[8rem]`}
-                      title="Optional group tag for A/B comparison"
+                      className={`${ueSelectClass} max-w-[9rem]`}
+                      title="Group tag for A/B comparison (A = TODC, B = Non-TODC)"
                     >
-                      <option value="">—</option>
-                      <option value="A">A</option>
-                      <option value="B">B</option>
+                      {TAG_OPTIONS.map((opt) => (
+                        <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
+                  </td>
+                  <td className="py-1.5 px-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(i)}
+                      className="inline-flex items-center justify-center p-1 rounded hover:bg-red-50 text-[var(--text-subtle)] hover:text-[var(--negative)] cursor-pointer"
+                      title="Remove from analysis"
+                    >
+                      <X size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}

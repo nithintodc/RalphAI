@@ -9,10 +9,7 @@ DD_DATE_COLUMN_VARIATIONS = [
     "timestamp local date", "Date", "date", "Timestamp", "timestamp",
 ]
 
-DD_TIME_COLUMN_VARIATIONS = [
-    "Timestamp local time", "Timestamp Local Time", "timestamp local time",
-    "Order received local time", "Order Received Local Time",
-]
+DD_TIME_COLUMN_VARIATIONS = ["Order received local time"]
 
 UE_STORE_NAME_VARIATIONS = [
     "Store Name", "Restaurant Name", "Restaurant name",

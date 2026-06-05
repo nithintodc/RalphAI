@@ -1,12 +1,9 @@
 import DataTable from '../ui/DataTable';
-import { fmt } from '../../lib/utils/formatters';
+import { formatByKind } from '../../lib/utils/formatters';
+import { buildSlotTimeColumn } from '../../lib/slots/slotTableColumns';
 
 function renderCell(kind, v) {
-  if (v == null || Number.isNaN(v)) return '—';
-  if (kind === 'pct') return fmt.pct(v);
-  if (kind === 'int') return fmt.int(v);
-  if (kind === 'num2') return fmt.usd2(v).replace('$', '');
-  return String(v);
+  return formatByKind(kind, v);
 }
 
 const CUSTOMER_ITEM_COLS = [
@@ -33,14 +30,18 @@ const ORDER_VOLUME_COLS = [
   { key: 'orders', label: 'Orders', kind: 'int' },
 ];
 
-function buildColumns(rowKey, rowLabel, metricCols) {
-  return [
+function buildColumns(rowKey, rowLabel, metricCols, { showSlotTime = false, slotTimeKey = 'slot' } = {}) {
+  const cols = [
     {
       key: rowKey,
       label: rowLabel,
       sortable: true,
       render: (v) => <span className="font-medium">{v}</span>,
     },
+  ];
+  if (showSlotTime) cols.push(buildSlotTimeColumn(slotTimeKey));
+  return [
+    ...cols,
     ...metricCols.map((c) => ({
       key: c.key,
       label: c.label,
@@ -51,7 +52,7 @@ function buildColumns(rowKey, rowLabel, metricCols) {
   ];
 }
 
-function PeriodTable({ title, data, rowKey, rowLabel, metricCols }) {
+function PeriodTable({ title, data, rowKey, rowLabel, metricCols, showSlotTime, slotTimeKey }) {
   if (!data?.length) {
     return (
       <div className="space-y-2">
@@ -63,18 +64,18 @@ function PeriodTable({ title, data, rowKey, rowLabel, metricCols }) {
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">{title}</h4>
-      <DataTable columns={buildColumns(rowKey, rowLabel, metricCols)} data={data} />
+      <DataTable columns={buildColumns(rowKey, rowLabel, metricCols, { showSlotTime, slotTimeKey })} data={data} />
     </div>
   );
 }
 
-function BreakdownBlock({ title, analysis, rowKey, rowLabel, dataKey, metricCols }) {
+function BreakdownBlock({ title, analysis, rowKey, rowLabel, dataKey, metricCols, showSlotTime, slotTimeKey }) {
   return (
     <div className="space-y-4">
       <h4 className="text-sm font-semibold text-[var(--text)]">{title}</h4>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <PeriodTable title="Pre" data={analysis.pre?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} />
-        <PeriodTable title="Post" data={analysis.post?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} />
+        <PeriodTable title="Pre" data={analysis.pre?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} showSlotTime={showSlotTime} slotTimeKey={slotTimeKey} />
+        <PeriodTable title="Post" data={analysis.post?.[dataKey]} rowKey={rowKey} rowLabel={rowLabel} metricCols={metricCols} showSlotTime={showSlotTime} slotTimeKey={slotTimeKey} />
       </div>
     </div>
   );
@@ -111,6 +112,8 @@ export default function SlotSalesOrderSection({ analysis, platformLabel, timeFie
           rowLabel="Slot"
           dataKey="slot"
           metricCols={breakdownCols}
+          showSlotTime
+          slotTimeKey="slot"
         />
         <BreakdownBlock
           title="By day"
@@ -127,6 +130,8 @@ export default function SlotSalesOrderSection({ analysis, platformLabel, timeFie
           rowLabel="Day · Slot"
           dataKey="daySlot"
           metricCols={breakdownCols}
+          showSlotTime
+          slotTimeKey="slot"
         />
       </div>
 
@@ -142,6 +147,8 @@ export default function SlotSalesOrderSection({ analysis, platformLabel, timeFie
             rowLabel="Slot"
             dataKey="slot"
             metricCols={DASHPASS_COLS}
+            showSlotTime
+            slotTimeKey="slot"
           />
           <BreakdownBlock
             title="By day"
@@ -158,6 +165,8 @@ export default function SlotSalesOrderSection({ analysis, platformLabel, timeFie
             rowLabel="Day · Slot"
             dataKey="daySlot"
             metricCols={DASHPASS_COLS}
+            showSlotTime
+            slotTimeKey="slot"
           />
         </div>
       )}

@@ -80,8 +80,8 @@ def load_slots_grid(slots_path: Path) -> dict:
     Load slots.csv as grid: rows = slots, columns = days, values = tag numbers.
 
     First row: first cell empty (or slot header), rest = day names (Mon, Tue, ...).
-    Remaining rows: first column = slot name (Early morning, Breakfast, ...), rest = tag ints.
-    Returns dict mapping (day, slot) -> tag (int). Example: ("Mon", "Early morning") -> 1.
+    Remaining rows: first column = slot name (Overnight, Breakfast, ...), rest = tag ints.
+    Returns dict mapping (day, slot) -> tag (int). Example: ("Mon", "Overnight") -> 1.
     Returns {} if file missing or invalid.
     """
     path = Path(slots_path)
@@ -111,7 +111,9 @@ def load_slots_grid(slots_path: Path) -> dict:
     for row in rows[1:]:
         if not row:
             continue
-        slot = str(row[0]).strip()
+        from shared.time_slots import normalize_slot_name
+
+        slot = normalize_slot_name(str(row[0]).strip())
         if not slot:
             continue
         for j, day in enumerate(days):
@@ -262,7 +264,7 @@ def get_subtotal_to_tags_per_store_from_combined(
     For each sheet: read Day, Slot, Min.Subtotal. Group by Min.Subtotal; for each (Day, Slot)
     look up tag in slots_grid (day normalized to grid key, e.g. Monday -> Mon). Build
     store_id -> { min_subtotal -> [tag, ...] }.
-    slots_grid: (day_key, slot) -> tag, e.g. ("Mon", "Early morning") -> 1.
+    slots_grid: (day_key, slot) -> tag, e.g. ("Mon", "Overnight") -> 1.
     Returns {} if pandas missing or file invalid.
     """
     if pd is None:

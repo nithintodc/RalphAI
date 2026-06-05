@@ -3,10 +3,10 @@
 Slot numbering (per user):
   Days: Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=7
   Time slots in order:
-    Early morning (12am-4:59am), Breakfast (5am-10:59am), Lunch (11am-1:59pm),
+    Overnight (12am-4:59am), Breakfast (5am-10:59am), Lunch (11am-1:59pm),
     Afternoon (2pm-4:59pm), Dinner (5pm-7:59pm), Late night (8pm-11:59pm)
   Slot tag = (time_slot_index * 7) + day_index, with day_index 1..7
-  E.g. 1 = Mon Early morning, 7 = Sun Early morning, 8 = Mon Breakfast, ..., 42 = Sun Late night
+  E.g. 1 = Mon Overnight, 7 = Sun Overnight, 8 = Mon Breakfast, ..., 42 = Sun Late night
 """
 import pandas as pd
 import numpy as np
@@ -15,7 +15,7 @@ CAMP_PATH = 'campaigns-infinite.csv'
 FIN_PATH = 'FINANCIAL_DETAILED_TRANSACTIONS_2026-01-01_2026-05-22_kqGU8_2026-05-23T02-24-07Z.csv'
 MKT_PATH = 'MARKETING_PROMOTION_2026-01-01_2026-05-22_saoSc_2026-05-23T02-24-25Z.csv'
 
-TIME_SLOTS = ['Early morning', 'Breakfast', 'Lunch', 'Afternoon', 'Dinner', 'Late night']
+TIME_SLOTS = ['Overnight', 'Breakfast', 'Lunch', 'Afternoon', 'Dinner', 'Late night']
 DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 def slot_tag_to_dayslot(tag):
@@ -25,7 +25,7 @@ def slot_tag_to_dayslot(tag):
     return DAYS[day_idx], TIME_SLOTS[time_idx]
 
 def hour_to_slot(h):
-    if 0 <= h < 5: return 'Early morning'
+    if 0 <= h < 5: return 'Overnight'
     if 5 <= h < 11: return 'Breakfast'
     if 11 <= h < 14: return 'Lunch'
     if 14 <= h < 17: return 'Afternoon'
@@ -86,14 +86,14 @@ print('=' * 100)
 print('PART 2: SLOT-LEVEL ELIGIBILITY ANALYSIS (from financial transactions)')
 print('=' * 100)
 
-usecols = ['Timestamp local date','Timestamp local time','Store name','Merchant store ID',
+usecols = ['Timestamp local date','Order received local time','Store name','Merchant store ID',
            'Transaction type','DoorDash order ID','Subtotal',
            'Customer discounts from marketing | (funded by you)',
            'Marketing fees | (including any applicable taxes)']
 fin = pd.read_csv(FIN_PATH, usecols=usecols, low_memory=False)
 fin = fin[fin['Transaction type'] == 'Order'].copy()
 fin['Date'] = pd.to_datetime(fin['Timestamp local date'], errors='coerce')
-fin['LocalDT'] = pd.to_datetime(fin['Timestamp local time'], errors='coerce')
+fin['LocalDT'] = pd.to_datetime(fin['Order received local time'], errors='coerce')
 fin['Hour'] = fin['LocalDT'].dt.hour
 fin = fin.dropna(subset=['Date','Hour'])
 fin['Hour'] = fin['Hour'].astype(int)

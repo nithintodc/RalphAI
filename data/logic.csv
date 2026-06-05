@@ -1,0 +1,17 @@
+# Health Check WoW decision matrix — see data/LOGIC_README.md
+sales,orders,profitability,organic_orders,promo_ads_orders,action
+up,up,up,up,up,Keep
+up,up,up,up,down,Keep (organic replacing paid)
+up,up,up,down,up,Update (reduce spend slightly test efficiency)
+up,up,down,down,up,Kill / Update (growth bought at poor margin)
+up,up,down,up,down,Keep (investigate costs campaigns likely not issue)
+up,down,up,up,down,Create (volume opportunity exists)
+up,down,up,down,up,Update (campaigns driving higher ticket size not volume)
+down,down,down,down,down,Create aggressively
+down,down,up,down,down,Create (demand weakening despite margin strength)
+down,down,down,up,down,Update/Kill weak paid campaigns
+down,down,down,down,up,Kill inefficient paid traffic
+down,up,up,down,up,Update (optimize spend volume healthy)
+down,up,down,down,up,Kill poor efficiency
+down,up,up,up,down,Kill weak paid campaigns and shift to organic slots
+up,up,down,down,down,Update pricing/offers rather than spend

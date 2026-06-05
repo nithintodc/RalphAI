@@ -2,7 +2,7 @@ import { differenceInCalendarDays } from 'date-fns';
 import { safeDivide, round, growthPct } from '../utils/safeMath';
 import { dateToKey, percentSpotlightCount } from '../utils/dateUtils';
 import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
-import { classifyOrder, sumPromoDiscountsFromRows } from './buckets';
+import { classifyDdOrder, sumDdOrderMarketingSignals } from './buckets';
 import { buildSlotAnalysis, DAY_NAMES } from './slots';
 
 export function decomposeSalesChange(preOrders, postOrders, preAov, postAov) {
@@ -101,8 +101,11 @@ function buildDdOrderLevel(ddFinancial, start, end, excludedDates = []) {
     if (!orderId) continue;
     const subtotal = orderRows.reduce((s, r) => s + (r.subtotal || 0), 0);
     const netTotal = orderRows.reduce((s, r) => s + (r.netTotal || 0), 0);
-    const marketingFees = orderRows.reduce((s, r) => s + Math.abs(r.marketingFees || 0), 0);
-    const customerDiscounts = sumPromoDiscountsFromRows(orderRows);
+    const mktSignals = sumDdOrderMarketingSignals(orderRows);
+    const marketingFees = Math.abs(mktSignals.marketingFees || 0);
+    const customerDiscounts = Math.abs(mktSignals.customerDiscountsYou || 0)
+      + Math.abs(mktSignals.customerDiscountsDoorDash || 0)
+      + Math.abs(mktSignals.customerDiscountsThirdParty || 0);
     orders.push({
       orderId,
       storeId: orderRows[0]?.storeId,
@@ -110,7 +113,7 @@ function buildDdOrderLevel(ddFinancial, start, end, excludedDates = []) {
       netTotal,
       marketingFees,
       customerDiscounts,
-      orderType: classifyOrder(marketingFees, customerDiscounts),
+      orderType: classifyDdOrder(mktSignals),
     });
   }
   return orders;

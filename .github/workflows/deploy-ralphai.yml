@@ -83,10 +83,10 @@ jobs:
 
           ENV_FILE="$(mktemp)"
           {
-            echo "LOG_LEVEL=INFO"
-            echo "GOOGLE_SHARED_DRIVE_NAME=${{ vars.GOOGLE_SHARED_DRIVE_NAME || 'Data-Analysis-Uploads' }}"
-            [[ -n "${{ vars.AIRTABLE_BASE_ID }}" ]] && echo "AIRTABLE_BASE_ID=${{ vars.AIRTABLE_BASE_ID }}"
-            [[ -n "${{ vars.AIRTABLE_TABLE_ID }}" ]] && echo "AIRTABLE_TABLE_ID=${{ vars.AIRTABLE_TABLE_ID }}"
+            echo "LOG_LEVEL: INFO"
+            echo "GOOGLE_SHARED_DRIVE_NAME: ${{ vars.GOOGLE_SHARED_DRIVE_NAME || 'Data-Analysis-Uploads' }}"
+            [[ -n "${{ vars.AIRTABLE_BASE_ID }}" ]] && echo "AIRTABLE_BASE_ID: ${{ vars.AIRTABLE_BASE_ID }}"
+            [[ -n "${{ vars.AIRTABLE_TABLE_ID }}" ]] && echo "AIRTABLE_TABLE_ID: ${{ vars.AIRTABLE_TABLE_ID }}"
           } >"$ENV_FILE"
 
           DEPLOY_ARGS=(

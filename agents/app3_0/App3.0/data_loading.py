@@ -11,6 +11,7 @@ from utils import (
     normalize_ue_store_key_column,
 )
 from bucketing_analysis import MKT_DISCOUNT_COLS, COL_MKT_FEES, classify_order
+from shared.dd_order_classification import AD_FEE_HIST_COL, MKT_FEE_HIST_COL
 
 
 def process_master_file_for_dd(file_path, start_date, end_date, excluded_dates=None):
@@ -94,13 +95,22 @@ def process_master_file_for_dd(file_path, start_date, end_date, excluded_dates=N
         for dc in mkt_disc_present:
             df[dc] = pd.to_numeric(df[dc], errors='coerce').fillna(0.0)
 
+        mkt_hist_col = MKT_FEE_HIST_COL if MKT_FEE_HIST_COL in df.columns else None
+        ad_hist_col = AD_FEE_HIST_COL if AD_FEE_HIST_COL in df.columns else None
+        if mkt_hist_col:
+            df[mkt_hist_col] = pd.to_numeric(df[mkt_hist_col], errors='coerce').fillna(0.0)
+        if ad_hist_col:
+            df[ad_hist_col] = pd.to_numeric(df[ad_hist_col], errors='coerce').fillna(0.0)
+
         orders_class_records = []
         if mkt_fee_col_name and mkt_disc_present:
             for oid, sub in df.groupby(order_col, sort=False):
                 sid = sub[store_col].iloc[0]
                 mkt_fee = float(sub[mkt_fee_col_name].sum())
                 disc_vals = [float(sub[c].sum()) for c in mkt_disc_present]
-                cls = classify_order(mkt_fee, disc_vals)
+                mkt_hist = float(sub[mkt_hist_col].sum()) if mkt_hist_col else None
+                ad_hist = float(sub[ad_hist_col].sum()) if ad_hist_col else None
+                cls = classify_order(mkt_fee, disc_vals, mkt_hist=mkt_hist, ad_hist=ad_hist)
                 orders_class_records.append((sid, oid, cls))
         elif mkt_fee_col_name:
             disc_fallback = 'Customer discounts from marketing | (funded by you)'
@@ -112,7 +122,9 @@ def process_master_file_for_dd(file_path, start_date, end_date, excluded_dates=N
                 sid = sub[store_col].iloc[0]
                 mkt_fee = float(sub[mkt_fee_col_name].sum())
                 disc = float(sub[disc_fallback].sum()) if disc_fallback else 0.0
-                cls = classify_order(mkt_fee, [disc])
+                mkt_hist = float(sub[mkt_hist_col].sum()) if mkt_hist_col else None
+                ad_hist = float(sub[ad_hist_col].sum()) if ad_hist_col else None
+                cls = classify_order(mkt_fee, [disc], mkt_hist=mkt_hist, ad_hist=ad_hist)
                 orders_class_records.append((sid, oid, cls))
 
         if orders_class_records:

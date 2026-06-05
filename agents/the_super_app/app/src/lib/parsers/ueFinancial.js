@@ -1,15 +1,25 @@
 import { parseDate, minMaxDates } from '../utils/dateUtils';
 import { toNum } from '../utils/safeMath';
+import { sanitizeStoreId } from './ddFinancial';
 
 const STORE_NAME_COLS = ['Store Name', 'Restaurant Name', 'Restaurant name', 'Merchant Name', 'Store name'];
+/** Location-level IDs first; chain-level Store ID / Shop ID are fallbacks only. */
 const STORE_ID_COLS = [
-  'Store ID',
-  'Shop ID',
   'External store ID as per Uber Eats manager',
   'External Store ID as per Uber Eats manager',
   'External store ID',
   'Merchant Store ID',
+  'Store ID as per Uber Eats manager',
+  'Store ID',
+  'Shop ID',
 ];
+
+export function sanitizeUeStoreId(raw) {
+  const s = sanitizeStoreId(raw);
+  if (!s) return '';
+  if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, '');
+  return s;
+}
 
 function normalizeColHeader(col) {
   return String(col ?? '')
@@ -43,21 +53,63 @@ function findStoreNameCol(columns) {
   }) || null;
 }
 
-function findStoreIdCol(columns) {
-  const found = findCol(columns, STORE_ID_COLS);
-  if (found) return found;
-  const external = columns.find((c) => {
+function isStoreNameLikeColumn(col) {
+  const cl = normalizeColHeader(col);
+  return cl.includes('store') && cl.includes('name');
+}
+
+function scoreStoreIdColumn(data, col, storeNameCol) {
+  const ids = new Set();
+  const names = new Set();
+  let numeric = 0;
+  for (const row of data || []) {
+    const id = sanitizeUeStoreId(row[col]);
+    const name = storeNameCol ? String(row[storeNameCol] || '').trim() : '';
+    if (id) {
+      ids.add(id);
+      if (/^\d+$/.test(id)) numeric += 1;
+    }
+    if (name) names.add(name);
+  }
+  if (!ids.size) return -1;
+
+  let overlapsName = 0;
+  for (const id of ids) {
+    if (names.has(id)) overlapsName += 1;
+  }
+
+  const numericRatio = numeric / ids.size;
+  return ids.size * 100 + numericRatio * 50 - overlapsName * 200;
+}
+
+function findStoreIdCol(columns, data, storeNameCol) {
+  const candidates = [];
+  const seen = new Set();
+  const addCandidate = (col) => {
+    if (!col || seen.has(col) || isStoreNameLikeColumn(col)) return;
+    seen.add(col);
+    candidates.push(col);
+  };
+
+  for (const v of STORE_ID_COLS) addCandidate(findCol(columns, [v]));
+
+  for (const c of columns) {
     const cl = normalizeColHeader(c);
-    return cl.includes('external') && cl.includes('store') && cl.includes('id');
-  });
-  if (external) return external;
-  return columns.find((c) => {
-    const cl = normalizeColHeader(c);
-    if (!cl.includes('store') || !cl.includes('id')) return false;
-    if (cl.includes('order')) return false;
-    if (cl.includes('unique id')) return false;
-    return true;
-  }) || null;
+    if (!cl.includes('store') || !cl.includes('id')) continue;
+    if (cl.includes('order') || cl.includes('unique id') || cl.includes('name')) continue;
+    addCandidate(c);
+  }
+
+  let best = null;
+  let bestScore = -1;
+  for (const col of candidates) {
+    const score = scoreStoreIdColumn(data, col, storeNameCol);
+    if (score > bestScore) {
+      bestScore = score;
+      best = col;
+    }
+  }
+  return best;
 }
 
 function findTimeCol(columns, dateColIndex) {
@@ -80,15 +132,6 @@ function findTimeCol(columns, dateColIndex) {
   }) || null;
 }
 
-function uniqueCount(rows, accessor) {
-  const seen = new Set();
-  for (const row of rows || []) {
-    const v = accessor(row);
-    if (v) seen.add(v);
-  }
-  return seen.size;
-}
-
 export function normalizeUeFinancial(parsed) {
   const { data, columns } = parsed;
 
@@ -108,7 +151,7 @@ export function normalizeUeFinancial(parsed) {
     ])
     || findTimeCol(columns, dateColIndex);
   const storeNameCol = findStoreNameCol(columns);
-  const storeIdCol = findStoreIdCol(columns);
+  const storeIdCol = findStoreIdCol(columns, data, storeNameCol);
   const orderIdCol = findCol(columns, [
     'Order ID as per Uber Eats manager',
     'Order ID',
@@ -149,17 +192,12 @@ export function normalizeUeFinancial(parsed) {
   const newCustCol = findCol(columns, ['New customers', 'New Customers']);
   const diningCol = findCol(columns, ['Dining Mode', 'Dining mode']);
 
-  const storeIdCount = uniqueCount(data, (row) => (storeIdCol ? String(row[storeIdCol] || '').trim() : ''));
-  const storeNameCount = uniqueCount(data, (row) => (storeNameCol ? String(row[storeNameCol] || '').trim() : ''));
-  const primaryStoreKey = storeNameCount > storeIdCount ? 'storeName' : 'storeId';
-
   return data
     .map((row) => {
       const date = dateCol ? parseDate(row[dateCol]) : null;
       const storeName = storeNameCol ? String(row[storeNameCol] || '').trim() : '';
-      const rawStoreId = storeIdCol ? String(row[storeIdCol] || '').trim() : '';
-      const primaryStoreValue = primaryStoreKey === 'storeName' ? storeName : rawStoreId;
-      const storeId = primaryStoreValue || rawStoreId || storeName;
+      const rawStoreId = storeIdCol ? sanitizeUeStoreId(row[storeIdCol]) : '';
+      const storeId = rawStoreId || storeName;
       if (!date || !storeId) return null;
       return {
         date,
@@ -176,7 +214,6 @@ export function normalizeUeFinancial(parsed) {
         orderErrorAdjustments: errorAdjCol ? Math.abs(toNum(row[errorAdjCol])) : 0,
         newCustomers: newCustCol ? toNum(row[newCustCol]) : 0,
         diningMode: diningCol ? row[diningCol] : null,
-        primaryStoreKey,
       };
     })
     .filter(Boolean);

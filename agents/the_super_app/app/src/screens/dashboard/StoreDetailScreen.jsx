@@ -55,19 +55,20 @@ export default function StoreDetailScreen() {
 
       <div className="card">
         <h3 className="text-sm font-semibold text-[var(--text)] mb-3">Period Comparison</h3>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto flex justify-center">
+        <table className="table-auto w-max max-w-full text-sm mx-auto">
           <thead>
             <tr className="border-b border-[var(--border)]">
-              <th className="text-left py-2 px-3 text-xs text-[var(--text-muted)]">Metric</th>
-              {periods.map(p => <th key={p.label} className="text-right py-2 px-3 text-xs text-[var(--text-muted)]">{p.label}</th>)}
+              <th className="text-center py-2 px-3 text-xs text-[var(--text-muted)]">Metric</th>
+              {periods.map(p => <th key={p.label} className="text-center py-2 px-3 text-xs text-[var(--text-muted)]">{p.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {metricLabels.map((label, i) => (
               <tr key={label} className="border-b border-[var(--border)] last:border-0">
-                <td className="py-2 px-3 font-medium text-[var(--text)]">{label}</td>
+                <td className="py-2 px-3 text-center font-medium text-[var(--text)]">{label}</td>
                 {periods.map(p => (
-                  <td key={p.label} className="py-2 px-3 text-right tnum">
+                  <td key={p.label} className="py-2 px-3 text-center tnum">
                     {fmt[metricFormats[i] === 'usd' ? 'usd' : metricFormats[i] === 'int' ? 'int' : metricFormats[i] === 'usd2' ? 'usd2' : 'pct'](store[p.metrics[i]] || 0)}
                   </td>
                 ))}
@@ -75,6 +76,7 @@ export default function StoreDetailScreen() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
 import DataTable from '../../components/ui/DataTable';
 import PlatformLogo from '../../components/ui/PlatformLogo';
-import { fmt } from '../../lib/utils/formatters';
+import { formatByKind } from '../../lib/utils/formatters';
 import { exportDdRegister, exportUeRegister } from '../../lib/export/exportWorkbook';
 import {
   buildDdRegister,
@@ -20,12 +20,7 @@ function hasDdSalesByOrderUpload(byOrder) {
 }
 
 function renderCell(kind, v) {
-  if (v == null || v === '') return '—';
-  if (kind === 'pct') return fmt.pct(v);
-  if (kind === 'int') return fmt.int(v);
-  if (kind === 'usd') return fmt.usd(v);
-  if (kind === 'usd2' || kind === 'num2') return fmt.usd2(v);
-  return String(v);
+  return formatByKind(kind, v);
 }
 
 function buildTableColumns(specs) {
@@ -37,7 +32,7 @@ function buildTableColumns(specs) {
     labelCol: c.kind === 'text',
     shrink: c.kind !== 'text',
     render: (v) => {
-      if (c.key === 'storeId' || c.key === 'dayOfWeek' || c.key === 'slot') {
+      if (c.key === 'storeId' || c.key === 'dayOfWeek' || c.key === 'slot' || c.key === 'slotTime') {
         return <span className="font-medium">{renderCell(c.kind, v)}</span>;
       }
       return renderCell(c.kind, v);
@@ -143,6 +138,12 @@ export default function RegisterScreen() {
         {tab === 'dd' && hasDdSalesByOrderUpload(data.ddSales?.byOrder) && (
           <p className="text-xs text-[var(--text-subtle)] mt-2">
             SALES_BY_ORDER loaded ({coerceDdSalesByOrderParsed(data.ddSales?.byOrder).data.length.toLocaleString()} rows).
+          </p>
+        )}
+        {tab === 'ue' && (
+          <p className="text-xs text-[var(--text-subtle)] mt-2">
+            Uber Eats: <strong>Marketplace Fee</strong> is platform commission (not ads).
+            Promo orders = offers &gt; 0; organic = no offers. No UE ad spend in this export.
           </p>
         )}
       </div>

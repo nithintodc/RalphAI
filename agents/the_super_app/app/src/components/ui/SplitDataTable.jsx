@@ -3,30 +3,53 @@ import DataTable from './DataTable';
 import { splitTableColumns } from '../../lib/utils/splitTableColumns';
 
 /**
- * Renders one or more tight tables so wide datasets never force horizontal page scroll.
- * Register screen uses DataTable with allowHorizontalScroll instead.
+ * Wide tables render as one scrollable table with wrapped headers (split opt-in only).
  */
 export default function SplitDataTable({
   columns,
   data,
   splitAt = 5,
-  split = true,
+  split = false,
   chunkTitles,
   layout = 'tight',
   dense = false,
+  allowHorizontalScroll = true,
   ...rest
 }) {
+  const wrappedColumns = useMemo(
+    () => (columns || []).map((col) => ({ ...col, wrap: col.wrap ?? true })),
+    [columns],
+  );
+
   const chunks = useMemo(() => {
-    if (!split || !columns?.length) return [columns];
-    return splitTableColumns(columns, { maxDataCols: splitAt });
-  }, [columns, split, splitAt]);
+    if (!split || !wrappedColumns.length) return [wrappedColumns];
+    return splitTableColumns(wrappedColumns, { maxDataCols: splitAt });
+  }, [wrappedColumns, split, splitAt]);
 
   if (!chunks.length || !chunks[0]?.length) {
-    return <DataTable columns={columns || []} data={data} layout={layout} dense={dense} {...rest} />;
+    return (
+      <DataTable
+        columns={wrappedColumns}
+        data={data}
+        layout={layout}
+        dense={dense}
+        allowHorizontalScroll={allowHorizontalScroll}
+        {...rest}
+      />
+    );
   }
 
   if (chunks.length === 1) {
-    return <DataTable columns={chunks[0]} data={data} layout={layout} dense={dense} {...rest} />;
+    return (
+      <DataTable
+        columns={chunks[0]}
+        data={data}
+        layout={layout}
+        dense={dense}
+        allowHorizontalScroll={allowHorizontalScroll}
+        {...rest}
+      />
+    );
   }
 
   return (
@@ -40,7 +63,14 @@ export default function SplitDataTable({
               Columns {i + 1} of {chunks.length}
             </p>
           )}
-          <DataTable columns={chunkCols} data={data} layout={layout} dense={dense} {...rest} />
+          <DataTable
+            columns={chunkCols}
+            data={data}
+            layout={layout}
+            dense={dense}
+            allowHorizontalScroll={allowHorizontalScroll}
+            {...rest}
+          />
         </div>
       ))}
     </div>

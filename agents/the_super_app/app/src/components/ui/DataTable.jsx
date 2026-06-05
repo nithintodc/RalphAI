@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { deltaCellClass, isDeltaColumn } from '../../lib/utils/deltaTone';
 
 export default function DataTable({
   columns,
@@ -26,6 +27,8 @@ export default function DataTable({
     });
   }, [data, sortCol, sortDir, sortable]);
 
+  const sampleRow = sorted[0] || data?.[0];
+
   const handleSort = (key) => {
     if (sortCol === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -36,14 +39,14 @@ export default function DataTable({
   };
 
   const tableClass = (() => {
+    const size = dense ? 'text-xs' : 'text-sm';
     if (allowHorizontalScroll) {
-      return `${dense ? 'text-xs' : 'text-sm'} table-auto w-max max-w-none border-collapse`;
+      return `${size} table-auto w-max max-w-none border-collapse mx-auto`;
     }
-    if (layout === 'auto') return `${dense ? 'text-xs' : 'text-sm'} table-auto w-full max-w-full`;
-    if (layout === 'tight' || layout === 'full') {
-      return `${dense ? 'text-xs' : 'text-sm'} w-full table-fixed`;
+    if (layout === 'full') {
+      return `${size} w-full table-fixed border-collapse`;
     }
-    return `${dense ? 'text-xs' : 'text-sm'} w-full table-fixed`;
+    return `${size} table-auto w-max max-w-full border-collapse mx-auto`;
   })();
 
   const headPad = allowHorizontalScroll
@@ -57,38 +60,40 @@ export default function DataTable({
     const parts = [
       isHeader ? headPad : cellPad,
       'border-b border-[var(--border)]',
-      col.align === 'right' ? 'text-right' : 'text-left',
+      'text-center',
     ];
     const isLabelCol = col.labelCol ?? (colIndex === 0 && col.align !== 'right');
 
     if (allowHorizontalScroll) {
       parts.push('w-[1%]');
       if (isLabelCol) {
-        parts.push('min-w-[3.75rem] max-w-[5.25rem]');
+        parts.push('min-w-[4rem] max-w-[6.5rem]');
       } else {
-        parts.push('min-w-[2.75rem] max-w-[4.25rem]');
+        parts.push('min-w-[3rem] max-w-[5.5rem]');
       }
-      if (isHeader) {
-        parts.push('align-bottom whitespace-normal');
-      } else if (col.wrap || isLabelCol) {
-        parts.push('align-top whitespace-normal break-words [overflow-wrap:anywhere]');
-      } else {
-        parts.push('align-top whitespace-nowrap');
-      }
-    } else {
+      parts.push('align-middle whitespace-normal break-words [overflow-wrap:anywhere]');
+    } else if (layout === 'full') {
       parts.push('min-w-0 overflow-hidden');
       if (isHeader) {
-        parts.push('align-bottom whitespace-normal');
+        parts.push('align-middle whitespace-normal');
         if (isLabelCol) parts.push('w-[22%]');
         else if (col.shrink || col.align === 'right') parts.push('w-[12%]');
       } else if (col.wrap || isLabelCol) {
-        parts.push('align-top whitespace-normal break-words [overflow-wrap:anywhere]');
+        parts.push('align-middle whitespace-normal break-words [overflow-wrap:anywhere]');
         if (isLabelCol) parts.push('w-[22%]');
       } else if (col.shrink || col.align === 'right') {
         parts.push('whitespace-nowrap text-ellipsis');
       } else {
-        parts.push('align-top whitespace-normal break-words [overflow-wrap:anywhere]');
+        parts.push('align-middle whitespace-normal break-words [overflow-wrap:anywhere]');
       }
+    } else {
+      parts.push('whitespace-normal');
+      if (isHeader) {
+        parts.push('align-middle');
+      } else {
+        parts.push('align-middle break-words [overflow-wrap:anywhere]');
+      }
+      if (!col.wrap && !isLabelCol) parts.push('whitespace-nowrap');
     }
 
     if (col.className) parts.push(col.className);
@@ -105,12 +110,12 @@ export default function DataTable({
     ? `max-w-full ${allowHorizontalScroll ? '' : 'overflow-hidden'}`
     : `card p-0 max-w-full ${allowHorizontalScroll ? '' : 'overflow-hidden'}`;
 
-  const scrollX = allowHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden';
+  const scrollX = allowHorizontalScroll || layout !== 'full' ? 'overflow-x-auto' : 'overflow-x-hidden';
 
   return (
     <div className={`${shell} ${allowHorizontalScroll ? 'data-table--scrollable' : ''}`}>
       <div
-        className={`max-w-full ${scrollX} ${maxHeight ? 'overflow-y-auto' : ''}`}
+        className={`max-w-full ${scrollX} ${allowHorizontalScroll ? '' : 'flex justify-center'} ${maxHeight ? 'overflow-y-auto' : ''}`}
         style={maxHeight ? { maxHeight } : {}}
       >
         <table className={tableClass}>
@@ -123,20 +128,8 @@ export default function DataTable({
                   className={colClass(col, true, colIndex)}
                   title={typeof col.label === 'string' ? col.label : undefined}
                 >
-                  <span
-                    className={
-                      allowHorizontalScroll
-                        ? 'table-heading-content table-heading-content--compact'
-                        : 'table-heading-content'
-                    }
-                  >
-                    <span
-                      className={
-                        allowHorizontalScroll
-                          ? 'table-heading-label table-heading-label--compact'
-                          : 'table-heading-label'
-                      }
-                    >
+                  <span className="table-heading-content">
+                    <span className="table-heading-label">
                       {col.label}
                     </span>
                     {sortable && sortCol === col.key && (
@@ -158,21 +151,23 @@ export default function DataTable({
                 className={`border-b border-[var(--border)] last:border-0 transition-colors
                   ${onRowClick ? 'cursor-pointer hover:bg-[var(--surface-2)]' : ''}`}
               >
-                {columns.map((col, colIndex) => (
-                  <td
-                    key={col.key}
-                    className={`${colClass(col, false, colIndex)}
-                      ${col.delta && row[col.key] > 0 ? 'text-[var(--positive)]' : ''}
-                      ${col.delta && row[col.key] < 0 ? 'text-[var(--negative)]' : ''}`}
-                    title={
-                      typeof row[col.key] === 'string' || typeof row[col.key] === 'number'
-                        ? String(row[col.key])
-                        : undefined
-                    }
-                  >
-                    {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
-                  </td>
-                ))}
+                {columns.map((col, colIndex) => {
+                  const showDelta = isDeltaColumn(col, sampleRow);
+                  const deltaCls = showDelta ? deltaCellClass(row[col.key]) : '';
+                  return (
+                    <td
+                      key={col.key}
+                      className={`${colClass(col, false, colIndex)} ${deltaCls}`}
+                      title={
+                        typeof row[col.key] === 'string' || typeof row[col.key] === 'number'
+                          ? String(row[col.key])
+                          : undefined
+                      }
+                    >
+                      {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

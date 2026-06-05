@@ -1,0 +1,449 @@
+{
+  "ran_at": "2026-06-05T11:57:55.901677+00:00",
+  "dry_run": false,
+  "template_profile_id": "b95b84b3-a824-47cf-bfb9-04bd80aef4ec",
+  "folder_id": "289b34cb-e0e8-4128-adc9-855b8406f1f3",
+  "unmapped_total": 62,
+  "created": 62,
+  "skipped": 0,
+  "failed": 0,
+  "results": [
+    {
+      "operator_name": "Alamo Family LLC",
+      "doordash_email": "mcd+alamo@theondemandcompany.com",
+      "profile_id": "bd97fb4a-4543-477e-ab63-6ae5da44e8fd",
+      "profile_name": "Alamo Family LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Awad Holdings Inc.",
+      "doordash_email": "mcd+awadhi@theondemandcompany.com",
+      "profile_id": "0b707147-4f8b-48ca-b40f-e9515cf0c17d",
+      "profile_name": "Awad Holdings Inc.",
+      "status": "created"
+    },
+    {
+      "operator_name": "Back Restaurants Corporation",
+      "doordash_email": "mcd+backrc@theondemandcompany.com",
+      "profile_id": "220e7a56-b276-4426-8c03-0642b3a78478",
+      "profile_name": "Back Restaurants Corporation",
+      "status": "created"
+    },
+    {
+      "operator_name": "Bican Family Restaurants Inc",
+      "doordash_email": "mcd+bican@theondemandcompany.com",
+      "profile_id": "21adca48-bb09-4b20-b9b0-98b96ef167d9",
+      "profile_name": "Bican Family Restaurants Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Capital City / EMCO MGT LLC",
+      "doordash_email": "mcd+ccemcomgtllc@theondemandcompany.com",
+      "profile_id": "8f512365-10bd-4eeb-a00a-57b36bbb9922",
+      "profile_name": "Capital City / EMCO MGT LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Constant Rock LLC",
+      "doordash_email": "mcd+constantrockllc@theondemandcompany.com",
+      "profile_id": "feb7cba6-f051-4856-af68-847922017da7",
+      "profile_name": "Constant Rock LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "DH Cars Inc",
+      "doordash_email": "mcd+dhcarsi@theondemandcompany.com",
+      "profile_id": "2aaf9437-b50f-4921-a8d4-687c3e75fc66",
+      "profile_name": "DH Cars Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "DINKAR",
+      "doordash_email": "mcd+dinkar@theondemandcompany.com",
+      "profile_id": "f16d83a5-e174-46be-907c-dd0a0c025a03",
+      "profile_name": "DINKAR",
+      "status": "created"
+    },
+    {
+      "operator_name": "Divine Favor, LLC",
+      "doordash_email": "mcd+divine@theondemandcompany.com",
+      "profile_id": "5d617088-bed8-4422-b12b-e701cff3da35",
+      "profile_name": "Divine Favor, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "FF&G LC",
+      "doordash_email": "mcd+ffglc@theondemandcompany.com",
+      "profile_id": "227dec9f-c716-4079-b2f1-a7839eea8518",
+      "profile_name": "FF&G LC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Glennhaven / Third Generation Management",
+      "doordash_email": "mcd+glennhaven@theondemandcompany.com",
+      "profile_id": "1cee4b8f-f15c-4bda-81b7-f121bba8fc16",
+      "profile_name": "Glennhaven / Third Generation Management",
+      "status": "created"
+    },
+    {
+      "operator_name": "Goodwin Enterprise, LLC",
+      "doordash_email": "mcd+goodwin@theondemandcompany.com",
+      "profile_id": "e281c98b-04ed-4828-93f0-9ee303a77259",
+      "profile_name": "Goodwin Enterprise, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Grayco Mgt",
+      "doordash_email": "mcd+grayco@theondemandcompany.com",
+      "profile_id": "0c6510cd-c6f5-4aa5-91a4-07674616a660",
+      "profile_name": "Grayco Mgt",
+      "status": "created"
+    },
+    {
+      "operator_name": "Greentree Consulting, Inc",
+      "doordash_email": "mcd+greentreeci@theondemandcompany.com",
+      "profile_id": "c1e279f1-278b-4b64-8355-aa75f099a205",
+      "profile_name": "Greentree Consulting, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Helion Next, LLC",
+      "doordash_email": "mcd+helion@theondemandcompany.com",
+      "profile_id": "aee1455c-b56a-4696-bb53-7cf68a6f8783",
+      "profile_name": "Helion Next, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Herb's Place Inc",
+      "doordash_email": "mcd+herbs@theondemandcompany.com",
+      "profile_id": "ebbc7342-67d0-4ec1-9ee9-795279d27992",
+      "profile_name": "Herb's Place Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Hurt & Hurt Restaurants Inc",
+      "doordash_email": "mcd+hurtahurt@theondemandcompany.com",
+      "profile_id": "2fd6cad7-7662-4b6f-8f64-82a9535570f5",
+      "profile_name": "Hurt & Hurt Restaurants Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Huston-Lynn Enterprises, Inc",
+      "doordash_email": "mcd+hustonlynnei@theondemandcompany.com",
+      "profile_id": "f5f41ea0-abc7-4420-bbf7-00a4541540ee",
+      "profile_name": "Huston-Lynn Enterprises, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Ice Age Management, Inc",
+      "doordash_email": "mcd+iceagemgmtinc@theondemandcompany.com",
+      "profile_id": "e5fa2c97-a86e-4af9-a45c-f73aaeee1ce7",
+      "profile_name": "Ice Age Management, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "In His Time 23, LLC",
+      "doordash_email": "mcd+inhistime23llc@theondemandcompany.com",
+      "profile_id": "00615eab-88e6-4cf5-b2fb-a00c8032fdfa",
+      "profile_name": "In His Time 23, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Ishida Enterprises Inc.",
+      "doordash_email": "mcd+ishidaei@theondemandcompany.com",
+      "profile_id": "01b5e163-65cd-4dde-aa3e-2c76ee95eb2e",
+      "profile_name": "Ishida Enterprises Inc.",
+      "status": "created"
+    },
+    {
+      "operator_name": "Jaar Company",
+      "doordash_email": "mcd+jaarcompany@theondemandcompany.com",
+      "profile_id": "b5ffc007-916f-43fa-a625-317bbf1d4324",
+      "profile_name": "Jaar Company",
+      "status": "created"
+    },
+    {
+      "operator_name": "Jams Bites, LLC",
+      "doordash_email": "mcd+jamsbites@theondemandcompany.com",
+      "profile_id": "18b0628d-5d19-40c4-9214-fa336d8a482e",
+      "profile_name": "Jams Bites, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "JFLA Management Company, LLC",
+      "doordash_email": "mcd+jfla@theondemandcompany.com",
+      "profile_id": "9f8e5660-08b3-4637-a295-bed93ee5479f",
+      "profile_name": "JFLA Management Company, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "JS Restaurant Management, Inc",
+      "doordash_email": "mcd+schutz@theondemandcompany.com",
+      "profile_id": "15a4ab7a-b05b-4bba-8829-09cfa2963b06",
+      "profile_name": "JS Restaurant Management, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "JS&J Restaurant Inc",
+      "doordash_email": "mcd+jsjri@theondemandcompany.com",
+      "profile_id": "a98ec72d-2f10-4b7f-b859-595ab18cef45",
+      "profile_name": "JS&J Restaurant Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Kipco Restaurants LLC",
+      "doordash_email": "mcd+kipco@theondemandcompany.com",
+      "profile_id": "e5400448-ca70-4997-8e2a-59eb381247ce",
+      "profile_name": "Kipco Restaurants LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Klair Management Enterprises INC.",
+      "doordash_email": "mcd+klairmgmti@theondemandcompany.com",
+      "profile_id": "931f8e18-54bc-4de1-91e4-50d017a022f4",
+      "profile_name": "Klair Management Enterprises INC.",
+      "status": "created"
+    },
+    {
+      "operator_name": "Laurino 11 Corp",
+      "doordash_email": "mcd+laurino11corp@theondemandcompany.com",
+      "profile_id": "185a691d-a75a-45a1-a785-31b9064bb30e",
+      "profile_name": "Laurino 11 Corp",
+      "status": "created"
+    },
+    {
+      "operator_name": "Ledwidge GP Management LLC",
+      "doordash_email": "mcd+ledwidgegp@theondemandcompany.com",
+      "profile_id": "1700b66b-46ec-46c5-998c-739b673f837d",
+      "profile_name": "Ledwidge GP Management LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Legacy Journey Restaurants, LLC",
+      "doordash_email": "mcd+legacyjrllc@theondemandcompany.com",
+      "profile_id": "fb3fe296-7960-4d46-8b34-5ce66ba9f206",
+      "profile_name": "Legacy Journey Restaurants, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Lutito McDonalds",
+      "doordash_email": "mcd+lutitomcd@theondemandcompany.com",
+      "profile_id": "d49f7688-b7f6-40e3-8a0f-855a75e3bbe0",
+      "profile_name": "Lutito McDonalds",
+      "status": "created"
+    },
+    {
+      "operator_name": "Mann Ent, LLC",
+      "doordash_email": "mcd+mannellc@theondemandcompany.com",
+      "profile_id": "39c6a148-3c63-415c-bbc3-21cb62ba4315",
+      "profile_name": "Mann Ent, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Mao Enterprises LLC",
+      "doordash_email": "mcd+mao@theondemandcompany.com",
+      "profile_id": "fd903a13-6fbe-4cd0-b118-3bc208f8e0b3",
+      "profile_name": "Mao Enterprises LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "McEnaney Family McDonalds",
+      "doordash_email": "mcd+mcenaneyfm@theondemandcompany.com",
+      "profile_id": "83f81207-f13d-4801-b36f-9bcfe7dfbb53",
+      "profile_name": "McEnaney Family McDonalds",
+      "status": "created"
+    },
+    {
+      "operator_name": "McPartners II, LLC",
+      "doordash_email": "mcd+mcpartnersiillc@theondemandcompany.com",
+      "profile_id": "7943aea1-3f2b-4bbe-b9c2-ea94bbdeea5c",
+      "profile_name": "McPartners II, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Merle Keiser",
+      "doordash_email": "mcd+merlekeiser@theondemandcompany.com",
+      "profile_id": "bc7a1fc6-fdb7-469c-a203-8bde259c367c",
+      "profile_name": "Merle Keiser",
+      "status": "created"
+    },
+    {
+      "operator_name": "Mitchell Group Holding, LLC",
+      "doordash_email": "mcd+mitchellgroup@theondemandcompany.com",
+      "profile_id": "95e825c4-eab2-43f9-9e73-e7a1f1eea4c6",
+      "profile_name": "Mitchell Group Holding, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Monfort LLC",
+      "doordash_email": "mcd+monfortllc@theondemandcompany.com",
+      "profile_id": "bd3609f1-6061-43ad-8e13-2545d61be466",
+      "profile_name": "Monfort LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Muller Management",
+      "doordash_email": "mcd+mullermgmt@theondemandcompany.com",
+      "profile_id": "40f825a3-410e-4df3-8f91-a019542ea21a",
+      "profile_name": "Muller Management",
+      "status": "created"
+    },
+    {
+      "operator_name": "Murguia Wong Services, Inc.",
+      "doordash_email": "mcd+murguiawsi@theondemandcompany.com",
+      "profile_id": "7fea5783-b14f-4d67-9012-364a6c322c92",
+      "profile_name": "Murguia Wong Services, Inc.",
+      "status": "created"
+    },
+    {
+      "operator_name": "Mya Smith Management, Inc.",
+      "doordash_email": "mcd+myasmithmi@theondemandcompany.com",
+      "profile_id": "557496b3-3cee-4b79-956c-631b105e71c8",
+      "profile_name": "Mya Smith Management, Inc.",
+      "status": "created"
+    },
+    {
+      "operator_name": "Nwagbo Management Corp",
+      "doordash_email": "mcd+nwagbomc@theondemandcompany.com",
+      "profile_id": "3a47421d-471b-4905-8e86-6f393466dfb5",
+      "profile_name": "Nwagbo Management Corp",
+      "status": "created"
+    },
+    {
+      "operator_name": "Orbon Enterprises, LLC",
+      "doordash_email": "mcd+orbonentllc@theondemandcompany.com",
+      "profile_id": "fe8bb923-f08e-48c4-af28-056c0cf1d52c",
+      "profile_name": "Orbon Enterprises, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Overby Leadership",
+      "doordash_email": "mcd+overby@theondemandcompany.com",
+      "profile_id": "58ff9c8f-91a5-437e-b255-eb390a8a679c",
+      "profile_name": "Overby Leadership",
+      "status": "created"
+    },
+    {
+      "operator_name": "P.R. Pernecky Management",
+      "doordash_email": "mcd+pernecky@theondemandcompany.com",
+      "profile_id": "00e60786-aa7b-4304-ad80-bf84de25e1e5",
+      "profile_name": "P.R. Pernecky Management",
+      "status": "created"
+    },
+    {
+      "operator_name": "Palacios Enterprises, Inc",
+      "doordash_email": "mcd+palaciosei@theondemandcompany.com",
+      "profile_id": "f930381f-9c1d-4da7-8974-6ab9f14cb4eb",
+      "profile_name": "Palacios Enterprises, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "PPR Foods LLC",
+      "doordash_email": "mcd+pprfllc@theondemandcompany.com",
+      "profile_id": "6b862395-dcc7-4f26-a37c-90d0cf5bdbce",
+      "profile_name": "PPR Foods LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Quijano Management, Inc.",
+      "doordash_email": "mcd+quijanomi@theondemandcompany.com",
+      "profile_id": "739401a0-a94b-4b78-8ee1-8cec4ae8452f",
+      "profile_name": "Quijano Management, Inc.",
+      "status": "created"
+    },
+    {
+      "operator_name": "RFO Inc",
+      "doordash_email": "mcd+rfoinc@theondemandcompany.com",
+      "profile_id": "1b48d661-e49c-4ef2-88fb-7b79c5506776",
+      "profile_name": "RFO Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Rising Tide QSC",
+      "doordash_email": "mcd+risingtideqsc@theondemandcompany.com",
+      "profile_id": "d0d154d1-3193-474c-a634-fa3a52605758",
+      "profile_name": "Rising Tide QSC",
+      "status": "created"
+    },
+    {
+      "operator_name": "RMC",
+      "doordash_email": "mcd+rmc@theondemandcompany.com",
+      "profile_id": "726b0891-0cad-41a7-b1b1-4a10646ab8f7",
+      "profile_name": "RMC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Roco Food Management LLC",
+      "doordash_email": "mcd+roco@theondemandcompany.com",
+      "profile_id": "ab6cb970-632c-49bc-8cc1-ca58f13c2615",
+      "profile_name": "Roco Food Management LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Salex Q, Inc./Marlex Q, Inc./Larae Q,",
+      "doordash_email": "mcd+sqmqlq@theondemandcompany.com",
+      "profile_id": "7856189a-0327-472f-a4c2-f99dc1855081",
+      "profile_name": "Salex Q, Inc./Marlex Q, Inc./Larae Q,",
+      "status": "created"
+    },
+    {
+      "operator_name": "SMG Restaurants NC",
+      "doordash_email": "mcd+smgrnc@theondemandcompany.com",
+      "profile_id": "d39d6735-034a-4f21-abed-a065827f8431",
+      "profile_name": "SMG Restaurants NC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Soudagar Enterprises, LLC",
+      "doordash_email": "mcd+soudagarellc@theondemandcompany.com",
+      "profile_id": "2704ef02-25da-43c6-8211-edd671adeb0c",
+      "profile_name": "Soudagar Enterprises, LLC",
+      "status": "created"
+    },
+    {
+      "operator_name": "Stanton Enterprise",
+      "doordash_email": "mcd+stantonent@theondemandcompany.com",
+      "profile_id": "ce42c3e3-2fa0-4bb7-af06-1ca05bd4e72e",
+      "profile_name": "Stanton Enterprise",
+      "status": "created"
+    },
+    {
+      "operator_name": "Tajeevan Corp",
+      "doordash_email": "mcd+tajeevancorp@theondemandcompany.com",
+      "profile_id": "6ae80ef9-b556-410e-b925-87feafaaa6ed",
+      "profile_name": "Tajeevan Corp",
+      "status": "created"
+    },
+    {
+      "operator_name": "Tasem, Inc",
+      "doordash_email": "mcd+tasem@theondemandcompany.com",
+      "profile_id": "922ad0ad-1e6a-4e26-bab0-1a611bf14c20",
+      "profile_name": "Tasem, Inc",
+      "status": "created"
+    },
+    {
+      "operator_name": "Tri Arch Management Co.",
+      "doordash_email": "mcd+triarchmc@theondemandcompany.com",
+      "profile_id": "2bb5859d-876d-49bc-8e0f-691bfdf3e7bd",
+      "profile_name": "Tri Arch Management Co.",
+      "status": "created"
+    },
+    {
+      "operator_name": "TSG Management Group",
+      "doordash_email": "mcd+tsgmgmtg@theondemandcompany.com",
+      "profile_id": "f2d89784-fc19-4d53-be38-b5f4ebef1171",
+      "profile_name": "TSG Management Group",
+      "status": "created"
+    },
+    {
+      "operator_name": "Whitt inc/ROEI LLC",
+      "doordash_email": "mcd+whittincroeillc@theondemandcompany.com",
+      "profile_id": "f5a92b73-1f5a-4af1-8014-0242dc97e2d1",
+      "profile_name": "Whitt inc/ROEI LLC",
+      "status": "created"
+    }
+  ],
+  "mapping_json": "/Users/nithi/Desktop/Claude-Projects/TODC-Projects/RalphAI/operator_multilogin_mapping.json",
+  "mapping_csv": "/Users/nithi/Desktop/Claude-Projects/TODC-Projects/RalphAI/operator_multilogin_mapping.csv",
+  "operators_mapped": 110
+}

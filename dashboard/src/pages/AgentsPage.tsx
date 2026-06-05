@@ -8,26 +8,29 @@ import {
   BarChart3,
   Skull,
   Activity,
+  Globe,
 } from "lucide-react";
 import { agentRunRoute } from "../config/agentRoutes";
+import { REPORTING_BROWSER_USE_FORKS } from "../config/reportingBrowserUseForks";
 
 const agents = [
   {
     id: "data-run",
     name: "Data Run",
-    desc: "Sequential report downloader by selected operators (fresh browser session per operator).",
+    desc: "DoorDash report zip downloader — pick operators, report types, and date range.",
     icon: Bot,
     status: "ready",
     color: "from-sky-500 to-cyan-700",
     inputs: [
       "Operators (multi-select) from Airtable account directory",
-      "Always pulls both financial and marketing reports",
-      "DoorDash credentials auto-loaded from Airtable Account Information",
+      "Report types: Financial, Marketing, Operations, Sales, Product mix, Refund",
+      "From / to dates (same range for all selected reports)",
+      "DoorDash credentials from Airtable Account Information",
     ],
     outputs: [
-      "Downloaded report files under data/runs/data_run/",
-      "Per-operator status: success | no_files | failed",
-      "Run summary with selected file count per operator",
+      "Zip files under data/DataRun_{timestamp}_{operator}/",
+      "One fresh browser session per operator",
+      "Per-operator status: success | partial | no_files | failed",
     ],
   },
   {
@@ -195,6 +198,25 @@ const agents = [
     inputs: ["Static HTML/Assets"],
     outputs: ["HTTP Server UI"],
   },
+  ...REPORTING_BROWSER_USE_FORKS.map((fork) => ({
+    id: fork.id,
+    name: `RBU — ${fork.shortLabel}`,
+    desc: fork.desc,
+    icon: Globe,
+    status: "stub" in fork && fork.stub ? "legacy" : "ready",
+    color: fork.color,
+    inputs: [
+      "DoorDash email/password (form or .env)",
+      fork.id === "reporting_browser_use_browser"
+        ? "BROWSER_USE_API_KEY (.env)"
+        : "GEMINI_API_KEY (.env)",
+      "Optional: Multilogin, CDP, FORCE_FULL_RUN (.env)",
+    ],
+    outputs: [
+      "Full main.py pipeline for this fork directory",
+      "Downloads + combined analysis + campaign execution",
+    ],
+  })),
 ];
 
 export function AgentsPage() {

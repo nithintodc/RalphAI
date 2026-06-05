@@ -1,26 +1,20 @@
 import { useMemo } from 'react';
 import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
-import MatrixPivotTable from '../../components/ui/MatrixPivotTable';
 import SplitDataTable from '../../components/ui/SplitDataTable';
 import { fmt } from '../../lib/utils/formatters';
 import { parseDate, getLastYearDates, isInRange } from '../../lib/utils/dateUtils';
 import { growthPct, round, safeDivide } from '../../lib/utils/safeMath';
 import {
-  pivotProductByStore,
-  pivotStoreByProduct,
   pivotOneWaySum,
   pickProductColumn,
-  pickColumnByRegexOrder,
+  pickMetricColumn,
   pickErrorChargeColumn,
   pickProductMixDateColumn,
+  pickProductMixQtyColumn,
   isCoarseProductMixDates,
-  normalizeProductMixStoreRows,
-  sortPivotRows,
 } from '../../lib/utils/opsProductPivot';
-import { buildDdStoreIdToMerchantMap } from '../../lib/utils/storeCatalog';
 
-const QTY_PATTERNS = [/units?\s*sold/i, /quantity/i, /\bqty\b/i, /orders/i, /count/i];
 function toNum(v) {
   if (v == null) return 0;
   const n = Number(String(v).replace(/[$,]/g, ''));
@@ -35,13 +29,25 @@ function buildOneWayTable(keys, values) {
 }
 
 /** ceil(n * pct), at least 1. */
-function topCount(n, pct = 0.05) {
+function slicePct(n, pct = 0.05) {
   if (!n) return 0;
   return Math.max(1, Math.ceil(n * pct));
 }
 
+function topGrowthRows(rows, pct = 0.10) {
+  const eligible = rows.filter((p) => p.pre > 0);
+  const n = slicePct(eligible.length, pct);
+  return [...eligible].sort((a, b) => b.growthPct - a.growthPct).slice(0, n);
+}
+
+function decliningGrowthRows(rows, pct = 0.10) {
+  const eligible = rows.filter((p) => p.pre > 0);
+  const n = slicePct(eligible.length, pct);
+  return [...eligible].sort((a, b) => a.growthPct - b.growthPct).slice(0, n);
+}
+
 export default function ProductMixScreen() {
-  const { ddProductMix, ddFinancial } = useDataStore();
+  const { ddProductMix } = useDataStore();
   const config = useConfigStore();
 
   const columns = useMemo(
@@ -49,26 +55,13 @@ export default function ProductMixScreen() {
     [ddProductMix],
   );
 
-  const pmixStores = useMemo(() => {
-    const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(ddFinancial);
-    return normalizeProductMixStoreRows(ddProductMix || [], columns, ddStoreIdToMerchant);
-  }, [ddProductMix, columns, ddFinancial]);
+  const pmixRows = ddProductMix || [];
 
-  const pmixRows = pmixStores.rows;
-  const pmixStoreCol = pmixStores.storeCol;
-  const labelByKey = pmixStores.labelByKey;
-
-  const productStorePivot = useMemo(
-    () => pivotProductByStore(pmixRows, columns, { maxStoreCols: 26, storeCol: pmixStoreCol }),
-    [pmixRows, columns, pmixStoreCol],
+  const productCol = useMemo(() => pickProductColumn(columns), [columns]);
+  const valueCol = useMemo(
+    () => pickMetricColumn(pmixRows, columns, [productCol].filter(Boolean)),
+    [pmixRows, columns, productCol],
   );
-  const storeProductPivot = useMemo(
-    () => pivotStoreByProduct(pmixRows, columns, { maxProductCols: 26, storeCol: pmixStoreCol }),
-    [pmixRows, columns, pmixStoreCol],
-  );
-
-  const valueCol = productStorePivot.valueCol || storeProductPivot.valueCol;
-  const productCol = productStorePivot.productCol || storeProductPivot.productCol;
 
   const byProduct = useMemo(
     () => pivotOneWaySum(pmixRows, productCol, valueCol),
@@ -117,39 +110,22 @@ export default function ProductMixScreen() {
       .sort((a, b) => b.post - a.post);
   }, [pmixRows, coarseDates, dateCol, productCol, valueCol, config]);
 
-  const productStoreMatrix = useMemo(() => {
-    if (!productStorePivot.rowProducts?.length || !productStorePivot.colStores?.length) return null;
-    return sortPivotRows(
-      {
-        rowHeaderLabel: 'Product',
-        rowKeys: productStorePivot.rowProducts,
-        colKeys: productStorePivot.colStores,
-        matrix: productStorePivot.matrix,
-      },
-      { by: 'total', dir: 'desc' },
-    );
-  }, [productStorePivot]);
-
-  const storeProductMatrix = useMemo(() => {
-    if (!storeProductPivot.rowStores?.length || !storeProductPivot.colProducts?.length) return null;
-    return sortPivotRows(
-      {
-        rowHeaderLabel: 'Store',
-        rowKeys: storeProductPivot.rowStores,
-        colKeys: storeProductPivot.colProducts,
-        matrix: storeProductPivot.matrix,
-      },
-      { by: 'total', dir: 'desc' },
-    );
-  }, [storeProductPivot]);
-
   const byProductRows = useMemo(() => buildOneWayTable(byProduct.keys, byProduct.values), [byProduct]);
+
+  const topGrowthProductRows = useMemo(
+    () => (productPeriods ? topGrowthRows(productPeriods) : []),
+    [productPeriods],
+  );
+  const decliningProductRows = useMemo(
+    () => (productPeriods ? decliningGrowthRows(productPeriods) : []),
+    [productPeriods],
+  );
 
   // Per-product aggregation for the top-5% highlight tables.
   const productAgg = useMemo(() => {
     const aggProductCol = productCol || pickProductColumn(columns);
     const salesCol = valueCol;
-    const qtyCol = pickColumnByRegexOrder(columns, QTY_PATTERNS);
+    const qtyCol = pickProductMixQtyColumn(columns);
     const errorCol = pickErrorChargeColumn(columns);
     if (!aggProductCol || !salesCol) return [];
     const map = new Map();
@@ -164,7 +140,7 @@ export default function ProductMixScreen() {
     }
     return [...map.values()].map((p) => ({
       ...p,
-      aov: p.qty > 0 ? p.sales / p.qty : null,
+      aov: p.qty > 0 ? round(safeDivide(p.sales, p.qty), 2) : null,
       errorChargePct: p.sales > 0 ? round(safeDivide(p.errorCharges, p.sales) * 100, 2) : null,
     }));
   }, [pmixRows, columns, productCol, valueCol]);
@@ -177,19 +153,19 @@ export default function ProductMixScreen() {
 
   const topSellingRows = useMemo(() => {
     const sorted = [...productAgg].sort((a, b) => b.sales - a.sales);
-    return sorted.slice(0, topCount(sorted.length));
+    return sorted.slice(0, slicePct(sorted.length));
   }, [productAgg]);
 
   const topAovRows = useMemo(() => {
     const withAov = productAgg.filter((p) => p.aov != null);
     const sorted = withAov.sort((a, b) => b.aov - a.aov);
-    return sorted.slice(0, topCount(sorted.length));
+    return sorted.slice(0, slicePct(sorted.length));
   }, [productAgg]);
 
   const topErrorChargeRows = useMemo(() => {
     const eligible = productAgg.filter((p) => p.sales > 0 && p.errorChargePct != null);
     const sorted = [...eligible].sort((a, b) => b.errorChargePct - a.errorChargePct);
-    return sorted.slice(0, topCount(sorted.length));
+    return sorted.slice(0, slicePct(sorted.length));
   }, [productAgg]);
 
   if (!ddProductMix || !ddProductMix.length) {
@@ -201,17 +177,7 @@ export default function ProductMixScreen() {
     );
   }
 
-  const name = String(valueCol || '').toLowerCase();
-  const money = /sales|revenue|payout|amount|fee|cost|price|usd|\$/.test(name);
-  const formatCell = (v) => {
-    if (v == null || v === 0) return '—';
-    if (money) return fmt.usd2(v);
-    if (Math.abs(v) >= 1000) return fmt.int(v);
-    return Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
-  };
-
   const valueLabel = valueCol ? `Total (${valueCol})` : 'Total';
-  const lineCount = ddProductMix.length.toLocaleString();
 
   const productCell = (v) => (
     <span className="block max-w-[min(52vw,26rem)] truncate font-medium" title={String(v ?? '')}>
@@ -266,11 +232,10 @@ export default function ProductMixScreen() {
     { key: 'sales', label: 'Gross sales', align: 'right', sortable: true, render: (v) => fmt.usd(v || 0) },
   ];
 
-  const productPeriodCols = [
+  const growthMoverCols = [
     productColumnSpec,
     { key: 'pre', label: 'Pre', align: 'right', sortable: true, render: (v) => fmt.usd(v || 0) },
     { key: 'post', label: 'Post', align: 'right', sortable: true, render: (v) => fmt.usd(v || 0) },
-    { key: 'postLY', label: 'LY Post', align: 'right', sortable: true, render: (v) => fmt.usd(v || 0) },
     { key: 'growthPct', label: 'Growth %', align: 'right', sortable: true, delta: true, render: (v) => fmt.delta(v || 0) },
   ];
 
@@ -314,65 +279,36 @@ export default function ProductMixScreen() {
         </div>
       )}
 
-      {productStoreMatrix && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Product × Store</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              {lineCount} line items · sorted by highest total first
-              {valueCol && (
-                <>
+      {(topGrowthProductRows.length > 0 || decliningProductRows.length > 0) && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {topGrowthProductRows.length > 0 && (
+            <section className="space-y-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--text)]">Top 10% — highest growth</h3>
+                <p className="text-xs text-[var(--text-subtle)] mt-0.5">
+                  {topGrowthProductRows.length} of {productPeriods.length} products · gross sales Pre → Post
                   {' · '}
-                  Values (Σ): <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{valueCol}</code>
-                </>
-              )}
-            </p>
-          </div>
-          <MatrixPivotTable
-            rowHeaderLabel={productStoreMatrix.rowHeaderLabel}
-            rowKeys={productStoreMatrix.rowKeys}
-            colKeys={productStoreMatrix.colKeys}
-            colTitles={productStoreMatrix.colKeys.map((k) => (k === 'Other' ? 'Other' : (labelByKey.get(k) || k)))}
-            matrix={productStoreMatrix.matrix}
-            formatCell={formatCell}
-            maxHeight="min(55vh, 480px)"
-          />
-        </section>
+                  dates from <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{dateCol}</code>
+                </p>
+              </div>
+              <SplitDataTable columns={growthMoverCols} data={topGrowthProductRows} maxHeight="min(50vh, 420px)" {...tableProps} />
+            </section>
+          )}
+          {decliningProductRows.length > 0 && (
+            <section className="space-y-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--text)]">Declining 10% — largest drops</h3>
+                <p className="text-xs text-[var(--text-subtle)] mt-0.5">
+                  {decliningProductRows.length} of {productPeriods.length} products · sorted by lowest growth %
+                </p>
+              </div>
+              <SplitDataTable columns={growthMoverCols} data={decliningProductRows} maxHeight="min(50vh, 420px)" {...tableProps} />
+            </section>
+          )}
+        </div>
       )}
 
-      {storeProductMatrix && (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">Store × Product</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              Top products per store · sorted by highest total first
-            </p>
-          </div>
-          <MatrixPivotTable
-            rowHeaderLabel={storeProductMatrix.rowHeaderLabel}
-            rowKeys={storeProductMatrix.rowKeys}
-            colKeys={storeProductMatrix.colKeys}
-            rowTitles={storeProductMatrix.rowKeys.map((k) => labelByKey.get(k) || k)}
-            matrix={storeProductMatrix.matrix}
-            formatCell={formatCell}
-            maxHeight="min(55vh, 480px)"
-          />
-        </section>
-      )}
-
-      {productPeriods?.length > 0 ? (
-        <section className="space-y-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--text)]">By product — Pre vs Post &amp; YoY</h3>
-            <p className="text-xs text-[var(--text-subtle)] mt-0.5">
-              Gross sales per product across periods · Growth % = Pre → Post
-              {' · '}
-              dates from <code className="text-[10px] bg-[var(--surface-2)] px-1 rounded">{dateCol}</code>
-            </p>
-          </div>
-          <SplitDataTable columns={productPeriodCols} data={productPeriods} maxHeight="min(60vh, 520px)" {...tableProps} />
-        </section>
-      ) : byProductRows.length > 0 && (
+      {productPeriods?.length > 0 ? null : byProductRows.length > 0 && (
         <section className="space-y-2">
           <div>
             <h3 className="text-sm font-semibold text-[var(--text)]">By product (total)</h3>
@@ -387,7 +323,7 @@ export default function ProductMixScreen() {
         </section>
       )}
 
-      {!productStoreMatrix && !storeProductMatrix && !byProductRows.length && !productPeriods?.length && (
+      {!topSellingRows.length && !topGrowthProductRows.length && !byProductRows.length && (
         <div className="card py-8 text-center text-sm text-[var(--text-muted)]">
           Could not build product mix tables from this export.
         </div>

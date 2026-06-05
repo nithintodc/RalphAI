@@ -2,12 +2,28 @@ export const fmt = {
   usd: (v) => '$' + Math.round(v).toLocaleString('en-US'),
   usd2: (v) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   usdK: (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(0) + 'K' : '$' + Math.round(v),
+  dec2: (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   int: (v) => Math.round(v).toLocaleString('en-US'),
   pct: (v) => Number(v).toFixed(1) + '%',
   pct0: (v) => Math.round(v) + '%',
   x: (v) => Number(v).toFixed(2) + '×',
   delta: (v) => (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%',
 };
+
+/** UI cell formatter by value kind (usd, usd2, int, pct, roas, dec2). */
+export function formatByKind(kind, v) {
+  if (v == null || (typeof v === 'number' && Number.isNaN(v))) return '—';
+  switch (kind) {
+    case 'usd': return fmt.usd(v);
+    case 'usd2': return fmt.usd2(v);
+    case 'num2': return fmt.dec2(v);
+    case 'dec2': return fmt.dec2(v);
+    case 'int': return fmt.int(v);
+    case 'pct': return fmt.pct(v);
+    case 'roas': return fmt.x(v);
+    default: return String(v);
+  }
+}
 
 export function formatValue(v, format) {
   if (v == null || isNaN(v)) return '-';

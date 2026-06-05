@@ -2,16 +2,7 @@ import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
 import { safeDivide, round } from '../utils/safeMath';
 import { assignBucket, BUCKET_RANGES, classifyOrder, sumPromoDiscountsFromRows } from './buckets';
 
-const DD_SLOTS = [
-  { name: 'Overnight', min: 0, max: 299 },
-  { name: 'Breakfast', min: 300, max: 659 },
-  { name: 'Lunch', min: 660, max: 839 },
-  { name: 'Afternoon', min: 840, max: 959 },
-  { name: 'Dinner', min: 960, max: 1199 },
-  { name: 'Late Night', min: 1200, max: 1439 },
-];
-
-const UE_SLOTS = [
+const SLOT_RANGES = [
   { name: 'Overnight', min: 0, max: 299 },
   { name: 'Breakfast', min: 300, max: 659 },
   { name: 'Lunch', min: 660, max: 839 },
@@ -19,6 +10,9 @@ const UE_SLOTS = [
   { name: 'Dinner', min: 1020, max: 1199 },
   { name: 'Late Night', min: 1200, max: 1439 },
 ];
+
+const DD_SLOTS = SLOT_RANGES;
+const UE_SLOTS = SLOT_RANGES;
 
 export const SLOT_NAMES = ['Overnight', 'Breakfast', 'Lunch', 'Afternoon', 'Dinner', 'Late Night'];
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

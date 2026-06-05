@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-
 export type AccountOperator = {
   business_name: string;
   operator_id: string;

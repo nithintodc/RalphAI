@@ -1,8 +1,12 @@
 import { parseDate, minMaxDates } from '../utils/dateUtils';
 import { toNum } from '../utils/safeMath';
+import { FINANCIAL_ORDER_TIME_COL, findExactColumn, isPresentTimeValue } from '../constants/orderTimeColumns';
 
-const DATE_COLS = ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Date', 'date', 'Timestamp'];
-const TIME_COLS = ['Timestamp local time', 'Timestamp Local Time', 'timestamp local time', 'Order received local time', 'Order Received Local Time'];
+const TXN_DATE_COLS = ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Timestamp UTC date', 'Date', 'date', 'Timestamp'];
+
+function pickDateCol(columns) {
+  return findCol(columns, ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Date', 'date', 'Timestamp']);
+}
 const MERCHANT_STORE_COLS = ['Merchant store ID', 'Merchant Store ID'];
 const DD_STORE_ID_COLS = ['Store ID', 'store ID', 'DoorDash store ID', 'Doordash store ID'];
 const STORE_COLS = [...MERCHANT_STORE_COLS, ...DD_STORE_ID_COLS];
@@ -74,8 +78,9 @@ function uniqueCount(rows, accessor) {
 
 export function normalizeDdFinancial(parsed) {
   const { data, columns } = parsed;
-  const dateCol = findCol(columns, DATE_COLS);
-  const timeCol = findCol(columns, TIME_COLS);
+  const dateCol = pickDateCol(columns);
+  const txnDateCol = findCol(columns, TXN_DATE_COLS);
+  const orderReceivedTimeCol = findExactColumn(columns, FINANCIAL_ORDER_TIME_COL);
   const merchantStoreCol = findCol(columns, MERCHANT_STORE_COLS);
   const ddStoreIdCol = findCol(columns, DD_STORE_ID_COLS, {
     exclude: ['merchant store id'],
@@ -115,11 +120,15 @@ export function normalizeDdFinancial(parsed) {
     { key: 'storeName', count: storeNameCount, rank: 1 },
   ];
   candidates.sort((a, b) => (b.count - a.count) || (b.rank - a.rank));
-  const primaryStoreKey = candidates[0]?.key || 'merchantStoreId';
+  const primaryStoreKey = merchantCount > 0 ? 'merchantStoreId' : (candidates[0]?.key || 'merchantStoreId');
 
   return data
     .map(row => {
-      const date = dateCol ? parseDate(row[dateCol]) : null;
+      let date = dateCol ? parseDate(row[dateCol]) : null;
+      if (!date && txnDateCol) date = parseDate(row[txnDateCol]);
+      const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
+      if (!isPresentTimeValue(orderReceivedTime)) return null;
+      const time = orderReceivedTime;
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';
       const ddStoreId = ddStoreIdCol ? sanitizeStoreId(row[ddStoreIdCol]) : '';
       const storeName = storeNameCol
@@ -134,16 +143,17 @@ export function normalizeDdFinancial(parsed) {
             ? ddStoreId
             : storeName
       ) || '';
-      const storeId = primaryStoreValue || merchantStoreId || ddStoreId || (storeCol ? sanitizeStoreId(row[storeCol]) : null) || storeName;
+      const storeId = merchantStoreId || ddStoreId || primaryStoreValue || (storeCol ? sanitizeStoreId(row[storeCol]) : null) || storeName;
       if (!date || !storeId) return null;
       return {
         date,
-        time: timeCol ? row[timeCol] : null,
+        time,
+        orderReceivedTime,
         storeId,
         merchantStoreId,
         ddStoreId,
         storeName,
-        orderId: orderCol ? String(row[orderCol] || '') : null,
+        orderId: orderCol ? String(row[orderCol] || '').trim().toUpperCase() : null,
         subtotal: subtotalCol ? toNum(row[subtotalCol]) : 0,
         netTotal: netTotalCol ? toNum(row[netTotalCol]) : 0,
         marketingFees: mktFeeCol ? toNum(row[mktFeeCol]) : 0,

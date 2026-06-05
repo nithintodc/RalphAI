@@ -1,3 +1,5 @@
+import { REPORTING_BROWSER_USE_FORKS, reportingBrowserUseRoute } from "./reportingBrowserUseForks";
+
 /** Internal RalphAI routes for agent UIs (no separate localhost embed). */
 export const AGENT_RUN_ROUTES: Record<string, string> = {
   marketingreco: "/agents/marketingreco",
@@ -12,6 +14,9 @@ export const AGENT_RUN_ROUTES: Record<string, string> = {
   app2_0: "/agents/the-super-app?tab=breakdown",
   app3_0: "/agents/the-super-app",
   markup_app: "/agents/markup-app",
+  ...Object.fromEntries(
+    REPORTING_BROWSER_USE_FORKS.map((f) => [f.id, reportingBrowserUseRoute(f.id)])
+  ),
 };
 
 export function agentRunRoute(agentId: string): string | undefined {

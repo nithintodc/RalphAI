@@ -54,6 +54,25 @@ def deepdive_default_zip_dir() -> Path:
     return data_root() / "TriArch"
 
 
+def deepdive_operator_zip_dir(operator_id: str) -> Path:
+    """Per-operator directory for DoorDash export `.zip` files.
+
+    Resolution order:
+    1. ``data/operators/<operator_id>/raw/``  — written by health-check / onboarding downloads.
+    2. ``deepdive_default_zip_dir()``         — legacy shared directory (TriArch).
+
+    Returns whichever path exists first, or the per-operator path as a creation target
+    when neither exists yet.
+    """
+    per_operator = data_root() / "operators" / operator_id / "raw"
+    if per_operator.is_dir():
+        return per_operator
+    default = deepdive_default_zip_dir()
+    if default.is_dir():
+        return default
+    return per_operator
+
+
 def redis_url() -> str | None:
     return os.environ.get("REDIS_URL")
 

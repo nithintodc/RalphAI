@@ -73,8 +73,19 @@ def _resolve_selected_operators(selected_operator_ids: list[str]) -> list[Strate
             continue
         email = str(row.get("doordash_email", "")).strip()
         password = str(row.get("doordash_password", "")).strip()
-        if not email or not password:
+        if not email:
             continue
+        try:
+            from shared.doordash_portal_tasks import resolve_doordash_credentials
+
+            email, password = resolve_doordash_credentials(
+                email,
+                password or None,
+                operator_name=str(row.get("business_name", key)).strip() or key,
+            )
+        except ValueError:
+            if not password:
+                continue
         out.append(
             StrategistOperator(
                 operator_id=key,
@@ -552,7 +563,9 @@ def _run_for_operator(
     download_dir = operator_dir / "downloads"
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
+    from shared.subprocess_env import reporting_subprocess_env
+
+    env = reporting_subprocess_env(REPORTING_ROOT)
     env["DOORDASH_EMAIL"] = operator.email
     env["DOORDASH_PASSWORD"] = operator.password
     env["STRATEGIST_START_DATE"] = start_date

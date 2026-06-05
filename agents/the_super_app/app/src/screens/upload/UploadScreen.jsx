@@ -20,11 +20,11 @@ function syncDdPlacedTiming() {
 }
 
 const CATEGORY_INFO = {
-  Financials: { desc: 'Sales, Payouts, Orders, AOV, Profitability', screens: ['Overview', 'Pre vs Post', 'Stores', 'Slots', 'Buckets'] },
+  Financials: { desc: 'Sales, Payouts, Orders, AOV, Profitability', screens: ['Overview', 'Pre vs Post', 'Stores', 'Slots', 'Days', 'Day-Slot', 'Buckets'] },
   Marketing: { desc: 'Corp vs TODC, ROAS, campaigns', screens: ['Marketing'] },
   Operations: { desc: 'Cancellations, Downtime, Missing orders', screens: ['Operations'] },
   'Product Mix': { desc: 'Item-level performance and mix', screens: ['Product Mix'] },
-  Sales: { desc: 'Order, time, and store sales views', screens: ['Slots', 'Diagnostics'] },
+  Sales: { desc: 'Order, time, and store sales views', screens: ['Slots', 'Days', 'Day-Slot', 'Diagnostics'] },
 };
 
 export default function UploadScreen() {

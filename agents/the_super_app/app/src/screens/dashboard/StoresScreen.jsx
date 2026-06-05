@@ -6,6 +6,7 @@ import SplitDataTable from '../../components/ui/SplitDataTable';
 import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 
 const METRIC_SPECS = [
   { id: 'sales', label: 'Sales', preKey: 'pre_sales', postKey: 'post_sales', postLyKey: 'postLY_sales', deltaKey: 'sales_prevspost', lyDeltaKey: 'sales_ly_prevspost', yoyDeltaKey: 'sales_yoy', deltaPctKey: 'sales_growth_pct', lyDeltaPctKey: 'sales_ly_growth_pct', yoyPctKey: 'sales_yoy_pct', render: (v) => fmt.usd(v || 0) },
@@ -56,6 +57,7 @@ export default function StoresScreen() {
   const { storeTables } = useDataStore();
   const { setActiveTab, setSelectedStore } = useUiStore();
   const dateAnalysisMode = useConfigStore((s) => s.dateAnalysisMode);
+  const isSingleMode = isSinglePeriodMode(dateAnalysisMode);
 
   const sections = useMemo(() => PLATFORM_SECTIONS
     .map((section) => ({
@@ -63,12 +65,6 @@ export default function StoresScreen() {
       stores: storeTables?.[section.key] || [],
     }))
     .filter((section) => section.stores.length), [storeTables]);
-
-  const isSingleMode = dateAnalysisMode === 'singleRange'
-    || dateAnalysisMode === 'singleWeek'
-    || dateAnalysisMode === 'singleMonth'
-    || dateAnalysisMode === 'singleQuarter'
-    || dateAnalysisMode === 'singleYear';
 
   const handleClick = (row) => {
     setSelectedStore(row.storeId, row._platform);

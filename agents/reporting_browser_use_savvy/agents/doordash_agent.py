@@ -45,7 +45,7 @@ def _build_campaign_tools():
 
     tools = Tools()
 
-    _GRID_ROW_NAMES = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+    _GRID_ROW_NAMES = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
     _GRID_COL_NAMES = ["Mon", "Tue", "Wed", "Thur", "Fri", "Sat", "Sun"]
 
     def _tag_label(tag: int) -> str:
@@ -58,11 +58,11 @@ def _build_campaign_tools():
         description=(
             "Set the DoorDash campaign schedule grid to exactly the desired state. "
             "Pass 'wanted_tags' as a comma-separated string of tag numbers (1-42) that should be CHECKED. "
-            "Grid layout: 6 rows (Early morning, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun). "
-            "Tag 1 = Mon/Early morning, Tag 2 = Tue/Early morning, ..., Tag 7 = Sun/Early morning, "
+            "Grid layout: 6 rows (Overnight, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun). "
+            "Tag 1 = Mon/Overnight, Tag 2 = Tue/Overnight, ..., Tag 7 = Sun/Overnight, "
             "Tag 8 = Mon/Breakfast, ..., Tag 42 = Sun/Late night. "
             "This action detects current cell states and only toggles cells that need to change, then clicks Save. "
-            "Example: wanted_tags='1,2,3,8,9' means check Mon/Tue/Wed Early morning + Mon/Tue Breakfast. "
+            "Example: wanted_tags='1,2,3,8,9' means check Mon/Tue/Wed Overnight + Mon/Tue Breakfast. "
             "IMPORTANT: Call this ONCE after the custom schedule grid is visible. Do NOT manually click any grid cells."
         ),
     )
@@ -890,8 +890,10 @@ def get_task_description_reports_only(
     end_date: str,
 ) -> str:
     """Task that ends after downloading both reports (no campaign). Used so we can run analysis before campaign."""
-    if not password:
-        raise ValueError("DOORDASH_PASSWORD is not set. Add it to your .env file (see .env.example).")
+    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    entry, s = build_portal_entry_steps(resolved_email, resolved_password, step_num=0)
     return f"""
 You are automating the DoorDash Merchant Portal. Complete the following steps in order. Stop after downloading both reports — do NOT create a campaign.
 
@@ -899,32 +901,23 @@ CRITICAL RULES:
 - Do NOT open any new tabs. Stay on the merchant-portal.doordash.com tab at all times.
 - Do NOT click any links that navigate away from the merchant portal (e.g. learning center, marketing tips, help articles).
 - If a popup or overlay appears, close it and continue with the steps below.
+{entry}
+=== STEP {s}: Generate Financial Report ===
+{s}. On the Reports page, click "Create report". Select "Financial report" RADIO BUTTON, click "Next".
+{s + 1}. LOCATIONS: Do NOT touch the stores/locations selector — all stores are already selected by default. Just click "Next" to proceed past the locations step.
+{s + 2}. Choose "By date range". Set Start date: {start_date}, End date: {end_date}. Click "Create report". WAIT UNTIL the report appears in the list (it may take several seconds to generate).
 
-=== STEP 0: Navigate and log in (DO THIS EXACT ORDER — two-step login) ===
-The login has TWO steps. Do NOT enter the password in the email field. Do NOT click "Log In" until the password screen is visible.
+=== STEP {s + 3}: Download the Financial Report IMMEDIATELY ===
+{s + 3}. The Financial report you just created should now be at the TOP of the reports list. Click the DOWNLOAD icon next to this TOPMOST "Financials" report row. WAIT UNTIL the download completes.
 
-1. Go to exactly this URL: https://merchant-portal.doordash.com/merchant/login
-2. On the first screen: find the EMAIL input field (labeled "Email"). Enter ONLY the email, exactly: {email}
-3. Click the "Continue to Log In" button (the red button). WAIT UNTIL the page changes and you see the password screen.
-4. On the NEXT screen: find the PASSWORD input field. Enter ONLY the password there: {password}
-5. Click the "Log In" button. WAIT UNTIL the dashboard has fully loaded (you see sidebar navigation and main content).
+=== STEP {s + 4}: Generate Marketing Report ===
+{s + 4}. Click "Create report". Select "Marketing report" RADIO BUTTON, click "Next".
+{s + 5}. IMPORTANT: UNCHECK "Online Ordering". Keep "Marketplace" CHECKED. Click "Next".
+{s + 6}. LOCATIONS: keep default "All stores", click "Next".
+{s + 7}. By date range: Start {start_date}, End {end_date}. Click "Create report". WAIT UNTIL the report appears.
 
-=== STEP 1: Generate Financial Report ===
-6. In the LEFT SIDEBAR, click "Reports". WAIT UNTIL the Reports page loads. Click "Create report". Select "Financial report" RADIO BUTTON, click "Next".
-7. LOCATIONS: Do NOT touch the stores/locations selector — all stores are already selected by default. Just click "Next" to proceed past the locations step.
-8. Choose "By date range". Set Start date: {start_date}, End date: {end_date}. Click "Create report". WAIT UNTIL the report appears in the list (it may take several seconds to generate).
-
-=== STEP 2: Download the Financial Report IMMEDIATELY ===
-9. The Financial report you just created should now be at the TOP of the reports list. Click the DOWNLOAD icon (arrow/download button) next to this TOPMOST "Financials" report row. WAIT UNTIL the download completes (file appears in downloads). Do NOT proceed until the financial report is fully downloaded.
-
-=== STEP 3: Generate Marketing Report ===
-10. Click "Create report". Select "Marketing report" RADIO BUTTON, click "Next".
-11. IMPORTANT: You MUST UNCHECK "Online Ordering" checkbox. Make sure "Online Ordering" is UNCHECKED and "Marketplace" remains CHECKED. Click "Next".
-12. LOCATIONS: Do NOT touch the stores/locations selector — all stores are already selected by default. Just click "Next" to proceed past the locations step.
-13. By date range: Start {start_date}, End {end_date}. Click "Create report". WAIT UNTIL the report appears in the list.
-
-=== STEP 4: Download the Marketing Report IMMEDIATELY ===
-14. The Marketing report you just created should now be at the TOP of the reports list. Click the DOWNLOAD icon (arrow/download button) next to this TOPMOST "Marketing" report row. WAIT UNTIL the download completes (file appears in downloads).
+=== STEP {s + 8}: Download the Marketing Report IMMEDIATELY ===
+{s + 8}. Click the DOWNLOAD icon next to the TOPMOST new Marketing report row. WAIT UNTIL the download completes.
 
 === DONE (stop here — no campaign) ===
 When both reports are downloaded, use the done action to finish. Summarize: login, both reports created and downloaded.
@@ -994,7 +987,7 @@ def get_task_description_campaign_for_subtotal_combo(combo: dict) -> str:
     all_tags = set(range(1, 43))
     unselected_set = all_tags - selected_set
 
-    _GRID_ROWS = ["Early morning", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+    _GRID_ROWS = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
     _GRID_COLS = ["Mon", "Tue", "Wed", "Thur", "Fri", "Sat", "Sun"]
 
     def _group_by_row(tag_set):
@@ -1085,7 +1078,7 @@ STEP 3B — Target audience (after Customer incentive, BEFORE Scheduling / slots
 STEP 4 — Set schedule:
 - Click Edit (pencil) next to "Scheduling". Wait for modal with grid.
 - Click "Set a custom schedule". Wait for grid.
-- Grid: 6 rows (Early morning, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun).
+- Grid: 6 rows (Overnight, Breakfast, Lunch, Afternoon, Dinner, Late night) x 7 cols (Mon-Sun).
 {schedule_instructions}
 
 STEP 4B — Re-confirm Maximum discount amount (MANDATORY after schedule):

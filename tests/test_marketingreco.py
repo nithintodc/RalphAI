@@ -18,7 +18,7 @@ def test_marketingreco_manual_mode_from_register_csv(tmp_path, monkeypatch):
     reporting = tmp_path / "reporting"
     reporting.mkdir()
     (reporting / "slots.csv").write_text(
-        ",Mon\nEarly morning,1\nBreakfast,2\nLunch,3\nAfternoon,4\nDinner,5\nLate night,6\n",
+        ",Mon\nOvernight,1\nBreakfast,2\nLunch,3\nAfternoon,4\nDinner,5\nLate night,6\n",
         encoding="utf-8",
     )
     register_csv = tmp_path / "register.csv"

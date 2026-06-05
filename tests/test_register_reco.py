@@ -39,7 +39,7 @@ def test_build_recommendations_from_register_csv(tmp_path):
     slots = tmp_path / "slots.csv"
     slots.write_text(
         ",Mon,Tue\n"
-        "Early morning,1,2\n"
+        "Overnight,1,2\n"
         "Breakfast,3,4\n"
         "Lunch,5,6\n"
         "Afternoon,7,8\n"

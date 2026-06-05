@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-
 type RunRecord = {
   id: string;
   agent: string;

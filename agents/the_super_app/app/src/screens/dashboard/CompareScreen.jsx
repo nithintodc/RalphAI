@@ -23,19 +23,19 @@ function SummaryTable({ title, data, type = 'prepost' }) {
   if (!data || !data.length) return null;
 
   const columns = type === 'prepost' ? [
-    { key: 'metric', label: 'Metric', sortable: false, labelCol: true, render: (v) => METRIC_LABELS[v] || v },
-    { key: 'pre', label: 'Pre', align: 'right', render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'post', label: 'Post', align: 'right', render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'prevspost', label: 'Pre vs Post', align: 'right', delta: true, render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'lyPrevspost', label: 'LY Pre vs Post', align: 'right', delta: true, render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'growthPct', label: 'Growth%', align: 'right', delta: true, render: (v) => fmt.delta(v) },
-    { key: 'lyGrowthPct', label: 'LY Growth%', align: 'right', delta: true, render: (v) => fmt.delta(v) },
+    { key: 'metric', label: 'Metric', sortable: false, labelCol: true, wrap: true, render: (v) => METRIC_LABELS[v] || v },
+    { key: 'pre', label: 'Pre', wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'post', label: 'Post', wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'prevspost', label: 'Pre vs Post', delta: true, wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'lyPrevspost', label: 'LY Pre vs Post', delta: true, wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'growthPct', label: 'Growth%', delta: true, wrap: true, render: (v) => fmt.delta(v) },
+    { key: 'lyGrowthPct', label: 'LY Growth%', delta: true, wrap: true, render: (v) => fmt.delta(v) },
   ] : [
-    { key: 'metric', label: 'Metric', sortable: false, labelCol: true, render: (v) => METRIC_LABELS[v] || v },
-    { key: 'postLY', label: 'LY Post', align: 'right', render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'post', label: 'Post', align: 'right', render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'yoy', label: 'YoY', align: 'right', delta: true, render: (v, row) => renderVal(row.metric)(v) },
-    { key: 'yoyPct', label: 'YoY%', align: 'right', delta: true, render: (v) => fmt.delta(v) },
+    { key: 'metric', label: 'Metric', sortable: false, labelCol: true, wrap: true, render: (v) => METRIC_LABELS[v] || v },
+    { key: 'postLY', label: 'LY Post', wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'post', label: 'Post', wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'yoy', label: 'YoY', delta: true, wrap: true, render: (v, row) => renderVal(row.metric)(v) },
+    { key: 'yoyPct', label: 'YoY%', delta: true, wrap: true, render: (v) => fmt.delta(v) },
   ];
 
   return (

@@ -16,17 +16,19 @@ from shared.models.campaign import RecommendedCampaign
 from shared.models.report import DeepDiveReport, MarketingPlan
 from shared.utils.date_helpers import utc_now_iso
 
+from shared.campaign_history import apply_history_to_ads_campaigns, load_campaign_history
+
 from .approval_handler import apply_command
-from .plan_generator import generate_plan
+from .plan_generator import generate_plan, generate_plan_from_sources
 
 MarketingRecoMode = Literal["deepdive", "manual", "auto"]
 
 
 def _reporting_subprocess_env(reporting_root: Path) -> dict[str, str]:
-    """Ensure ``python -c`` subprocesses resolve ``agents.*`` to the reporting tree, not repo ``agents/``."""
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(reporting_root.resolve())
-    return env
+    """Ensure subprocesses resolve reporting tree + repo ``shared/`` / ``multilogin/``."""
+    from shared.subprocess_env import reporting_subprocess_env
+
+    return reporting_subprocess_env(reporting_root)
 
 
 def _deepdive_path(operator_id: str) -> Path:
@@ -42,6 +44,48 @@ def _save_plan(operator_id: str, plan: MarketingPlan) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
     return json.loads(plan.model_dump_json())
+
+
+def _resolve_campaign_history(
+    operator_id: str,
+    campaign_history: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if campaign_history is not None:
+        return campaign_history
+    return load_campaign_history(operator_id)
+
+
+def _apply_history_to_ads_plan(
+    ads_plan: dict[str, Any] | None,
+    campaign_history: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not ads_plan or not campaign_history:
+        return ads_plan
+    patched = dict(ads_plan)
+    campaigns = list(patched.get("campaigns") or [])
+    patched["campaigns"] = apply_history_to_ads_campaigns(campaigns, campaign_history)
+    return patched
+
+
+def _build_marketing_plan(
+    operator_id: str,
+    *,
+    mappings: list[dict[str, Any]] | None = None,
+    ads_plan: dict[str, Any] | None = None,
+    campaign_history: dict[str, Any] | None = None,
+    deepdive_report: DeepDiveReport | None = None,
+    budget_cap: float | None = None,
+) -> MarketingPlan:
+    history = _resolve_campaign_history(operator_id, campaign_history)
+    ads_plan = _apply_history_to_ads_plan(ads_plan, history)
+    return generate_plan_from_sources(
+        operator_id,
+        mappings=mappings,
+        ads_plan=ads_plan,
+        deepdive_report=deepdive_report,
+        campaign_history=history,
+        budget_cap=budget_cap,
+    )
 
 
 def _read_campaign_mappings(combined_analysis_path: Path) -> list[dict[str, Any]]:
@@ -279,6 +323,7 @@ def _run_manual_from_register(
     *,
     register_report_path: str,
     reporting_root: str,
+    campaign_history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from .register_reco import build_recommendations_from_register
 
@@ -290,13 +335,27 @@ def _run_manual_from_register(
     )
     mappings = built.get("campaign_mappings") or []
     ads_plan = built.get("ads_plan")
-    plan = _campaigns_from_mappings(operator_id, mappings)
+    plan = _build_marketing_plan(
+        operator_id, mappings=mappings, ads_plan=ads_plan, campaign_history=campaign_history
+    )
     out = _save_plan(operator_id, plan)
     out["campaign_mappings"] = mappings
     out["slot_recommendations"] = built.get("slot_recommendations") or []
     out["ads_plan"] = ads_plan
     out["input_type"] = "register"
+    _attach_history_meta(out, operator_id, campaign_history)
     return out
+
+
+def _attach_history_meta(
+    out: dict[str, Any],
+    operator_id: str,
+    campaign_history: dict[str, Any] | None,
+) -> None:
+    history = _resolve_campaign_history(operator_id, campaign_history)
+    if history:
+        out["campaign_history_applied"] = True
+        out["campaign_history_review_date"] = history.get("review_date")
 
 
 def _run_manual_mode(
@@ -305,12 +364,14 @@ def _run_manual_mode(
     financial_report_path: str | None = None,
     register_report_path: str | None = None,
     reporting_root: str,
+    campaign_history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if register_report_path:
         return _run_manual_from_register(
             operator_id,
             register_report_path=register_report_path,
             reporting_root=reporting_root,
+            campaign_history=campaign_history,
         )
     if not financial_report_path:
         raise ValueError(
@@ -323,11 +384,14 @@ def _run_manual_mode(
     )
     mappings = _read_campaign_mappings(combined_path)
     _align_store_ids_with_financial_mapping(financial_report_path, ads_plan)
-    plan = _campaigns_from_mappings(operator_id, mappings)
+    plan = _build_marketing_plan(
+        operator_id, mappings=mappings, ads_plan=ads_plan, campaign_history=campaign_history
+    )
     out = _save_plan(operator_id, plan)
     out["campaign_mappings"] = mappings
     out["ads_plan"] = ads_plan
     out["input_type"] = "financial"
+    _attach_history_meta(out, operator_id, campaign_history)
     return out
 
 
@@ -353,14 +417,20 @@ def _run_auto_mode(
     doordash_email: str,
     doordash_password: str,
     reporting_root: str,
+    campaign_history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(reporting_root)
     main_py = root / "main.py"
     if not main_py.is_file():
         raise FileNotFoundError(f"reporting workflow not found: {main_py}")
+    from shared.doordash_portal_tasks import resolve_doordash_credentials
+
+    resolved_email, resolved_password = resolve_doordash_credentials(
+        doordash_email, doordash_password, operator_name=operator_id
+    )
     env = _reporting_subprocess_env(root)
-    env["DOORDASH_EMAIL"] = doordash_email
-    env["DOORDASH_PASSWORD"] = doordash_password
+    env["DOORDASH_EMAIL"] = resolved_email
+    env["DOORDASH_PASSWORD"] = resolved_password
     script = """
 import asyncio
 from datetime import datetime, timedelta
@@ -448,10 +518,13 @@ asyncio.run(_main())
         raise RuntimeError("auto mode finished but no combined_analysis file was found")
     mappings = _read_campaign_mappings(combined)
     _align_store_ids_with_financial_mapping(ads_csv, ads_plan)
-    plan = _campaigns_from_mappings(operator_id, mappings)
+    plan = _build_marketing_plan(
+        operator_id, mappings=mappings, ads_plan=ads_plan, campaign_history=campaign_history
+    )
     out = _save_plan(operator_id, plan)
     out["campaign_mappings"] = mappings
     out["ads_plan"] = ads_plan
+    _attach_history_meta(out, operator_id, campaign_history)
     return out
 
 
@@ -482,6 +555,7 @@ def run(
             financial_report_path=financial_report_path,
             register_report_path=register_report_path,
             reporting_root=reporting_root,
+            campaign_history=campaign_history,
         )
     if mode == "auto":
         if not doordash_email or not doordash_password:
@@ -491,17 +565,20 @@ def run(
             doordash_email=doordash_email,
             doordash_password=doordash_password,
             reporting_root=reporting_root,
+            campaign_history=campaign_history,
         )
 
     _ = operator_profile
-    _ = campaign_history
+    history = _resolve_campaign_history(operator_id, campaign_history)
     if deepdive_report is None:
         raw = _deepdive_path(operator_id).read_text(encoding="utf-8")
         dd = DeepDiveReport.model_validate_json(raw)
     else:
         dd = DeepDiveReport.model_validate(deepdive_report)
-    plan = generate_plan(dd, budget_cap=budget_cap)
-    return _save_plan(operator_id, plan)
+    plan = generate_plan(dd, budget_cap=budget_cap, campaign_history=history)
+    out = _save_plan(operator_id, plan)
+    _attach_history_meta(out, operator_id, campaign_history)
+    return out
 
 
 def approve(operator_id: str, command: str, notes: str = "") -> dict[str, Any]:

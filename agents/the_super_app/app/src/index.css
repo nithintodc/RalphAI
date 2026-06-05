@@ -138,12 +138,13 @@ html.in-iframe .upload-screen {
 .tnum { font-variant-numeric: tabular-nums; }
 
 .table-heading-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
   min-width: 0;
-  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .table-heading-label {
@@ -162,7 +163,7 @@ html.in-iframe .upload-screen {
 .data-table--scrollable .table-heading-content--compact {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   gap: 2px;
   min-width: 0;
 }
@@ -176,7 +177,7 @@ html.in-iframe .upload-screen {
 }
 
 .data-table--scrollable th .table-heading-content--compact svg {
-  align-self: flex-end;
+  align-self: center;
   flex-shrink: 0;
 }
 
@@ -192,6 +193,18 @@ input, button, select, textarea {
 
 .delta-positive { color: var(--positive); }
 .delta-negative { color: var(--negative); }
+
+.delta-cell-positive {
+  color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 12%, transparent);
+  border-radius: 4px;
+}
+
+.delta-cell-negative {
+  color: var(--negative);
+  background: color-mix(in srgb, var(--negative) 12%, transparent);
+  border-radius: 4px;
+}
 
 .platform-dot {
   width: 8px; height: 8px;

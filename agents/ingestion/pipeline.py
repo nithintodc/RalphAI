@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from typing import Any
 
 from .doordash_client import fetch_operator_window
 from .schema import IngestionOutput
@@ -21,16 +22,32 @@ def run(payload: dict) -> IngestionOutput:
     if source != "doordash":
         raise ValueError(f"unsupported source: {source}")
     data = fetch_operator_window(operator_id, days)
+    dataset_keys = [k for k in data if not k.startswith("store_id")]
     out: IngestionOutput = {"operator_id": operator_id, "data": data}
-    log_step(log, step="ingestion.done", operator_id=operator_id, payload={"keys": list(data)})
+    log_step(log, step="ingestion.done", operator_id=operator_id, payload={"keys": dataset_keys})
     return out
+
+
+def _json_default(obj: Any) -> Any:
+    """Serialize DataFrames to records for stdout / JSON contract mode."""
+    try:
+        import pandas as pd
+        if isinstance(obj, pd.DataFrame):
+            return {
+                "__dataframe": True,
+                "shape": list(obj.shape),
+                "records": obj.head(500).to_dict("records"),  # cap at 500 rows for contract payloads
+            }
+    except ImportError:
+        pass
+    return str(obj)
 
 
 def main() -> None:
     raw = sys.stdin.read()
     inp = json.loads(raw) if raw.strip() else {}
     result = run(inp)
-    print(json.dumps(result, default=str))
+    print(json.dumps(result, default=_json_default))
 
 
 if __name__ == "__main__":

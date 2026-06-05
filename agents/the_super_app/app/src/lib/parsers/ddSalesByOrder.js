@@ -1,6 +1,7 @@
 import { parseDate } from '../utils/dateUtils';
 import { toNum } from '../utils/safeMath';
 import { getSlot, DAY_NAMES } from '../engine/slots';
+import { SALES_BY_ORDER_TIME_COL, findExactColumn, isPresentTimeValue } from '../constants/orderTimeColumns';
 
 function normalizeColHeader(col) {
   return String(col ?? '')
@@ -73,11 +74,7 @@ export function normalizeDdSalesByOrder(parsed) {
     'Order Placed Date',
     'order placed date',
   ]);
-  const timeCol = findCol(columns, [
-    'Order placed time',
-    'Order Placed Time',
-    'order placed time',
-  ]);
+  const timeCol = findExactColumn(columns, SALES_BY_ORDER_TIME_COL);
   const orderCol = findCol(columns, [
     'DoorDash order ID',
     'DoorDash Order ID',
@@ -121,6 +118,7 @@ export function normalizeDdSalesByOrder(parsed) {
 
     const date = dateCol ? parseDate(row[dateCol]) : null;
     const time = timeCol ? row[timeCol] : null;
+    if (!isPresentTimeValue(time)) continue;
     const orderId = orderCol ? normalizeOrderId(row[orderCol]) : '';
     const storeId = storeCol ? String(row[storeCol] || '').trim() : '';
     if (!date || !storeId) continue;
