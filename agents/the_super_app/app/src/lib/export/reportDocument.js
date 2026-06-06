@@ -504,7 +504,7 @@ function buildSlotDefinitionsScreenSection() {
     <div class="section">
       <div class="section-header gold"><div class="section-title">Day Part Definitions</div></div>
       <p class="text-xs" style="color:var(--text-subtle);margin:0 0 12px;font-size:11px;line-height:1.5">
-        DoorDash financial dayparts use <strong>Order received local time</strong>; SALES_BY_ORDER uses <strong>Order placed time</strong>. Uber Eats uses <strong>Order Accept Time</strong>.
+        DoorDash financial dayparts use <strong>Order received local time</strong> (fallback <strong>Timestamp local time</strong>); SALES_BY_ORDER uses <strong>Order placed time</strong>. Uber Eats uses <strong>Order Accept Time</strong>. Period filters: DD <strong>Timestamp local date</strong>, UE <strong>Order Date</strong>.
       </p>
       <div class="table-wrap"><table>
         <thead><tr><th>Day part</th><th>Time window</th></tr></thead>
@@ -517,7 +517,7 @@ function buildSlotDefinitionsWordSection() {
   const body = SLOT_DEFINITIONS.map(({ name, range }) =>
     `<tr>${wLabelTd(name)}${wLabelTd(range)}</tr>`).join('');
   return `${wSectionHeader('Day Part Definitions', '09', W.accentBar)}
-    ${wSub('Time windows (DoorDash financial: Order received local time · SALES_BY_ORDER: Order placed time · Uber Eats: Order Accept Time)')}
+    ${wSub('Time windows (DoorDash financial: Order received local time → Timestamp local time · SALES_BY_ORDER: Order placed time · Uber Eats: Order Accept Time)')}
     ${wDataTable(['Day part', 'Time window'], body)}`;
 }
 

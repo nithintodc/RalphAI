@@ -11,7 +11,6 @@ import { fileURLToPath } from 'url';
 import JSZip from 'jszip';
 import { parseCsv } from '../agents/the_super_app/app/src/lib/parsers/zipHandler.js';
 import { normalizeDdFinancial, normalizeDdErrorCharges } from '../agents/the_super_app/app/src/lib/parsers/ddFinancial.js';
-import { applyDdOrderPlacedTiming } from '../agents/the_super_app/app/src/lib/parsers/ddOrderTiming.js';
 import { normalizeDdSalesByOrder } from '../agents/the_super_app/app/src/lib/parsers/ddSalesByOrder.js';
 import { buildDdRegister } from '../agents/the_super_app/app/src/lib/engine/register.js';
 
@@ -83,9 +82,7 @@ async function main() {
 
   const { detailed, errorCsv, salesOrder } = await loadFinancialAndSales();
   let ddFinancial = normalizeDdFinancial(detailed);
-  let ddFinancialError = errorCsv ? normalizeDdErrorCharges(errorCsv) : [];
-  ddFinancial = applyDdOrderPlacedTiming(ddFinancial, salesOrder);
-  ddFinancialError = applyDdOrderPlacedTiming(ddFinancialError, salesOrder);
+  const ddFinancialError = errorCsv ? normalizeDdErrorCharges(errorCsv) : [];
 
   const register = buildDdRegister({
     ddFinancial,

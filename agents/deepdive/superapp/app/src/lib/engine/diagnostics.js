@@ -90,7 +90,6 @@ export function buildRevenueGrowthDrivers(summary) {
 function buildDdOrderLevel(ddFinancial, start, end, excludedDates = []) {
   let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
   rows = filterExcludedDates(rows, 'date', excludedDates);
-  rows = rows.filter(r => !r.transactionType || r.transactionType === 'Order');
 
   const orderGroups = groupBy(rows, 'orderId');
   const orders = [];

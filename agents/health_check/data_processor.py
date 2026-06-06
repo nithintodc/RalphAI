@@ -90,17 +90,23 @@ def resolve_financial_columns(df: pd.DataFrame) -> dict:
             cols["store_id"] = c
             break
 
-    for c in ["Timestamp local date", "Timestamp Local Date", "Date", "date"]:
+    for c in ["Timestamp local date", "Timestamp Local Date"]:
         if c in df.columns:
             cols["date"] = c
             break
 
-    from shared.order_time_columns import FINANCIAL_ORDER_TIME_COL
+    from shared.order_time_columns import (
+        FINANCIAL_ORDER_TIME_COL,
+        FINANCIAL_ORDER_TIME_FALLBACK_COL,
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+        has_dd_slot_time_source_columns,
+    )
 
-    for c in df.columns:
-        if str(c).strip() == FINANCIAL_ORDER_TIME_COL:
-            cols["time"] = c
-            break
+    if has_dd_slot_time_source_columns(df):
+        cols["time"] = DD_SLOT_TIME_RESOLVED_COL
+        cols["_resolve_dd_slot_time"] = True
 
     if "Subtotal" in df.columns:
         cols["subtotal"] = "Subtotal"
@@ -446,13 +452,25 @@ def build_weekly_csv(
     df[cols["payout"]] = pd.to_numeric(df[cols["payout"]], errors="coerce").fillna(0)
 
     if "time" in cols:
-        from shared.order_time_columns import drop_rows_without_order_time
+        from shared.order_time_columns import (
+            attach_dd_slot_time_column,
+            drop_rows_without_resolved_dd_slot_time,
+            DD_SLOT_TIME_RESOLVED_COL,
+        )
 
-        df = drop_rows_without_order_time(df, cols["time"])
+        if cols.get("_resolve_dd_slot_time"):
+            df = attach_dd_slot_time_column(df)
+            df = drop_rows_without_resolved_dd_slot_time(df)
+            time_col = DD_SLOT_TIME_RESOLVED_COL
+        else:
+            from shared.order_time_columns import drop_rows_without_order_time
+
+            time_col = cols["time"]
+            df = drop_rows_without_order_time(df, time_col)
         if df.empty:
-            logger.warning("No rows with %s for week %s to %s", cols["time"], week_start, week_end)
+            logger.warning("No rows with slot time for week %s to %s", week_start, week_end)
             return None
-        df["_slot"] = df[cols["time"]].apply(get_time_slot)
+        df["_slot"] = df[time_col].apply(get_time_slot)
     else:
         df["_slot"] = "Unknown"
 

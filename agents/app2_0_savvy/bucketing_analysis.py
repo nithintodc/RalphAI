@@ -227,31 +227,36 @@ def load_and_prepare(
         "Timestamp local date",
         "Timestamp Local Date",
         "Timestamp local date",
-        "Date",
     )
-    time_col = _find_col(df, COL_ORDER_TIME)
     txn_col = _find_col(df, COL_TXN_TYPE)
-
     business_col = COL_BUSINESS if COL_BUSINESS in df.columns else None
 
-    orders = df.loc[df[txn_col].astype(str).str.strip().eq("Order")].copy()
+    orders = df.copy()
     if orders.empty:
-        raise ValueError("No rows with Transaction type == 'Order'.")
+        raise ValueError("No rows in financial file.")
 
-    from shared.order_time_columns import drop_rows_without_order_time
-
-    orders = drop_rows_without_order_time(orders, time_col)
-    if orders.empty:
-        raise ValueError(f"No Order rows with non-null {COL_ORDER_TIME!r}.")
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+    )
 
     orders = attach_store_name_column(orders, platform="dd")
     store_col = STORE_NAME_COL
 
+    orders = drop_rows_without_resolved_dd_slot_time(attach_dd_slot_time_column(orders))
+    slot_time_col = DD_SLOT_TIME_RESOLVED_COL
+    if orders.empty:
+        raise ValueError(
+            "No DD orders with parseable slot time "
+            f"({COL_ORDER_TIME!r} or Timestamp local time)."
+        )
+
     # Newer DD exports split date (col I) and clock time (col E); bucketing must not
     # derive order_date from the time-only column alone (pandas would stamp "today").
     _base_date = _parse_dd_local_date(orders[date_col])
-    _tod = _parse_dd_clock_time(orders[time_col])
-    orders["_order_dt"] = _dd_build_order_datetime(orders[date_col], orders[time_col])
+    _tod = _parse_dd_clock_time(orders[slot_time_col])
+    orders["_order_dt"] = _dd_build_order_datetime(orders[date_col], orders[slot_time_col])
     orders["_hour"] = -1
     _has_clock = _base_date.notna() & _tod.notna()
     if _has_clock.any():

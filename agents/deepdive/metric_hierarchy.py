@@ -58,15 +58,19 @@ def _prepare_orders(df: pd.DataFrame) -> pd.DataFrame | None:
         orders = orders[orders["Final order status"] == "Delivered"]
     if orders.empty:
         return None
-    from shared.order_time_columns import find_financial_order_time_column, drop_rows_without_order_time
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+        has_dd_slot_time_source_columns,
+    )
 
-    ts_col = find_financial_order_time_column(orders)
-    if not ts_col:
+    if not has_dd_slot_time_source_columns(orders):
         return None
-    orders = drop_rows_without_order_time(orders, ts_col)
+    orders = drop_rows_without_resolved_dd_slot_time(attach_dd_slot_time_column(orders))
     if orders.empty:
         return None
-    orders["local_dt"] = pd.to_datetime(orders[ts_col], errors="coerce")
+    orders["local_dt"] = pd.to_datetime(orders[DD_SLOT_TIME_RESOLVED_COL], errors="coerce")
     orders = orders.dropna(subset=["local_dt"])
     if orders.empty:
         return None

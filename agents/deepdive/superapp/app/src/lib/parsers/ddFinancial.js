@@ -1,11 +1,17 @@
 import { parseDate, minMaxDates } from '../utils/dateUtils';
 import { toNum } from '../utils/safeMath';
-import { FINANCIAL_ORDER_TIME_COL, findExactColumn, isPresentTimeValue } from '../constants/orderTimeColumns';
+import {
+  FINANCIAL_ORDER_TIME_COL,
+  FINANCIAL_ORDER_TIME_FALLBACK_COL,
+  findExactColumn,
+  resolveDdSlotTime,
+} from '../constants/orderTimeColumns';
 
-const TXN_DATE_COLS = ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Timestamp UTC date', 'Date', 'date', 'Timestamp'];
+/** Portal-aligned financial period date — never UTC/time columns. */
+const FINANCIAL_DATE_COLS = ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date'];
 
 function pickDateCol(columns) {
-  return findCol(columns, ['Timestamp local date', 'Timestamp Local Date', 'timestamp local date', 'Date', 'date', 'Timestamp']);
+  return findCol(columns, FINANCIAL_DATE_COLS);
 }
 const MERCHANT_STORE_COLS = ['Merchant store ID', 'Merchant Store ID'];
 const DD_STORE_ID_COLS = ['Store ID', 'store ID', 'DoorDash store ID', 'Doordash store ID'];
@@ -43,9 +49,15 @@ export function sanitizeStoreId(raw) {
   return s;
 }
 
+function isBlockedUtcColumn(norm) {
+  return norm.includes('utc');
+}
+
 function findCol(columns, variations, { exclude = [] } = {}) {
   const excludeNorm = new Set(exclude.map(normalizeColHeader));
-  const normCols = columns.map((c) => ({ raw: c, norm: normalizeColHeader(c) }));
+  const normCols = columns
+    .map((c) => ({ raw: c, norm: normalizeColHeader(c) }))
+    .filter(({ norm }) => !isBlockedUtcColumn(norm));
 
   for (const v of variations) {
     const vn = normalizeColHeader(v);
@@ -79,8 +91,8 @@ function uniqueCount(rows, accessor) {
 export function normalizeDdFinancial(parsed) {
   const { data, columns } = parsed;
   const dateCol = pickDateCol(columns);
-  const txnDateCol = findCol(columns, TXN_DATE_COLS);
   const orderReceivedTimeCol = findExactColumn(columns, FINANCIAL_ORDER_TIME_COL);
+  const timestampLocalTimeCol = findExactColumn(columns, FINANCIAL_ORDER_TIME_FALLBACK_COL);
   const merchantStoreCol = findCol(columns, MERCHANT_STORE_COLS);
   const ddStoreIdCol = findCol(columns, DD_STORE_ID_COLS, {
     exclude: ['merchant store id'],
@@ -124,11 +136,9 @@ export function normalizeDdFinancial(parsed) {
 
   return data
     .map(row => {
-      let date = dateCol ? parseDate(row[dateCol]) : null;
-      if (!date && txnDateCol) date = parseDate(row[txnDateCol]);
+      const date = dateCol ? parseDate(row[dateCol]) : null;
       const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
-      if (!isPresentTimeValue(orderReceivedTime)) return null;
-      const time = orderReceivedTime;
+      const time = resolveDdSlotTime(row, orderReceivedTimeCol, timestampLocalTimeCol);
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';
       const ddStoreId = ddStoreIdCol ? sanitizeStoreId(row[ddStoreIdCol]) : '';
       const storeName = storeNameCol

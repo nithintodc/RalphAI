@@ -298,12 +298,8 @@ def _get_dd_store_col_name(df):
 
 
 def _filter_dd_order_rows(dd_df):
-    """Keep DoorDash Order transaction rows (matches data_loading aggregation)."""
-    if dd_df is None or dd_df.empty:
-        return dd_df
-    if "Transaction type" not in dd_df.columns:
-        return dd_df
-    return dd_df[dd_df["Transaction type"].astype(str).str.strip().eq("Order")].copy()
+    """Return all DoorDash financial rows (matches portal sum(subtotal) without txn filters)."""
+    return dd_df
 
 
 def _filter_df_by_store_names(df, store_names, platform):

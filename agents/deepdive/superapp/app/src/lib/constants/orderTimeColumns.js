@@ -1,7 +1,11 @@
-/** Canonical DoorDash order-time columns for slot / day-part assignment. */
+/** Canonical DoorDash / Uber Eats time columns for slots and period filters. */
 
 export const FINANCIAL_ORDER_TIME_COL = 'Order received local time';
+export const FINANCIAL_ORDER_TIME_FALLBACK_COL = 'Timestamp local time';
 export const SALES_BY_ORDER_TIME_COL = 'Order placed time';
+export const DD_FINANCIAL_DATE_COL = 'Timestamp local date';
+export const UE_FINANCIAL_DATE_COL = 'Order Date';
+export const UE_SLOT_TIME_COL = 'Order Accept Time';
 
 export function findExactColumn(columns, exactName) {
   const target = String(exactName).trim().toLowerCase();
@@ -15,4 +19,12 @@ export function isPresentTimeValue(value) {
   if (value == null || value === undefined) return false;
   const s = String(value).trim();
   return !!s && !/^null$/i.test(s) && s !== '—' && s.toLowerCase() !== 'nan';
+}
+
+/** DD slots: Order received local time, fallback Timestamp local time. */
+export function resolveDdSlotTime(row, orderReceivedTimeCol, timestampLocalTimeCol) {
+  const received = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
+  if (isPresentTimeValue(received)) return received;
+  const fallback = timestampLocalTimeCol ? row[timestampLocalTimeCol] : null;
+  return isPresentTimeValue(fallback) ? fallback : null;
 }

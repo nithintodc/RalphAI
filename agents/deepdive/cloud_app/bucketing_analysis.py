@@ -155,11 +155,19 @@ def load_and_prepare(
     if orders.empty:
         raise ValueError("No rows with Transaction type == 'Order'.")
 
-    from shared.order_time_columns import drop_rows_without_order_time
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+    )
 
-    orders = drop_rows_without_order_time(orders, time_col)
+    orders = attach_dd_slot_time_column(orders)
+    orders = drop_rows_without_resolved_dd_slot_time(orders)
+    slot_time_col = DD_SLOT_TIME_RESOLVED_COL
     if orders.empty:
-        raise ValueError(f"No Order rows with non-null {COL_ORDER_TIME!r}.")
+        raise ValueError(
+            f"No Order rows with non-null {COL_ORDER_TIME!r} or Timestamp local time."
+        )
 
     g = (
         orders.groupby([store_col, oid_col], dropna=False, as_index=False)
@@ -169,7 +177,7 @@ def load_and_prepare(
                 net_col: "sum",
                 mkt_col: "sum",
                 disc_col: "sum",
-                time_col: "min",
+                slot_time_col: "min",
             }
         )
     )
@@ -180,7 +188,7 @@ def load_and_prepare(
             net_col: "_net",
             mkt_col: "_mkt",
             disc_col: "_disc",
-            time_col: "_order_time",
+            slot_time_col: "_order_time",
         },
         inplace=True,
     )

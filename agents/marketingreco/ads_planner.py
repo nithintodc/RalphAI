@@ -408,13 +408,20 @@ def build_ads_plan(csv_path: str) -> dict:
 
     orders = df[(df["Transaction type"] == "Order") & (df["Final order status"] == "Delivered")].copy()
 
-    from shared.order_time_columns import drop_rows_without_order_time
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+    )
 
-    orders = drop_rows_without_order_time(orders, "Order received local time")
+    orders = drop_rows_without_resolved_dd_slot_time(attach_dd_slot_time_column(orders))
     if orders.empty:
-        raise ValueError("No delivered Order rows with non-null Order received local time.")
+        raise ValueError(
+            "No delivered Order rows with non-null Order received local time "
+            "or Timestamp local time."
+        )
 
-    orders["local_dt"] = pd.to_datetime(orders["Order received local time"])
+    orders["local_dt"] = pd.to_datetime(orders[DD_SLOT_TIME_RESOLVED_COL])
     orders["hour"] = orders["local_dt"].dt.hour
     orders["dow"] = orders["local_dt"].dt.day_name()
     orders["daypart"] = orders["hour"].apply(assign_daypart)

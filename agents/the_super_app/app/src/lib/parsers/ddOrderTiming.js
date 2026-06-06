@@ -35,8 +35,8 @@ function resolvePlacedFromRow(row) {
 }
 
 /**
- * Align DD financial (and error) rows to order-placed date/time.
- * Uses sales-by-order when available; otherwise order received local time; else leaves transaction timing.
+ * Align DD financial rows to order-placed date/time (legacy helper).
+ * Financial KPIs and register period filters use `Timestamp local date` on each row's `date` field instead.
  */
 export function applyDdOrderPlacedTiming(ddRows, salesParsed) {
   if (!ddRows?.length) return ddRows || [];

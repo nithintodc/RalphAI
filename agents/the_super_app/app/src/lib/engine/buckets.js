@@ -146,9 +146,7 @@ export function classifyUeOrder(offers, marketingAdjustment) {
 }
 
 function buildOrderLevel(records, platform = 'dd') {
-  const src = platform === 'dd'
-    ? records.filter(r => !r.transactionType || r.transactionType === 'Order')
-    : records;
+  const src = records;
   const orderGroups = groupBy(src, 'orderId');
   const out = [];
   for (const [orderId, rows] of orderGroups) {

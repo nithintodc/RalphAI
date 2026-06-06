@@ -102,7 +102,7 @@ export function prepareApp2OrderRows(ddFinancial, start, end, excludedDates = []
   if (!ddFinancial?.length || !start || !end) return [];
   let data = filterByDateRange(ddFinancial, 'date', start, end);
   data = filterExcludedDates(data, 'date', excludedDates);
-  const rows = data.filter((r) => !r.transactionType || r.transactionType === 'Order');
+  const rows = data;
   const byOrder = groupBy(rows, 'orderId');
   const prepared = [];
   for (const [, orderRows] of byOrder) {

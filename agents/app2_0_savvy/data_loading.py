@@ -18,21 +18,16 @@ def _aggregate_dd_by_store_name(df, sales_col, payout_col, order_col):
     df = df.dropna(subset=[STORE_NAME_COL])
     df = df[df[STORE_NAME_COL].astype(str).str.strip().ne("")]
 
-    if "Transaction type" in df.columns:
-        order_rows = df[df["Transaction type"].astype(str).str.strip().eq("Order")].copy()
-    else:
-        order_rows = df.copy()
-
-    if order_rows.empty:
+    if df.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    sales_agg = order_rows.groupby(STORE_NAME_COL)[sales_col].sum().reset_index()
+    sales_agg = df.groupby(STORE_NAME_COL)[sales_col].sum().reset_index()
     sales_agg.columns = [STORE_NAME_COL, "Sales"]
 
-    payout_agg = order_rows.groupby(STORE_NAME_COL)[payout_col].sum().reset_index()
+    payout_agg = df.groupby(STORE_NAME_COL)[payout_col].sum().reset_index()
     payout_agg.columns = [STORE_NAME_COL, "Payouts"]
 
-    orders_agg = order_rows.groupby(STORE_NAME_COL)[order_col].nunique().reset_index()
+    orders_agg = df.groupby(STORE_NAME_COL)[order_col].nunique().reset_index()
     orders_agg.columns = [STORE_NAME_COL, "Orders"]
 
     return sales_agg, payout_agg, orders_agg

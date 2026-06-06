@@ -317,8 +317,6 @@ def _generate_insights(dd_sales_df, ue_sales_df, dd_payouts_df, ue_payouts_df,
                 post_df = filter_master_file_by_date_range(Path(fpath), post_start, post_end, dcols, excluded_dates)
                 if post_df.empty:
                     continue
-                if not is_ue and "Transaction type" in post_df.columns:
-                    post_df = post_df[post_df["Transaction type"].astype(str).str.strip().eq("Order")].copy()
                 if selected:
                     post_df = attach_store_name_column(post_df, platform="ue" if is_ue else "dd")
                     post_df = post_df[post_df[STORE_NAME_COL].astype(str).isin({str(s) for s in selected})]

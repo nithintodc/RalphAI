@@ -71,18 +71,21 @@ def get_time_slot(time_str):
 
 
 def _slot_from_dd_row(df):
-    """Assign dashboard slot labels using DD local date + clock time (same rules as bucketing)."""
+    """Assign dashboard slot labels using DD local date + resolved slot time."""
     if df is None or df.empty:
         return pd.Series(dtype=object)
     date_col = _find_col(df, "Timestamp local date", "Timestamp Local Date", "Timestamp Local date")
-    from shared.order_time_columns import FINANCIAL_ORDER_TIME_COL, drop_rows_without_order_time
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        DD_SLOT_TIME_RESOLVED_COL,
+    )
 
-    time_col = _find_col(df, FINANCIAL_ORDER_TIME_COL)
-    work = drop_rows_without_order_time(df, time_col)
+    work = drop_rows_without_resolved_dd_slot_time(attach_dd_slot_time_column(df))
     if work.empty:
         return pd.Series(UNASSIGNED_SLOT, index=df.index, dtype=object)
 
-    combined = _dd_build_order_datetime(work[date_col], work[time_col])
+    combined = _dd_build_order_datetime(work[date_col], work[DD_SLOT_TIME_RESOLVED_COL])
     hours = pd.Series(-1, index=work.index, dtype=int)
     ok = combined.notna()
     if ok.any():
@@ -99,8 +102,6 @@ def _prepare_dd_order_rows(df, selected_stores=None):
     if df is None or df.empty:
         return pd.DataFrame()
     out = df.copy()
-    if "Transaction type" in out.columns:
-        out = out[out["Transaction type"].astype(str).str.strip().eq("Order")].copy()
     if out.empty:
         return out
     out = attach_store_name_column(out, platform="dd")

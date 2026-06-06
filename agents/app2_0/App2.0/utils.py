@@ -3,9 +3,9 @@ import pandas as pd
 import streamlit as st
 
 # Constants for date column name variations
-UE_DATE_COLUMN_VARIATIONS = ['Order Date', 'Order date', 'order date', 'order Date', 'Date', 'date']
-DD_DATE_COLUMN_VARIATIONS = ['Timestamp local date', 'Timestamp Local Date', 'Timestamp Local date', 
-                              'timestamp local date', 'Date', 'date', 'Timestamp', 'timestamp']
+UE_DATE_COLUMN_VARIATIONS = ['Order Date', 'Order date', 'order date', 'order Date']
+DD_DATE_COLUMN_VARIATIONS = ['Timestamp local date', 'Timestamp Local Date', 'Timestamp Local date',
+                              'timestamp local date']
 
 
 def normalize_store_id_column(df):
@@ -72,13 +72,8 @@ def parse_order_dates(values):
 
 
 def detect_ue_date_column(df):
-    """Find the UberEats order date column, falling back to the legacy 9th column."""
-    date_col = find_date_column(df, UE_DATE_COLUMN_VARIATIONS)
-    if date_col:
-        return date_col
-    if len(df.columns) > 8:
-        return df.columns[8]
-    return None
+    """Find the Uber Eats Order Date column."""
+    return find_date_column(df, UE_DATE_COLUMN_VARIATIONS)
 
 
 def filter_excluded_dates(df, date_col, excluded_dates):

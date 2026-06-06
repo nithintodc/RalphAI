@@ -81,7 +81,7 @@ function BreakdownBlock({ title, analysis, rowKey, rowLabel, dataKey, metricCols
   );
 }
 
-export default function SlotSalesOrderSection({ analysis, platformLabel, timeFieldLabel = 'Order placed time' }) {
+export default function SlotSalesOrderSection({ analysis, platformLabel, timeFieldLabel = 'Order received local time' }) {
   if (!analysis) return null;
 
   const showCustomerItems = analysis.hasCustomerType || analysis.hasItemCount;

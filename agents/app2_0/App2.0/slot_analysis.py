@@ -80,25 +80,29 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_24_start, post_24_end = get_last_year_dates(post_start_date, post_end_date)
         post_24_df = filter_master_file_by_date_range(file_path, post_24_start, post_24_end, date_col_variations, excluded_dates)
         
-        # Check for required columns (financial: Order received local time only)
+        # Check for required columns (financial: received local time or Timestamp local time)
         from shared.order_time_columns import (
             FINANCIAL_ORDER_TIME_COL,
-            find_financial_order_time_column,
-            drop_rows_without_order_time,
+            FINANCIAL_ORDER_TIME_FALLBACK_COL,
+            has_dd_slot_time_source_columns,
+            assign_dd_slot_column,
         )
 
         probe = pre_df if not pre_df.empty else post_df if not post_df.empty else post_24_df
-        time_col = find_financial_order_time_column(probe)
-        if time_col is None:
-            st.error(f"Required column {FINANCIAL_ORDER_TIME_COL!r} not found. Available columns: {list(probe.columns)[:10]}")
-                empty_table = pd.DataFrame({
-                    'Slot': slot_order,
-                    'Pre': [0.0] * len(slot_order),
-                    'Post': [0.0] * len(slot_order),
-                    'Pre vs Post': [0.0] * len(slot_order),
-                    'Growth%': ['0.0%'] * len(slot_order)
-                })
-                return empty_table, empty_table.copy(), empty_table.copy(), empty_table.copy()
+        if not has_dd_slot_time_source_columns(probe):
+            st.error(
+                f"Required column {FINANCIAL_ORDER_TIME_COL!r} or "
+                f"{FINANCIAL_ORDER_TIME_FALLBACK_COL!r} not found. "
+                f"Available columns: {list(probe.columns)[:10]}"
+            )
+            empty_table = pd.DataFrame({
+                'Slot': slot_order,
+                'Pre': [0.0] * len(slot_order),
+                'Post': [0.0] * len(slot_order),
+                'Pre vs Post': [0.0] * len(slot_order),
+                'Growth%': ['0.0%'] * len(slot_order)
+            })
+            return empty_table, empty_table.copy(), empty_table.copy(), empty_table.copy()
         
         sales_col = 'Subtotal'
         payout_col = None
@@ -122,10 +126,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         pre_slot_sales = {}
         pre_slot_payouts = {}
         if not pre_df.empty:
-            pre_df = drop_rows_without_order_time(pre_df.copy(), time_col)
+            pre_df = assign_dd_slot_column(pre_df.copy(), get_time_slot)
         if not pre_df.empty:
-            pre_df['Slot'] = pre_df[time_col].apply(get_time_slot)
-            pre_df = pre_df.dropna(subset=['Slot'])
             pre_df[sales_col] = pd.to_numeric(pre_df[sales_col], errors='coerce')
             pre_df[payout_col] = pd.to_numeric(pre_df[payout_col], errors='coerce')
             
@@ -146,10 +148,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_slot_sales = {}
         post_slot_payouts = {}
         if not post_df.empty:
-            post_df = drop_rows_without_order_time(post_df.copy(), time_col)
+            post_df = assign_dd_slot_column(post_df.copy(), get_time_slot)
         if not post_df.empty:
-            post_df['Slot'] = post_df[time_col].apply(get_time_slot)
-            post_df = post_df.dropna(subset=['Slot'])
             post_df[sales_col] = pd.to_numeric(post_df[sales_col], errors='coerce')
             post_df[payout_col] = pd.to_numeric(post_df[payout_col], errors='coerce')
             
@@ -170,10 +170,8 @@ def process_slot_analysis(file_path, pre_start_date, pre_end_date, post_start_da
         post_24_slot_sales = {}
         post_24_slot_payouts = {}
         if not post_24_df.empty:
-            post_24_df = drop_rows_without_order_time(post_24_df.copy(), time_col)
+            post_24_df = assign_dd_slot_column(post_24_df.copy(), get_time_slot)
         if not post_24_df.empty:
-            post_24_df['Slot'] = post_24_df[time_col].apply(get_time_slot)
-            post_24_df = post_24_df.dropna(subset=['Slot'])
             post_24_df[sales_col] = pd.to_numeric(post_24_df[sales_col], errors='coerce')
             post_24_df[payout_col] = pd.to_numeric(post_24_df[payout_col], errors='coerce')
             

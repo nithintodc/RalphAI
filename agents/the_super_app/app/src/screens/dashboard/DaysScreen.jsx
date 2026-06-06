@@ -34,7 +34,7 @@ export default function DaysScreen() {
               analysis={analysis}
               platformLabel={label}
               dimension="day"
-              timeFieldLabel={key === 'ue' ? 'Order Accept Time' : 'Order placed time'}
+              timeFieldLabel={key === 'ue' ? 'Order Accept Time' : 'Order received local time (fallback: Timestamp local time)'}
             />
           </div>
         );

@@ -93,7 +93,6 @@ export function buildRevenueGrowthDrivers(summary) {
 function buildDdOrderLevel(ddFinancial, start, end, excludedDates = []) {
   let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
   rows = filterExcludedDates(rows, 'date', excludedDates);
-  rows = rows.filter(r => !r.transactionType || r.transactionType === 'Order');
 
   const orderGroups = groupBy(rows, 'orderId');
   const orders = [];
@@ -366,8 +365,7 @@ export function getStarAndDecliningStores(storeData, pct = 0.1) {
 
 function orderSalesRow(row, platform) {
   if (platform === 'ue') return row.sales || 0;
-  if (!row.transactionType || row.transactionType === 'Order') return row.subtotal || 0;
-  return 0;
+  return row.subtotal || 0;
 }
 
 function aggregateDailySalesPlatform(financial, platform, start, end, excludedDates = []) {
@@ -489,7 +487,6 @@ function aggregateDailySalesByStore(ddFinancial, storeId, start, end, excludedDa
   let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
   rows = filterExcludedDates(rows, 'date', excludedDates);
   rows = rows.filter((r) => String(r.storeId) === String(storeId));
-  rows = rows.filter((r) => !r.transactionType || r.transactionType === 'Order');
 
   const byDate = new Map();
   for (const row of rows) {
@@ -508,7 +505,6 @@ function aggregateDailySalesByStore(ddFinancial, storeId, start, end, excludedDa
 function aggregateDailySalesAllStores(ddFinancial, start, end, excludedDates = []) {
   let rows = filterByDateRange(ddFinancial || [], 'date', start, end);
   rows = filterExcludedDates(rows, 'date', excludedDates);
-  rows = rows.filter((r) => !r.transactionType || r.transactionType === 'Order');
 
   const byDate = new Map();
   for (const row of rows) {

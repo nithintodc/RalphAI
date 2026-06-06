@@ -96,7 +96,7 @@ export default function SlotOrderDimensionSection({
   analysis,
   platformLabel,
   dimension,
-  timeFieldLabel = 'Order placed time',
+  timeFieldLabel = 'Order received local time',
 }) {
   if (!analysis) return null;
 

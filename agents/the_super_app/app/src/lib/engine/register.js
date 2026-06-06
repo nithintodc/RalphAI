@@ -8,7 +8,6 @@ import { getSlot, getSlotTimeRange, SLOT_NAMES, DAY_NAMES } from './slots';
 import { safeDivide, round } from '../utils/safeMath';
 import { exportByKind } from '../utils/formatters';
 import { normalizeDdSalesByOrder } from '../parsers/ddSalesByOrder';
-import { applyDdOrderPlacedTiming } from '../parsers/ddOrderTiming';
 import { buildDdStoreIdToMerchantMap } from '../utils/storeCatalog';
 
 function dayOfWeekLabel(date) {
@@ -217,7 +216,7 @@ function mergeSalesWeekdayIntoRegister(rows, salesByWeekday) {
 }
 
 function buildDdOrderRecords(ddFinancial, errorByOrderId) {
-  const rows = ddFinancial.filter((r) => !r.transactionType || r.transactionType === 'Order');
+  const rows = ddFinancial;
   const byOrder = new Map();
   for (const r of rows) {
     const oid = normalizeOrderId(r.orderId);
@@ -544,16 +543,10 @@ export function buildDdRegister(data, config = {}) {
   const storeIds = registerStoreIds(ddFinancial, config.ddExcludedStores);
   if (!storeIds.length) return [];
 
-  let ddFin = applyDdOrderPlacedTiming(
-    filterExcludedStores(ddFinancial, 'storeId', config.ddExcludedStores),
-    ddSales?.byOrder,
-  );
+  let ddFin = filterExcludedStores(ddFinancial, 'storeId', config.ddExcludedStores);
   ddFin = applyPostPeriod(ddFin, config.ddPostStart, config.ddPostEnd);
   let ddErr = ddFinancialError?.length
-    ? applyDdOrderPlacedTiming(
-      filterExcludedStores(ddFinancialError, 'storeId', config.ddExcludedStores),
-      ddSales?.byOrder,
-    )
+    ? filterExcludedStores(ddFinancialError, 'storeId', config.ddExcludedStores)
     : ddFinancialError;
   ddErr = applyPostPeriod(ddErr, config.ddPostStart, config.ddPostEnd);
 

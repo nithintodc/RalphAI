@@ -12,7 +12,6 @@ import { fileURLToPath } from 'url';
 import JSZip from 'jszip';
 import { parseCsv, parseUeFinancialCsv } from '../src/lib/parsers/zipHandler.js';
 import { normalizeDdFinancial, normalizeDdErrorCharges } from '../src/lib/parsers/ddFinancial.js';
-import { applyDdOrderPlacedTiming } from '../src/lib/parsers/ddOrderTiming.js';
 import { normalizeUeFinancial } from '../src/lib/parsers/ueFinancial.js';
 import { buildDdRegister, buildUeRegister } from '../src/lib/engine/register.js';
 
@@ -52,9 +51,7 @@ async function main() {
   const salesOrder = await loadZipCsv(salesZip, (n) => n.includes('sales_by_order'));
 
   let ddFinancial = normalizeDdFinancial(detailed);
-  let ddFinancialError = errorCsv ? normalizeDdErrorCharges(errorCsv) : [];
-  ddFinancial = applyDdOrderPlacedTiming(ddFinancial, salesOrder);
-  ddFinancialError = applyDdOrderPlacedTiming(ddFinancialError, salesOrder);
+  const ddFinancialError = errorCsv ? normalizeDdErrorCharges(errorCsv) : [];
   const ddRows = buildDdRegister({
     ddFinancial,
     ddSales: { byOrder: salesOrder },

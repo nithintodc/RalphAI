@@ -178,34 +178,26 @@ def load_dd_order_level(file_path: Path, start_date: str, end_date: str, exclude
 
     date_col = find_date_column(filtered, DD_DATE_COLUMN_VARIATIONS)
     order_col = first_matching_column(filtered, exact=["doordash order id", "order id"])
-    timestamp_col = first_matching_column(
-        filtered,
-        exact=["order received local time"],
-    )
     sales_col = first_matching_column(filtered, exact=["subtotal"])
     payout_col = first_matching_column(filtered, exact=["net total"]) or first_matching_column(
         filtered,
         contains_all=["net total"],
     )
-    if not all([date_col, order_col, sales_col, timestamp_col]):
+    if not all([date_col, order_col, sales_col]):
         return pd.DataFrame()
 
-    from shared.order_time_columns import drop_rows_without_order_time
-
     dd_frame = filtered.copy()
-    if "Transaction type" in dd_frame.columns:
-        dd_frame = dd_frame[dd_frame["Transaction type"].astype(str).str.strip().eq("Order")]
     dd_frame = attach_store_name_column(dd_frame, platform="dd")
     keep_cols = [date_col, STORE_NAME_COL, order_col, sales_col]
-    if timestamp_col:
-        keep_cols.append(timestamp_col)
     if payout_col:
         keep_cols.append(payout_col)
     dd_frame = dd_frame[keep_cols].copy()
-    dd_frame = drop_rows_without_order_time(dd_frame, timestamp_col)
+    dd_frame = _dd_slot_time_for_frame(dd_frame)
     if dd_frame.empty:
         return pd.DataFrame()
-    dd_frame = apply_temporal_columns(dd_frame, date_col, timestamp_col)
+    from shared.order_time_columns import DD_SLOT_TIME_RESOLVED_COL
+
+    dd_frame = apply_temporal_columns(dd_frame, date_col, DD_SLOT_TIME_RESOLVED_COL)
     dd_frame["Order ID"] = dd_frame[order_col].astype(str)
     dd_frame["Sales"] = pd.to_numeric(dd_frame[sales_col], errors="coerce").fillna(0.0)
     dd_frame["Payouts"] = pd.to_numeric(dd_frame[payout_col], errors="coerce").fillna(0.0) if payout_col else 0.0
@@ -234,13 +226,21 @@ def read_ue_file(file_path: Path) -> pd.DataFrame:
 
 
 def detect_ue_date_column(df: pd.DataFrame) -> str | None:
-    """Find the most likely Uber Eats local order date column."""
-    return first_matching_column(
-        df,
-        exact=["local date the order was placed, or local date of the original order placed for which there is a refund", "order date", "date"],
-        contains_all=["local date", "order"],
-        contains_any=["local date the order was placed"],
+    """Find Uber Eats Order Date column for period filters."""
+    return first_matching_column(df, exact=["order date"])
+
+
+def _dd_slot_time_for_frame(df: pd.DataFrame) -> pd.DataFrame:
+    from shared.order_time_columns import (
+        attach_dd_slot_time_column,
+        drop_rows_without_resolved_dd_slot_time,
+        has_dd_slot_time_source_columns,
     )
+
+    if not has_dd_slot_time_source_columns(df):
+        return pd.DataFrame()
+    out = drop_rows_without_resolved_dd_slot_time(attach_dd_slot_time_column(df.copy()))
+    return out
 
 
 def load_ue_order_level(file_path: Path, start_date: str, end_date: str, excluded_dates=None) -> pd.DataFrame:
@@ -252,8 +252,7 @@ def load_ue_order_level(file_path: Path, start_date: str, end_date: str, exclude
     date_col = detect_ue_date_column(raw)
     timestamp_col = first_matching_column(
         raw,
-        contains_all=["local timestamp", "accepted"],
-        contains_any=["local timestamp for when order was accepted"],
+        exact=["order accept time"],
     )
     store_col = first_matching_column(
         raw,

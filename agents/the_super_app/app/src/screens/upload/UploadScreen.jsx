@@ -6,18 +6,6 @@ import { processUploadedFile, ALL_FILE_TYPES } from '../../lib/parsers/zipHandle
 import { normalizeDdFinancial, normalizeDdErrorCharges } from '../../lib/parsers/ddFinancial';
 import { normalizeUeFinancial } from '../../lib/parsers/ueFinancial';
 import { normalizeDdPromotion, normalizeDdSponsored } from '../../lib/parsers/ddMarketing';
-import { applyDdOrderPlacedTiming } from '../../lib/parsers/ddOrderTiming';
-
-function syncDdPlacedTiming() {
-  const s = useDataStore.getState();
-  const sales = s.ddSales?.byOrder;
-  if (s.ddFinancial?.length) {
-    s.setDdFinancial(applyDdOrderPlacedTiming(s.ddFinancial, sales));
-  }
-  if (s.ddFinancialError?.length) {
-    s.setDdFinancialError(applyDdOrderPlacedTiming(s.ddFinancialError, sales));
-  }
-}
 
 const CATEGORY_INFO = {
   Financials: { desc: 'Sales, Payouts, Orders, AOV, Profitability', screens: ['Overview', 'Pre vs Post', 'Stores', 'Slots', 'Days', 'Day-Slot', 'Buckets'] },
@@ -57,7 +45,6 @@ export default function UploadScreen() {
             store.setDdFinancialError(normalizeDdErrorCharges(data.errorCharges));
           }
           store.setUploadedFile('dd_financial', { name: file.name, rows: normalized.length, status: 'done' });
-          syncDdPlacedTiming();
         } else if (type === 'dd_marketing') {
           if (data.promotion) {
             store.setDdMarketingRaw('promotion', data.promotion, file.name);
@@ -77,7 +64,6 @@ export default function UploadScreen() {
           store.setDdSales('byOrder', data);
           const rowCount = data?.data?.length ?? 0;
           store.setUploadedFile('dd_sales_by_order', { name: file.name, rows: rowCount, status: 'done' });
-          syncDdPlacedTiming();
         } else if (type === 'dd_sales_by_time') {
           store.setDdSales('byTime', { ...data, fileLabel: file.name });
           store.setUploadedFile('dd_sales_by_time', { name: file.name, status: 'done' });

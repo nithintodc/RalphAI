@@ -51,13 +51,13 @@ function findStoreIdCol(columns) {
   );
 }
 
-function findTimeCol(columns, dateColIndex) {
-  const nextIdx = dateColIndex + 1;
-  if (nextIdx < columns.length) {
-    const next = columns[nextIdx];
-    if (next.toLowerCase().includes('time') || next.toLowerCase().includes('accept')) return next;
-  }
-  return columns.find(c => c.toLowerCase().includes('accept') && c.toLowerCase().includes('time')) || null;
+function findTimeCol(columns) {
+  return findCol(columns, [
+    'Order Accept Time',
+    'Order accept time',
+    'Order Accepted Time',
+    'Local timestamp for when order was accepted by the merchant',
+  ]);
 }
 
 function uniqueCount(rows, accessor) {
@@ -72,8 +72,8 @@ function uniqueCount(rows, accessor) {
 export function normalizeUeFinancial(parsed) {
   const { data, columns } = parsed;
 
-  const dateCol = columns[8] || findCol(columns, ['Date', 'date']);
-  const timeCol = findTimeCol(columns, 8);
+  const dateCol = findCol(columns, ['Order date', 'Order Date']);
+  const timeCol = findTimeCol(columns);
   const storeNameCol = findStoreNameCol(columns);
   const storeIdCol = findStoreIdCol(columns);
   const orderIdCol = findCol(columns, ['Order ID', 'Workflow ID']);

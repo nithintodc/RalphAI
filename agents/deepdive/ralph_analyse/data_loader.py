@@ -6,10 +6,10 @@ from pathlib import Path
 
 DD_DATE_COLUMN_VARIATIONS = [
     "Timestamp local date", "Timestamp Local Date", "Timestamp Local date",
-    "timestamp local date", "Date", "date", "Timestamp", "timestamp",
+    "timestamp local date",
 ]
 
-DD_TIME_COLUMN_VARIATIONS = ["Order received local time"]
+DD_TIME_COLUMN_VARIATIONS = ["Order received local time", "Timestamp local time"]
 
 UE_STORE_NAME_VARIATIONS = [
     "Store Name", "Restaurant Name", "Restaurant name",
@@ -85,12 +85,9 @@ def load_ue_financial(path):
     if store_col not in df.columns:
         raise ValueError("Cannot find Store ID or Shop ID in UE financial file")
 
-    if len(df.columns) > 8:
-        date_col = df.columns[8]
-    else:
-        date_col = find_column(df, ["Order Date", "Date"])
-        if date_col is None:
-            raise ValueError("Cannot find date column in UE financial file")
+    date_col = find_column(df, ["Order Date", "Order date"])
+    if date_col is None:
+        raise ValueError("Cannot find Order Date column in UE financial file")
 
     df[date_col] = _parse_dates_ue(df[date_col])
     df = df.dropna(subset=[date_col])

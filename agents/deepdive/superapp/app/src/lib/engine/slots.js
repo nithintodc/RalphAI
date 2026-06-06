@@ -55,7 +55,7 @@ export function getSlot(timeStr, platform = 'dd') {
 }
 
 function buildDdOrdersWithSlots(rawData, timeField) {
-  const rows = rawData.filter((r) => !r.transactionType || r.transactionType === 'Order');
+  const rows = rawData;
   const byOrder = groupBy(rows, 'orderId');
   const out = [];
   for (const [orderId, rs] of byOrder) {

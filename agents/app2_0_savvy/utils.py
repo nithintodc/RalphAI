@@ -3,9 +3,9 @@ import pandas as pd
 import streamlit as st
 
 # Constants for date column name variations
-UE_DATE_COLUMN_VARIATIONS = ['Order Date', 'Order date', 'order date', 'order Date', 'Date', 'date']
-DD_DATE_COLUMN_VARIATIONS = ['Timestamp local date', 'Timestamp Local Date', 'Timestamp Local date', 
-                              'timestamp local date', 'Date', 'date', 'Timestamp', 'timestamp']
+UE_DATE_COLUMN_VARIATIONS = ['Order Date', 'Order date', 'order date', 'order Date']
+DD_DATE_COLUMN_VARIATIONS = ['Timestamp local date', 'Timestamp Local Date', 'Timestamp Local date',
+                              'timestamp local date']
 
 
 STORE_NAME_COL = "Store Name"
@@ -327,18 +327,19 @@ def filter_master_file_by_date_range(file_path, start_date, end_date, date_col_n
         
         # Handle date column identification
         if is_ue_file:
-            # For UE files: hardcode to 9th column (index 8) - no variation matching
-            if len(df.columns) > 8:
-                actual_date_col = df.columns[8]
-                df, _ = normalize_ue_store_key_column(df)
-                if actual_date_col not in df.columns:
-                    st.warning(
-                        f"UE file {file_path.name}: date column {actual_date_col!r} missing "
-                        "after store-key normalization."
-                    )
-                    return pd.DataFrame()
-            else:
-                st.warning(f"UE file {file_path.name} has fewer than 9 columns. Available columns: {list(df.columns)}")
+            actual_date_col = find_date_column(df, UE_DATE_COLUMN_VARIATIONS)
+            if actual_date_col is None:
+                st.warning(
+                    f"UE file {file_path.name}: Order Date column not found. "
+                    f"Available columns: {list(df.columns)[:12]}"
+                )
+                return pd.DataFrame()
+            df, _ = normalize_ue_store_key_column(df)
+            if actual_date_col not in df.columns:
+                st.warning(
+                    f"UE file {file_path.name}: date column {actual_date_col!r} missing "
+                    "after store-key normalization."
+                )
                 return pd.DataFrame()
         else:
             # For DD files: use column name matching

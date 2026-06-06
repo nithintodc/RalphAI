@@ -112,24 +112,13 @@ function findStoreIdCol(columns, data, storeNameCol) {
   return best;
 }
 
-function findTimeCol(columns, dateColIndex) {
-  const explicit = findCol(columns, [
+function findTimeCol(columns) {
+  return findCol(columns, [
     'Order Accept Time',
     'Order accept time',
     'Order Accepted Time',
     'Local timestamp for when order was accepted by the merchant',
   ]);
-  if (explicit) return explicit;
-  const nextIdx = dateColIndex >= 0 ? dateColIndex + 1 : -1;
-  if (nextIdx >= 0 && nextIdx < columns.length) {
-    const next = columns[nextIdx];
-    const cl = normalizeColHeader(next);
-    if (cl.includes('time') || cl.includes('accept')) return next;
-  }
-  return columns.find((c) => {
-    const cl = normalizeColHeader(c);
-    return cl.includes('accept') && cl.includes('time');
-  }) || null;
 }
 
 export function normalizeUeFinancial(parsed) {
@@ -138,18 +127,8 @@ export function normalizeUeFinancial(parsed) {
   const dateCol = findCol(columns, [
     'Order date',
     'Order Date',
-    'Local date the order was placed',
-    'Date',
-    'date',
-  ]) || columns[8] || null;
-  const dateColIndex = dateCol ? columns.indexOf(dateCol) : 8;
-  const timeCol =
-    findCol(columns, [
-      'Order placed time',
-      'Order Placed Time',
-      'Local timestamp for when order was placed',
-    ])
-    || findTimeCol(columns, dateColIndex);
+  ]);
+  const timeCol = findTimeCol(columns);
   const storeNameCol = findStoreNameCol(columns);
   const storeIdCol = findStoreIdCol(columns, data, storeNameCol);
   const orderIdCol = findCol(columns, [
