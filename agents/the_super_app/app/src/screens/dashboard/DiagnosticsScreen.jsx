@@ -14,8 +14,9 @@ import {
 import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
-
-const WATERFALL_BAR_SLOT = 76;
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import { POS, NEG, TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, AXIS_TICK, GRID } from '../../components/charts/chartTheme';
+import { CartesianGrid, LabelList } from 'recharts';
 
 function buildWaterfallChart(waterfall) {
   if (!waterfall.length) return [];
@@ -102,10 +103,6 @@ function PlatformDiagnosis({
   );
 
   const dash = (v, fn) => (v == null ? '—' : fn(v));
-  const waterfallChartWidth = Math.min(
-    waterfallChart.length * WATERFALL_BAR_SLOT + 48,
-    420,
-  );
 
   const payoutPostColumns = [
     { key: 'step', label: 'Step', labelCol: true, render: (v) => <span className="font-medium">{v}</span> },
@@ -154,71 +151,71 @@ function PlatformDiagnosis({
       )}
 
       <div className="card max-w-full overflow-hidden">
-        <h3 className="text-sm font-semibold text-[var(--text)] mb-4">Sales Decomposition (Pre → Post)</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)] mb-1">Sales Decomposition (Pre → Post)</h3>
+        <p className="text-[11px] text-[var(--text-subtle)] mb-4">
+          How each driver moved sales from the Pre baseline to the Post result.
+        </p>
         {waterfall.length > 0 ? (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] items-start max-w-full">
+          <div className="space-y-5 max-w-full">
+            {waterfallChart.length > 0 && (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={waterfallChart}
+                  barCategoryGap="22%"
+                  margin={{ top: 24, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={0}
+                  />
+                  <YAxis
+                    width={56}
+                    tick={AXIS_TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => fmt.usdK(v)}
+                  />
+                  <Tooltip
+                    formatter={(v) => fmt.usd(v)}
+                    cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
+                    contentStyle={TOOLTIP_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                  />
+                  <Bar dataKey="base" stackId="a" fill="transparent" />
+                  <Bar dataKey="val" stackId="a" radius={[4, 4, 0, 0]}>
+                    {waterfallChart.map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={
+                          entry.type === 'start' || entry.type === 'end'
+                            ? 'var(--accent)'
+                            : entry.type === 'pos'
+                              ? POS
+                              : NEG
+                        }
+                      />
+                    ))}
+                    <LabelList
+                      dataKey="value"
+                      position="top"
+                      formatter={(v) => fmt.usdK(v)}
+                      style={{ fontSize: 9, fill: 'var(--text-muted)', fontWeight: 600 }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
             <DataTable
               columns={salesWaterfallColumns}
               data={waterfall}
               sortable={false}
-              layout="tight"
+              layout="full"
               dense
-              bare
             />
-            {waterfallChart.length > 0 && (
-              <div
-                className="shrink-0 mx-auto lg:mx-0 max-w-full overflow-hidden"
-                style={{ width: waterfallChartWidth }}
-              >
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart
-                    data={waterfallChart}
-                    barSize={40}
-                    barCategoryGap="18%"
-                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                  >
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      interval={0}
-                    />
-                    <YAxis
-                      width={52}
-                      tick={{ fontSize: 10, fill: 'var(--text-subtle)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => fmt.usdK(v)}
-                    />
-                    <Tooltip
-                      formatter={(v) => fmt.usd(v)}
-                      contentStyle={{
-                        background: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Bar dataKey="base" stackId="a" fill="transparent" />
-                    <Bar dataKey="val" stackId="a" radius={[4, 4, 0, 0]}>
-                      {waterfallChart.map((entry, i) => (
-                        <Cell
-                          key={i}
-                          fill={
-                            entry.type === 'start' || entry.type === 'end'
-                              ? 'var(--accent)'
-                              : entry.type === 'pos'
-                                ? '#10B981'
-                                : '#EF4444'
-                          }
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
         ) : (
           <p className="text-sm text-[var(--text-muted)] text-center py-8">No data available for decomposition</p>
@@ -243,9 +240,14 @@ function PlatformDiagnosis({
       </div>
 
       {growthDrivers.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-[var(--text)] mb-2">Revenue Growth Contribution</h3>
-          <DataTable columns={growthColumns} data={growthDrivers} sortable={false} layout="tight" dense />
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-[var(--text)]">Revenue Growth Contribution</h3>
+          <RankedBarChart
+            subtitle="Each driver's share of the Pre→Post sales change. Green = lifted sales, red = dragged."
+            data={growthDrivers.map((d) => ({ label: d.driver, value: d.contributionPct }))}
+            valueFormatter={fmt.delta}
+          />
+          <DataTable columns={growthColumns} data={growthDrivers} sortable={false} layout="full" dense />
         </div>
       )}
 

@@ -19,9 +19,6 @@ from orchestrator.flow_manager import (
     run_marketing_reco,
     run_review,
 )
-from shared.config.settings import marketingreco_reporting_root
-
-
 def dispatch(command: str, body: dict[str, Any]) -> dict[str, Any]:
     cmd = command.strip().lower()
     operator_id = body.get("operator_id", "")
@@ -31,21 +28,15 @@ def dispatch(command: str, body: dict[str, Any]) -> dict[str, Any]:
         return run_deepdive_pipeline(operator_id, days=days)
 
     if cmd in ("/marketingreco", "marketingreco"):
-        mode = str(body.get("mode", "deepdive")).strip().lower()
-        if mode in ("manual", "auto"):
-            from agents.marketingreco.agent import run as marketingreco_run
+        if body.get("register_report_path"):
+            from agents.strategist.agent import run as strategist_run
 
-            return marketingreco_run(
+            return strategist_run(
+                mode="manual",
                 operator_id=operator_id,
-                mode=mode,  # type: ignore[arg-type]
-                financial_report_path=body.get("financial_report_path"),
-                doordash_email=body.get("doordash_email"),
-                doordash_password=body.get("doordash_password"),
-                reporting_root=body.get(
-                    "reporting_root", str(marketingreco_reporting_root())
-                ),
+                register_report_path=body["register_report_path"],
+                business_name=body.get("business_name"),
             )
-        # Expect prior deepdive JSON under body["deepdive"] or run pipeline first
         if "deepdive" in body:
             return run_marketing_reco(body["deepdive"])
         pipe = run_deepdive_pipeline(operator_id, days=int(body.get("days", 90)))

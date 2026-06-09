@@ -234,23 +234,24 @@ export SA_JSON=agents/the_super_app/streamlit_app/todc-marketing-XXXX.json
 
 ---
 
-### Full orchestrator on GCP (Path A — recommended)
+### Full orchestrator on GCP (local deploy)
 
-**Git → GitHub Actions → Cloud Build → Cloud Run** — step-by-step checklist:
-
-**[docs/DEPLOY_PATH_A.md](docs/DEPLOY_PATH_A.md)**
+Deploy from your laptop with **gcloud → Cloud Build → Cloud Run**. Git is for code backup only — pushes do **not** trigger deploys.
 
 Quick start:
 
 ```bash
 gcloud auth login
 ./deploy.sh
-# Add GitHub secrets (printed at end), then: git push origin main
 ```
 
-Details: **[docs/DEPLOY_PATH_A.md](docs/DEPLOY_PATH_A.md)**
+Re-deploy after changes:
 
-Deploy the workspace API and React dashboard to existing Cloud Run **`todc-reporting-app`** (`todc-marketing`, `us-central1`). Each CI deploy replaces the service image; prior revisions remain for rollback.
+```bash
+./deploy.sh --deploy-only
+```
+
+Deploy the workspace API and React dashboard to existing Cloud Run **`todc-reporting-app`** (`todc-marketing`, `us-central1`). Each deploy replaces the service image; prior revisions remain for rollback in the Cloud Run console.
 
 #### Architecture
 
@@ -545,7 +546,7 @@ Before shipping a RalphAI iteration:
 
 ### Operations
 
-- CI/CD pipeline (GitHub Actions) for tests and deployment.
+- Local deploy runbook and staging environment on GCP for pre-production testing.
 - Staging environment on GCP for pre-production testing.
 - Runbook for common failure modes and recovery.
 - Monitoring and alerting (Datadog / Prometheus+Grafana).

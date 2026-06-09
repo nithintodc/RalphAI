@@ -91,10 +91,9 @@ def _resolve_multilogin_profile_id(doordash_email: str) -> str | None:
 
 
 def _multilogin_mapping_path() -> str:
-    return os.getenv(
-        "OPERATOR_PROFILE_MAPPING",
-        str(PROJECT_ROOT / "operator_multilogin_mapping.json"),
-    )
+    from shared.operator_profile_mapping import mapping_path
+
+    return os.getenv("OPERATOR_PROFILE_MAPPING", str(mapping_path()))
 
 
 def _extract_agent_error(stderr: str) -> str | None:
@@ -223,25 +222,28 @@ def _run_reports_for_operator(
     )
     operator_dir.mkdir(parents=True, exist_ok=True)
 
+    from shared.browser_settings import multilogin_mode_active
+
     email = operator.email.strip()
     mlx_profile_id: str | None = None
-    try:
-        mlx_profile_id = _resolve_multilogin_profile_id(email)
-    except KeyError:
-        mapping_path = _multilogin_mapping_path()
-        return {
-            "operator_id": operator.operator_id,
-            "business_name": operator.business_name,
-            "status": "failed",
-            "error": (
-                f"No multilogin_profile_id in {mapping_path} for DoorDash email {email!r}. "
-                "Run: python -m multilogin.sync_operator_mapping"
-            ),
-            "downloaded_files": {},
-            "zip_files": [],
-            "missing_report_types": report_types,
-            "download_dir": str(operator_dir),
-        }
+    if multilogin_mode_active():
+        try:
+            mlx_profile_id = _resolve_multilogin_profile_id(email)
+        except KeyError:
+            mapping_path = _multilogin_mapping_path()
+            return {
+                "operator_id": operator.operator_id,
+                "business_name": operator.business_name,
+                "status": "failed",
+                "error": (
+                    f"No multilogin_profile_id in {mapping_path} for DoorDash email {email!r}. "
+                    "Run: python -m multilogin.sync_operator_mapping"
+                ),
+                "downloaded_files": {},
+                "zip_files": [],
+                "missing_report_types": report_types,
+                "download_dir": str(operator_dir),
+            }
     if mlx_profile_id:
         logger.info(
             "Multilogin: operator %s → profile %s (from operator_multilogin_mapping.json)",
@@ -253,7 +255,6 @@ def _run_reports_for_operator(
     from shared.subprocess_env import reporting_subprocess_env
 
     env = reporting_subprocess_env(reporting_root)
-    env["USE_MULTILOGIN"] = "true"
     env["DOORDASH_EMAIL"] = operator.email
     env["DOORDASH_PASSWORD"] = operator.password
     env["DATA_RUN_START_DATE"] = start_date
@@ -452,12 +453,14 @@ def run(
                 }
             )
 
+    from shared.browser_settings import get_browser_mode
+
     return {
         "status": _summarize_run_status(results),
-        "multilogin": True,
+        "browser_mode": get_browser_mode(),
         "report_types": types,
         "date_range": {"start": start_dd, "end": end_dd, **iso_range},
         "run_timestamp": run_timestamp,
-        "storage_pattern": "data/DataRun_{timestamp}_{operator_name}/",
+        "storage_pattern": "data/DataRun/{timestamp}/{operator_name}/",
         "results": results,
     }

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# One-time GCP setup for Path A: RalphAI on Cloud Run + GitHub Actions CI.
+# One-time GCP setup for local laptop deploy: RalphAI on Cloud Run.
 #
 # Usage:
 #   export GCP_PROJECT_ID=your-project-id
 #   export GCP_REGION=us-central1          # optional
 #   ./scripts/gcp-bootstrap.sh
 #
-# Then add the printed GitHub secrets and push to main.
+# Then deploy from your machine: ./deploy.sh --deploy-only
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +17,6 @@ GCP_REGION="${GCP_REGION:-us-central1}"
 # Reuses existing Cloud Run service (replaces prior image on each deploy).
 SERVICE_NAME="${SERVICE_NAME:-todc-reporting-app}"
 AR_REPOSITORY="${AR_REPOSITORY:-ralphai}"
-DEPLOY_SA_NAME="${DEPLOY_SA_NAME:-ralphai-github-deploy}"
 SECRET_SA="${SECRET_SA:-todc-export-sa-json}"
 
 c_blue='\033[1;34m'; c_green='\033[1;32m'; c_yellow='\033[1;33m'; c_red='\033[1;31m'; c_off='\033[0m'
@@ -56,22 +55,6 @@ if ! gcloud artifacts repositories describe "$AR_REPOSITORY" \
 else
   ok "Repository ${AR_REPOSITORY} already exists"
 fi
-
-step "Deploy service account (${DEPLOY_SA_NAME})"
-DEPLOY_SA_EMAIL="${DEPLOY_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
-if ! gcloud iam service-accounts describe "$DEPLOY_SA_EMAIL" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-  gcloud iam service-accounts create "$DEPLOY_SA_NAME" \
-    --display-name="RalphAI GitHub Actions deploy" \
-    --project="$GCP_PROJECT_ID"
-  ok "Created ${DEPLOY_SA_EMAIL}"
-else
-  ok "Service account exists"
-fi
-
-# Extra CI permissions: scripts/gcp-fix-ci-permissions.sh
-GCP_PROJECT_ID="$GCP_PROJECT_ID" DEPLOY_SA_NAME="$DEPLOY_SA_NAME" \
-  "$ROOT/scripts/gcp-fix-ci-permissions.sh"
-ok "Deploy SA + Cloud Build CI permissions"
 
 PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" --format='value(projectNumber)')"
 
@@ -129,35 +112,17 @@ add_secret_version "ANTHROPIC_API_KEY" "${ANTHROPIC_API_KEY:-}"
 add_secret_version "SLACK_BOT_TOKEN" "${SLACK_BOT_TOKEN:-}"
 add_secret_version "SLACK_SIGNING_SECRET" "${SLACK_SIGNING_SECRET:-}"
 
-KEY_FILE="${ROOT}/.gcp/${DEPLOY_SA_NAME}-key.json"
-mkdir -p "${ROOT}/.gcp"
-step "Deploy SA key for GitHub (saved locally, gitignored)"
-gcloud iam service-accounts keys create "$KEY_FILE" \
-  --iam-account="$DEPLOY_SA_EMAIL" \
-  --project="$GCP_PROJECT_ID"
-ok "Key written to ${KEY_FILE}"
-
 echo
 echo -e "${c_green}════════════════════════════════════════════════════════════${c_off}"
-echo -e "${c_green}  GCP bootstrap complete — add these GitHub secrets${c_off}"
+echo -e "${c_green}  GCP bootstrap complete${c_off}"
 echo -e "${c_green}════════════════════════════════════════════════════════════${c_off}"
-echo
-echo "  Repo → Settings → Secrets and variables → Actions → New repository secret"
-echo
-echo "  GCP_PROJECT_ID     = ${GCP_PROJECT_ID}"
-echo "  GCP_REGION         = ${GCP_REGION}"
-echo "  GCP_SA_KEY         = entire contents of:"
-echo "                       ${KEY_FILE}"
-echo
-echo "  Optional repository variables (Settings → Variables):"
-echo "  AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, CORS_ORIGINS, GOOGLE_SHARED_DRIVE_NAME"
 echo
 echo "  Fill any empty secrets in GCP Console → Secret Manager, e.g.:"
 echo "    echo -n 'pat...' | gcloud secrets versions add AIRTABLE_PAT --data-file=-"
 echo
-echo "  Then: ./deploy.sh --deploy-only   OR   git push origin main (CI workflow)"
-echo "  Workflow: .github/workflows/deploy-ralphai.yml"
-echo "  Service name: ${SERVICE_NAME}"
-echo "  Image: ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${SERVICE_NAME}:<git-sha>"
+echo "  Deploy from your laptop:"
+echo "    gcloud auth login"
+echo "    ./deploy.sh --deploy-only"
 echo
-warn "Do not commit ${KEY_FILE} — it is listed in .gitignore"
+echo "  Service name: ${SERVICE_NAME}"
+echo "  Image: ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${SERVICE_NAME}:<tag>"

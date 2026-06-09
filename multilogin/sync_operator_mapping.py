@@ -2,7 +2,7 @@
 """
 Build operator ↔ Multilogin profile mapping from Airtable + Multilogin cloud API.
 
-Writes repo-root ``operator_multilogin_mapping.json`` and ``operator_multilogin_mapping.csv``.
+Writes ``multilogin/operator_multilogin_mapping.json`` and ``.csv``.
 
 Usage (from repo root):
   python -m multilogin.sync_operator_mapping
@@ -337,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
     _load_env()
 
     parser = argparse.ArgumentParser(
-        description="Sync Airtable operators ↔ Multilogin profiles into repo-root mapping."
+        description="Sync Airtable operators ↔ Multilogin profiles into multilogin/ mapping."
     )
     parser.add_argument(
         "--offline",

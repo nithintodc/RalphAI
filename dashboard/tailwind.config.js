@@ -5,8 +5,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Outfit", "system-ui", "sans-serif"],
-        display: ["Outfit", "system-ui", "sans-serif"],
+        sans: ['"Google Sans"', "system-ui", "sans-serif"],
+        display: ['"Google Sans"', "system-ui", "sans-serif"],
       },
       colors: {
         brand: {

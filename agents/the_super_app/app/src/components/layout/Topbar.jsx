@@ -323,7 +323,7 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
   }, [dataStore, allDdStores, allUeStores]);
 
   return (
-    <div className="sticky top-0 z-20 flex items-center gap-3 h-14 px-5 bg-[var(--surface)] border-b border-[var(--border)] min-w-0 overflow-x-hidden">
+    <div className="sticky top-0 z-20 flex items-center gap-3 h-14 px-5 bg-[var(--surface)] border-b border-[var(--border)] min-w-0">
       <div className="font-semibold text-[var(--text)] shrink-0">{title}</div>
       {crumb && (
         <>

@@ -190,6 +190,27 @@ export default function BucketsScreen() {
                 </div>
                 <DataTable columns={mixChangeColumns} data={buildMixChange(ba?.mixPre, ba?.mix)} sortable={false} />
               </div>
+              {ba?.mixPre && (
+                <div className="mt-4">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart
+                      data={buildMixChange(ba.mixPre, ba.mix)}
+                      barGap={2}
+                      margin={{ top: 20, right: 8, left: 0, bottom: 4 }}
+                    >
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-subtle)' }} axisLine={false} tickLine={false} tickFormatter={(v) => v + '%'} width={40} />
+                      <Tooltip
+                        contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                        formatter={(v, name) => [fmt.pct(v), name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="pre" name="Pre share" fill="var(--border-strong)" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="post" name="Post share" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             <DataTable columns={columns} data={ba?.buckets || []} sortable={false} />

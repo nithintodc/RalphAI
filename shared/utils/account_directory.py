@@ -10,7 +10,7 @@ from typing import Any
 
 def load_account_operators() -> tuple[list[dict[str, Any]], str | None]:
     """
-    Load operators for agent runs (Data Run, Strategist, Campaign Killer, etc.).
+    Load operators for agent runs (Data Run, Strategist, etc.).
 
     Uses live Airtable ``Account Information`` data (same source as
     ``GET /api/account-directory``). Optional ``warning`` when serving a stale

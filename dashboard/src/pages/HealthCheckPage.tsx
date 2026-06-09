@@ -64,6 +64,22 @@ async function pollHealthCheckRun(
   }
 }
 
+type CampaignReviewItem = {
+  campaign_name?: string;
+  recommendation?: string;
+  aov_lift_pct?: number;
+  order_volume_lift_pct?: number;
+  net_revenue_delta?: number;
+  rationale?: string;
+};
+
+type CampaignReviewSummary = {
+  campaign_reviews?: CampaignReviewItem[];
+  mode?: string;
+  notes?: string;
+  error?: string;
+};
+
 type OperatorReport = {
   operator?: string;
   email?: string;
@@ -76,6 +92,7 @@ type OperatorReport = {
   pdf_public_url?: string;
   pdf_export_ok?: boolean;
   wow_viz_html?: string;
+  campaign_review?: CampaignReviewSummary;
 };
 
 let inFlightHealthCheck: InFlightHealthCheck | null = null;
@@ -302,6 +319,21 @@ export function HealthCheckPage() {
     | { previous_completed?: string; current_completed?: string }
     | undefined;
 
+  const campaignReviewByOperator = useMemo(() => {
+    if (!result) return [];
+    const rows = Array.isArray(result.operator_results)
+      ? (result.operator_results as OperatorReport[])
+      : Array.isArray(result.operator_reports)
+        ? (result.operator_reports as OperatorReport[])
+        : [];
+    return rows
+      .filter((r) => r.status === "success" && r.campaign_review)
+      .map((r) => ({
+        operator: String(r.operator || r.email || "Operator"),
+        review: r.campaign_review as CampaignReviewSummary,
+      }));
+  }, [result]);
+
   async function stopHealthCheck() {
     setStopping(true);
     setInfo("Stopping health check…");
@@ -394,9 +426,9 @@ export function HealthCheckPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">Health Check</h2>
         <p className="mt-1 max-w-3xl text-ink-600">
-          Pick operators and run. Use <strong>View in browser</strong> for the full styled report (tables and
-          colours). Open PDF (Drive) is the same report as a PDF in Google Drive — also what Slack links to.
-          HTML is never uploaded to Drive (Drive only shows raw HTML source).
+          Pick operators and run weekly WoW analysis. Campaign review (pre/post metrics, /update /delete /keep /new
+          recommendations) runs automatically as part of each health check when marketing data is downloaded. Use{" "}
+          <strong>View in browser</strong> for the full styled report. Open PDF (Drive) is what Slack links to.
         </p>
       </div>
 
@@ -555,6 +587,55 @@ export function HealthCheckPage() {
               Chromium: <code className="rounded bg-brand-50 px-1">python -m playwright install chromium</code>
             </p>
           )}
+
+          {campaignReviewByOperator.length > 0 ? (
+            <div className="mt-8 border-t border-brand-100 pt-6">
+              <h4 className="font-display text-base font-semibold text-ink-900">Campaign review</h4>
+              <p className="mt-1 text-sm text-ink-600">
+                Pre/post metrics and recommendations from the marketing download (included in this health check run).
+              </p>
+              <ul className="mt-4 flex flex-col gap-6">
+                {campaignReviewByOperator.map(({ operator, review }) => {
+                  const reviews = review.campaign_reviews ?? [];
+                  return (
+                    <li key={operator}>
+                      <p className="text-sm font-medium text-ink-800">{operator}</p>
+                      {review.error ? (
+                        <p className="mt-1 text-sm text-amber-800">{review.error}</p>
+                      ) : reviews.length > 0 ? (
+                        <div className="mt-2 overflow-x-auto rounded-xl border border-brand-100">
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="bg-brand-50 text-ink-700">
+                              <tr>
+                                <th className="px-3 py-2">Campaign</th>
+                                <th className="px-3 py-2">Recommendation</th>
+                                <th className="px-3 py-2">AOV lift %</th>
+                                <th className="px-3 py-2">Order lift %</th>
+                                <th className="px-3 py-2">Net revenue Δ</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {reviews.map((item, idx) => (
+                                <tr key={`${item.campaign_name ?? "c"}-${idx}`} className="border-t border-brand-50">
+                                  <td className="px-3 py-2">{item.campaign_name ?? "—"}</td>
+                                  <td className="px-3 py-2 font-medium">{item.recommendation ?? "—"}</td>
+                                  <td className="px-3 py-2">{item.aov_lift_pct ?? "—"}</td>
+                                  <td className="px-3 py-2">{item.order_volume_lift_pct ?? "—"}</td>
+                                  <td className="px-3 py-2">{item.net_revenue_delta ?? "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-sm text-ink-500">No campaign rows produced.</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

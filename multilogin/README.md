@@ -7,7 +7,7 @@ DoorDash is already logged in inside Multilogin browser profiles. RalphAI starts
 ## Requirements
 
 1. **Multilogin desktop app** running on the same machine as the RalphAI API (`./run.sh` or your worker).
-2. **Operator ↔ profile mapping** (repo root): `operator_multilogin_mapping.json` (+ `.csv`). Regenerate with `python -m multilogin.sync_operator_mapping`. Legacy fallback: `DD_Creds_with_profiles.csv`.
+2. **Operator ↔ profile mapping**: `multilogin/operator_multilogin_mapping.json` (+ `.csv`). Regenerate with `python -m multilogin.sync_operator_mapping`. Legacy fallback: `DD_Creds_with_profiles.csv`.
 3. **`.env`** (repo root):
 
 ```bash
@@ -18,7 +18,7 @@ MULTILOGIN_PASSWORD_B64=   # base64(UTF-8 password) — see below
 # Or plain (must quote for $): MULTILOGIN_PASSWORD='your$password'
 # Optional:
 # MULTILOGIN_FOLDER_ID=...          # default: first workspace folder
-# OPERATOR_PROFILE_MAPPING=operator_multilogin_mapping.json
+# OPERATOR_PROFILE_MAPPING=multilogin/operator_multilogin_mapping.json
 # MULTILOGIN_PROFILES_CSV=multilogin/DD_Creds_with_profiles.csv  # legacy fallback
 # MULTILOGIN_AUTOMATION_TYPE=playwright   # browser-use (default); selenium = WebDriver only
 # MULTILOGIN_CDP_URL=ws://127.0.0.1:PORT/devtools/browser/...  # if profile already started manually
@@ -145,7 +145,7 @@ Note: `updates.name` returns 200 but does **not** change the UI name.
 
 ## Sync operator ↔ profile mapping
 
-Builds repo-root `operator_multilogin_mapping.json` from Airtable operators and Multilogin profiles (auto-matches by email, legacy CSV, and normalized operator/profile names):
+Builds `multilogin/operator_multilogin_mapping.json` from Airtable operators and Multilogin profiles (auto-matches by email, legacy CSV, and normalized operator/profile names):
 
 ```bash
 # Live Airtable + Multilogin cloud API

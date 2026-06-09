@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agents.marketingreco.ads_planner import (
+from shared.campaign_planning.ads_planner import (
     apply_financial_store_to_merchant_map,
     build_store_to_merchant_from_financial_path,
 )

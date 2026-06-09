@@ -7,6 +7,48 @@ import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
 import { isSinglePeriodMode } from '../../lib/utils/periodMode';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import { SERIES } from '../../components/charts/chartTheme';
+
+/** Ranked store charts above the tables. */
+function StoresCharts({ stores, isSingleMode }) {
+  if (!stores.length) return null;
+  if (isSingleMode) {
+    const sales = stores.map((s) => ({ label: s.storeId, value: s.post_sales || 0 }));
+    return (
+      <RankedBarChart
+        title="Sales by store — selected period"
+        data={sales}
+        topN={25}
+        color={SERIES.post}
+        valueFormatter={fmt.usdK}
+      />
+    );
+  }
+  const growth = stores
+    .filter((s) => s.sales_growth_pct != null)
+    .map((s) => ({ label: s.storeId, value: s.sales_growth_pct }));
+  const salesPost = stores.map((s) => ({ label: s.storeId, value: s.post_sales || 0 }));
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <RankedBarChart
+        title="Sales growth by store (Pre → Post)"
+        subtitle="% change in sales. Green = growing stores, red = declining."
+        data={growth}
+        topN={25}
+        valueFormatter={fmt.delta}
+      />
+      <RankedBarChart
+        title="Sales by store — Post period"
+        subtitle="Where the volume sits today."
+        data={salesPost}
+        topN={25}
+        color={SERIES.post}
+        valueFormatter={fmt.usdK}
+      />
+    </div>
+  );
+}
 
 const METRIC_SPECS = [
   { id: 'sales', label: 'Sales', preKey: 'pre_sales', postKey: 'post_sales', postLyKey: 'postLY_sales', deltaKey: 'sales_prevspost', lyDeltaKey: 'sales_ly_prevspost', yoyDeltaKey: 'sales_yoy', deltaPctKey: 'sales_growth_pct', lyDeltaPctKey: 'sales_ly_growth_pct', yoyPctKey: 'sales_yoy_pct', render: (v) => fmt.usd(v || 0) },
@@ -83,6 +125,8 @@ export default function StoresScreen() {
             </div>
             <p className="text-sm text-[var(--text-muted)]">{section.stores.length} stores</p>
           </div>
+
+          <StoresCharts stores={section.stores} isSingleMode={isSingleMode} />
 
           {isSingleMode ? (
             <div className="space-y-4">

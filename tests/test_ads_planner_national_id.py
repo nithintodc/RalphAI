@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agents.marketingreco.ads_planner import build_ads_plan
-from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows
+from shared.campaign_planning.ads_planner import build_ads_plan
+from shared.campaign_planning.ralph_ads_excel import ralph_ads_upload_rows
 
 
 def _financial_header() -> str:

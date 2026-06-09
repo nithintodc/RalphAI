@@ -19,7 +19,7 @@ def next_handlers(event: EventType, payload: dict[str, Any]) -> list[dict[str, A
     """
     _ = payload
     if event == "deepdive_complete":
-        return [{"action": "invoke", "command": "/marketingreco", "auto": True}]
+        return [{"action": "invoke", "command": "/strategist", "auto": False}]
     if event == "marketingreco_complete":
         return [
             {"action": "invoke", "command": "/offers", "auto": False},

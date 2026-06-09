@@ -1,5 +1,5 @@
 """
-Scheduling: legacy review tick (`run_review` → `campaign_review.contract_pipeline`) + TODC helpers (`review_due_at`, `is_due`).
+Scheduling: legacy review tick (`run_review` → `health_check.contract_pipeline`) + TODC helpers (`review_due_at`, `is_due`).
 Wire to cron, Cloud Scheduler, Celery beat, or Redis.
 """
 

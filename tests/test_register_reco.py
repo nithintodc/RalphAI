@@ -1,9 +1,9 @@
-"""Unit tests for MarketingReco register-based recommendations."""
+"""Unit tests for Strategist register-based recommendations."""
 
 import pandas as pd
 import pytest
 
-from agents.marketingreco.register_reco import (
+from agents.strategist.register_reco import (
     classify_slot,
     promo_campaign_name,
     uplift_min_subtotal,

@@ -13,7 +13,7 @@ type Props = {
   onEmailChange: (v: string) => void;
   password: string;
   onPasswordChange: (v: string) => void;
-  /** When false, only operator + directory dropdown (e.g. MarketingReco manual). */
+  /** When false, only operator + directory dropdown (e.g. Strategist manual). */
   showDoorDashCredentials?: boolean;
   className?: string;
 };

@@ -9,15 +9,11 @@ from shared.reporting_browser_use_forks import (
 
 
 class TestReportingBrowserUseForks:
-    def test_five_forks_registered(self):
-        assert len(ALL_FORK_IDS) == 5
+    def test_four_forks_registered(self):
+        assert len(ALL_FORK_IDS) == 4
 
     def test_main_fork_is_runnable(self):
         assert is_fork_runnable("reporting_browser_use")
-
-    def test_stub_forks_not_runnable(self):
-        for fid in ("reporting_browser_use_new",):
-            assert not is_fork_runnable(fid)
 
     def test_browser_fork_uses_browser_use_key(self):
         meta = fork_metadata("reporting_browser_use_browser")

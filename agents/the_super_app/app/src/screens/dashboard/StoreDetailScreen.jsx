@@ -2,7 +2,9 @@ import { ArrowLeft } from 'lucide-react';
 import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
 import KpiCard from '../../components/ui/KpiCard';
-import { fmt } from '../../lib/utils/formatters';
+import { fmt, formatByKind } from '../../lib/utils/formatters';
+import GroupedBarChart from '../../components/charts/GroupedBarChart';
+import { SERIES } from '../../components/charts/chartTheme';
 
 export default function StoreDetailScreen() {
   const { storeTables } = useDataStore();
@@ -39,6 +41,13 @@ export default function StoreDetailScreen() {
 
   const metricLabels = ['Sales', 'Payouts', 'Orders', 'AOV', 'Profitability'];
   const metricFormats = ['usd', 'usd', 'int', 'usd2', 'pct'];
+  const metricKinds = ['usd', 'usd', 'int', 'usd2', 'pct'];
+
+  const periodCharts = metricLabels.map((label, i) => {
+    const kind = metricKinds[i];
+    const data = periods.map((p) => ({ period: p.label, value: store[p.metrics[i]] || 0 }));
+    return { label, kind, data };
+  });
 
   return (
     <div className="space-y-6">
@@ -49,14 +58,29 @@ export default function StoreDetailScreen() {
 
       <h2 className="text-lg font-bold text-[var(--text)]">{platformLabel} Store: {store.storeId}</h2>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpis.map(k => <KpiCard key={k.label} {...k} compact />)}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {periodCharts.map(({ label, kind, data }) => (
+          <GroupedBarChart
+            key={label}
+            title={`${label} — by period`}
+            data={data}
+            xKey="period"
+            height={220}
+            legend={false}
+            valueFormatter={(v) => formatByKind(kind, v)}
+            series={[{ key: 'value', name: label, color: SERIES.post }]}
+          />
+        ))}
       </div>
 
       <div className="card">
         <h3 className="text-sm font-semibold text-[var(--text)] mb-3">Period Comparison</h3>
-        <div className="overflow-x-auto flex justify-center">
-        <table className="table-auto w-max max-w-full text-sm mx-auto">
+        <div className="overflow-x-auto">
+        <table className="table-auto w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--border)]">
               <th className="text-center py-2 px-3 text-xs text-[var(--text-muted)]">Metric</th>

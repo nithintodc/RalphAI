@@ -7,6 +7,9 @@ import { fmt, formatByKind } from '../../lib/utils/formatters';
 import { formatStoreTagLabel } from '../../lib/export/exportSheetSummaries';
 import { buildAbComparison, buildSingleTagComparison, getUniqueStoreTags, STORE_GROWTH_SPECS } from '../../lib/engine/abComparison';
 import { exportAbReport } from '../../lib/export/exportAbWorkbook';
+import GroupedBarChart from '../../components/charts/GroupedBarChart';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import { CATEGORICAL } from '../../components/charts/chartTheme';
 
 function tagLabel(tag) {
   return formatStoreTagLabel(tag) || tag;
@@ -158,6 +161,25 @@ function OutperformanceTable({ title, subtitle, rows }) {
   );
 }
 
+/** Left vs right group PvP% per metric — cross-group headline chart. */
+function GroupGrowthBars({ leftTag, rightTag, rows }) {
+  if (!rows?.length) return null;
+  return (
+    <GroupedBarChart
+      title={`${leftTag} vs ${rightTag} — Pre→Post growth % by metric`}
+      subtitle="Cross-group comparison uses growth % only (cohorts have unequal store counts)."
+      data={rows}
+      xKey="metric"
+      height={280}
+      valueFormatter={fmt.delta}
+      series={[
+        { key: 'leftPvpPct', name: leftTag, color: CATEGORICAL[0] },
+        { key: 'rightPvpPct', name: rightTag, color: CATEGORICAL[1] },
+      ]}
+    />
+  );
+}
+
 function StorePctTable({ title, subtitle, rows }) {
   if (!rows?.length) return null;
   const columns = [
@@ -252,6 +274,14 @@ export default function AbComparisonScreen() {
             {exportMsg && <span className="text-[11px] text-[var(--text-subtle)]">{exportMsg}</span>}
           </div>
         </div>
+        {g?.growthProfileRows?.length > 0 && (
+          <RankedBarChart
+            title={`${tagLabel(abGroupFilter)} — Pre→Post growth % by metric`}
+            subtitle="Aggregated growth rates for this cohort. Green = up, red = down."
+            data={g.growthProfileRows.map((r) => ({ label: r.metric, value: r.pvpPct }))}
+            valueFormatter={fmt.delta}
+          />
+        )}
         <GroupGrowthProfileTable
           title={`${tagLabel(abGroupFilter)} — Growth profile`}
           subtitle="Aggregated growth rates for this cohort."
@@ -324,6 +354,7 @@ export default function AbComparisonScreen() {
 
       <div className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-subtle)]">Cross-group comparison (% only)</p>
+        <GroupGrowthBars leftTag={tagLabel(leftTag)} rightTag={tagLabel(rightTag)} rows={comparison.growthComparisonRows} />
         <HeadlineGrowthTable
           title={`${tagLabel(leftTag)} vs ${tagLabel(rightTag)} — Headline growth % comparison`}
           subtitle="All metrics: PvP%, YoY%, and LY PvP% with gap (percentage points)."

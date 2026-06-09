@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def handle(operator_id: str, text: str = "") -> dict:
-    from agents.campaign_review.agent import run
+    from agents.health_check.campaign_review import run
 
     raw = (text or "").strip()
     if not raw:

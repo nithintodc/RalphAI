@@ -251,21 +251,24 @@ def download_reports_for_operator(
             "error": str(cred_exc),
             "missing_reports": ["financial", "marketing"],
         }
-    try:
-        mlx_profile_id = _resolve_multilogin_profile_id(email)
-    except KeyError:
-        mapping_path = os.getenv(
-            "OPERATOR_PROFILE_MAPPING",
-            str(PROJECT_ROOT / "operator_multilogin_mapping.json"),
-        )
-        return {
-            "status": "failed",
-            "error": (
-                f"No multilogin_profile_id in {mapping_path} for DoorDash email {email!r}. "
-                "Run: python -m multilogin.sync_operator_mapping"
-            ),
-            "missing_reports": ["financial", "marketing"],
-        }
+    from shared.browser_settings import multilogin_mode_active
+
+    mlx_profile_id: str | None = None
+    if multilogin_mode_active():
+        try:
+            mlx_profile_id = _resolve_multilogin_profile_id(email)
+        except KeyError:
+            from shared.operator_profile_mapping import mapping_path as resolve_mapping_path
+
+            mapping_path = os.getenv("OPERATOR_PROFILE_MAPPING", str(resolve_mapping_path()))
+            return {
+                "status": "failed",
+                "error": (
+                    f"No multilogin_profile_id in {mapping_path} for DoorDash email {email!r}. "
+                    "Run: python -m multilogin.sync_operator_mapping"
+                ),
+                "missing_reports": ["financial", "marketing"],
+            }
     if mlx_profile_id:
         logger.info(
             "Multilogin: operator %s → profile %s (from operator_multilogin_mapping.json)",
@@ -644,16 +647,16 @@ def run_health_check(
         )
 
     try:
-        from shared.multilogin_browser import multilogin_enabled
+        from shared.browser_settings import get_browser_mode
 
-        if multilogin_enabled():
+        mode = get_browser_mode()
+        if mode == "multilogin":
             logger.info(
-                "Browser: Multilogin enabled (USE_MULTILOGIN=true) — DoorDash sessions from profiles CSV"
+                "Browser: multilogin mode — connect MLX profile per operator (Settings → Browser automation)"
             )
         else:
             logger.info(
-                "Browser: local Chrome via browser-use (USE_MULTILOGIN not set). "
-                "Add USE_MULTILOGIN=true and MULTILOGIN_USERNAME/PASSWORD to .env for logged-in profiles."
+                "Browser: native mode — local Chrome via browser-use with operator portal login"
             )
     except Exception:
         pass
@@ -791,6 +794,27 @@ def run_health_check(
         )
         operator_result["combined_campaigns_csv"] = campaign_bundle.get("combined_campaigns_csv")
         operator_result["campaign_wow_files"] = campaign_bundle.get("campaign_wow_files") or {}
+
+        marketing_path = download_result.get("marketing_path")
+        if marketing_path:
+            try:
+                from agents.health_check.campaign_review import run as run_campaign_review
+
+                review_out = run_campaign_review(
+                    op_name,
+                    mode="manual",
+                    data_files=[str(marketing_path)],
+                )
+                operator_result["campaign_review"] = {
+                    "campaign_reviews": review_out.get("campaign_reviews") or [],
+                    "mode": review_out.get("mode"),
+                    "notes": review_out.get("notes"),
+                    "summary_metrics": review_out.get("summary_metrics"),
+                    "slot_attribution": review_out.get("slot_attribution"),
+                }
+            except Exception as exc:
+                logger.warning("Campaign review failed for %s: %s", op_name, exc)
+                operator_result["campaign_review"] = {"error": str(exc)}
         if not operator_result["combined_campaigns_csv"]:
             logger.warning(
                 "Operator %s (%s): marketing campaigns outputs were not produced from downloaded report",
@@ -917,6 +941,7 @@ def run_health_check(
                 "pdf_public_url": r.get("pdf_public_url"),
                 "pdf_export_ok": r.get("pdf_export_ok"),
                 "wow_viz_html": r.get("wow_viz_html"),
+                "campaign_review": r.get("campaign_review"),
             }
         )
 

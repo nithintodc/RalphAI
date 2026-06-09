@@ -916,12 +916,18 @@ def get_task_description_reports_only(
 
 === STEP {s + 4}: Generate Marketing Report ===
 {s + 4}. Click "Create report". Select "Marketing report" RADIO BUTTON, click "Next".
-{s + 5}. IMPORTANT: UNCHECK "Online Ordering". Keep "Marketplace" CHECKED. Click "Next".
-{s + 6}. LOCATIONS: keep default "All stores", click "Next".
-{s + 7}. By date range: Start {start_date}, End {end_date}. Verify BOTH "Sponsored Listings" and "Promotions" are checked. Click "Create report". WAIT UNTIL the report appears.
 
-=== STEP {s + 8}: Download the Marketing Report IMMEDIATELY ===
-{s + 8}. Re-confirm Financial download completed. Click DOWNLOAD on the TOPMOST new Marketing report row. WAIT UNTIL download completes.
+=== STEP {s + 5}: Configure Marketing Report (Step 2 of 2 — create exactly once) ===
+{s + 5}. On the Marketing configuration screen (Step 2 of 2):
+- CHANNELS: Do NOT click or change anything. "Marketplace" is already selected by default — leave it as-is. Do NOT select "Online Ordering".
+- STORES: Do NOT change store selection. Keep default "All stores".
+- DATE RANGE: If "One-time report" is shown, keep it selected. CLEAR both date fields completely and TYPE Start date exactly {start_date} and End date exactly {end_date}. Verify both fields still show these exact values (NOT the default last-7-days).
+- Keep BOTH "Sponsored Listings" and "Promotions" checked.
+- Click the red "Create report" button. WAIT UNTIL the new Marketing row appears in the reports list.
+- Create Marketing exactly ONCE. If a Marketplace Marketing row for {start_date} – {end_date} already exists, skip creation and go to download.
+
+=== STEP {s + 6}: Download the Marketing Report IMMEDIATELY ===
+{s + 6}. Re-confirm Financial download completed. Click DOWNLOAD on the TOPMOST Marketplace Marketing row for {start_date} – {end_date}. WAIT UNTIL download completes.
 
 === DONE (stop here — no campaign) ===
 When both reports are downloaded, use the done action to finish.
@@ -979,13 +985,13 @@ def _get_regenerate_and_download_task(missing_reports: list[str], start_date: st
             f"""MARKETING:
 - Click "Create report"
 - Select "Marketing report", click Next
-- Ensure "Online Ordering" is UNCHECKED and "Marketplace" remains CHECKED, click Next
-- Keep default "All stores", click Next
-- CLEAR existing date values and TYPE exact date range: {start_date} to {end_date}
+- On Step 2 of 2: do NOT change Channels — "Marketplace" is already selected; do NOT select "Online Ordering"
+- Keep default "All stores"
+- CLEAR both date fields and TYPE exact date range: {start_date} to {end_date}
 - Verify both date fields still show exact values before proceeding
-- Verify BOTH "Sponsored Listings" and "Promotions" are checked (tick mark visible on both). If either is unchecked, click it to enable
-- Click "Create report", wait for row to appear
-- Download topmost Marketing report
+- Keep BOTH "Sponsored Listings" and "Promotions" checked
+- Click "Create report" once, wait for row to appear
+- Download topmost Marketplace Marketing report for {start_date} – {end_date}
 - Wait until download completes"""
         )
     return (
@@ -1022,23 +1028,23 @@ def _report_create_download_steps(
         lines.extend(
             [
                 f'{n}. Click "Create report". Select "{portal_label}" RADIO BUTTON, click "Next".',
-                f"{n + 1}. UNCHECK \"Online Ordering\". Keep \"Marketplace\" CHECKED. Click \"Next\".",
-                f"{n + 2}. Keep default \"All stores\", click \"Next\".",
                 (
-                    f'{n + 3}. Choose "By date range". CLEAR both date fields completely and TYPE '
-                    f"Start {start_date}, End {end_date}. Do NOT accept DoorDash defaults (e.g. last 7 days). "
+                    f"{n + 1}. On Step 2 of 2: do NOT change Channels — \"Marketplace\" is already selected; "
+                    f'do NOT select "Online Ordering". Keep default "All stores". '
+                    f'CLEAR both date fields completely and TYPE Start {start_date}, End {end_date}. '
+                    f"Do NOT accept DoorDash defaults (e.g. last 7 days). "
                     f'Verify BOTH fields still show exactly {start_date} and {end_date}. '
-                    f'Verify BOTH "Sponsored Listings" and "Promotions" are checked. Click "Create report". '
-                    f"WAIT until the new row appears and its Time frame column shows {start_date} – {end_date}."
+                    f'Keep BOTH "Sponsored Listings" and "Promotions" checked. '
+                    f'Click "Create report" once. WAIT until the new row appears and its Time frame shows {start_date} – {end_date}.'
                 ),
                 (
-                    f"{n + 4}. CONFIRM the TOPMOST new {portal_label} row Time frame is {start_date} – {end_date}. "
+                    f"{n + 2}. CONFIRM the TOPMOST new Marketplace {portal_label} row Time frame is {start_date} – {end_date}. "
                     f"If wrong dates, delete that row and recreate with the correct range. "
                     f"Click DOWNLOAD on the correct row. WAIT until the .zip download completes."
                 ),
             ]
         )
-        return "\n".join(lines), n + 5
+        return "\n".join(lines), n + 3
 
     lines.extend(
         [
@@ -2387,3 +2393,382 @@ async def run_reports_then_analysis_then_campaign(
         )
 
     await _kill_browser(browser)
+
+
+def get_task_description_ads_campaign(row: dict) -> str:
+    """Sponsored listing campaign task (Advertise to all customers / Existing customers)."""
+    store_id = str(row.get("store_id", "")).strip()
+    store_name = str(row.get("store_name", "")).strip()
+    slot_tags = row.get("slot_tags") or []
+    if not isinstance(slot_tags, (list, tuple)):
+        slot_tags = []
+    slot_tags = [int(t) for t in slot_tags if t is not None and str(t).strip() != ""]
+    tags_str = ", ".join(str(t) for t in sorted(slot_tags))
+    try:
+        bid = float(row.get("bid_strategy") or row.get("minimum_bid") or 3)
+    except (TypeError, ValueError):
+        bid = 3.0
+    try:
+        budget = float(row.get("budget") or 0)
+    except (TypeError, ValueError):
+        budget = 0.0
+    campaign_name = str(row.get("campaign_name") or f"TODC-ADS-{store_id}").strip()
+
+    selected_set = set(slot_tags)
+    all_tags = set(range(1, 43))
+    unselected_set = all_tags - selected_set
+    _GRID_ROWS = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
+    _GRID_COLS = ["Mon", "Tue", "Wed", "Thur", "Fri", "Sat", "Sun"]
+
+    def _group_by_row(tag_set):
+        rows = {}
+        for t in sorted(tag_set):
+            row_idx = (t - 1) // 7
+            row_name = _GRID_ROWS[row_idx]
+            col_name = _GRID_COLS[(t - 1) % 7]
+            rows.setdefault(row_name, []).append((t, col_name))
+        return rows
+
+    if len(selected_set) == 42:
+        manual_fallback = "All 42 cells should already be selected. Just click Save."
+    elif len(unselected_set) <= 20:
+        grouped = _group_by_row(unselected_set)
+        lines = []
+        for row_name, cells in grouped.items():
+            cols = ", ".join(col for _, col in cells)
+            lines.append(f"  - {row_name} row: click {cols}")
+        manual_fallback = (
+            f"DESELECT these {len(unselected_set)} cells (click each ONCE):\n"
+            + "\n".join(lines)
+            + "\n  Then click Save."
+        )
+    else:
+        grouped = _group_by_row(selected_set)
+        lines = []
+        for row_name, cells in grouped.items():
+            cols = ", ".join(col for _, col in cells)
+            lines.append(f"  - {row_name} row: click {cols}")
+        manual_fallback = (
+            f"Click Weekdays ONCE, then Weekends ONCE (grid now empty). "
+            f"Then SELECT these {len(selected_set)} cells (click each ONCE):\n"
+            + "\n".join(lines)
+            + "\n  Then click Save. NEVER click Weekdays/Weekends again."
+        )
+
+    schedule_instructions = f"""- IMPORTANT: Use the set_schedule_grid action to configure the grid automatically.
+- Call: set_schedule_grid(wanted_tags="{tags_str}")
+- Do NOT manually click grid cells. If set_schedule_grid returns SUCCESS, proceed to STEP 7.
+- If set_schedule_grid returns ERROR twice, do it manually: {manual_fallback}"""
+
+    session_email = str(row.get("doordash_email") or os.getenv("DOORDASH_EMAIL", "")).strip()
+    session_password = str(row.get("doordash_password") or os.getenv("DOORDASH_PASSWORD", "")).strip()
+    from shared.doordash_portal_tasks import build_campaign_session_preamble
+
+    preamble = build_campaign_session_preamble(session_email, session_password or None)
+
+    budget_step = (
+        f"- Click Edit next to budget. Set weekly budget to ${budget:.2f}. Click Save."
+        if budget > 0
+        else "- If budget is shown, leave default or set a reasonable weekly budget. Click Save."
+    )
+
+    return f"""
+ROLE: You are automating sponsored listing campaign creation on DoorDash Merchant Portal.
+
+{preamble}
+
+RULES:
+- Do NOT create or download reports.
+- Use "Advertise to all customers" (sponsored listing), NOT discount promotion cards.
+
+CAMPAIGN: {campaign_name} | STORE: {store_id} ({store_name or "N/A"}) | BID: ${bid:g} | TAGS: {tags_str}
+
+STEP 1 — Open campaign builder:
+- Click "Marketing" in the left sidebar. Wait for page to load.
+- Click "Run a campaign". Wait for campaign type cards.
+- Find "Advertise to all customers" and click "Select".
+- Click "Customize your campaign". Wait for form to load.
+
+STEP 2 — Select store:
+- Click Edit (pencil) next to "Stores". Wait for modal.
+- Click "Select All" to deselect all stores.
+- Search "{store_id}" in search bar. If not found, search "{store_name}" instead.
+- Select ONLY the one matching store. Click "Save".
+
+STEP 3 — Audience:
+- Click Edit next to audience / customer targeting.
+- Select "Existing customers".
+- Click "Save".
+
+STEP 4 — Bid:
+- Click Edit next to bid / cost per order / minimum bid.
+- Set minimum bid to ${bid:g}.
+- Click "Save".
+
+STEP 5 — Budget:
+{budget_step}
+
+STEP 6 — Schedule:
+- Click Edit next to "Scheduling". Wait for modal with grid.
+- Click "Set a custom schedule". Wait for grid.
+{schedule_instructions}
+
+STEP 7 — Campaign name:
+- Click Edit next to "Campaign name". Triple-click input, type exactly: {campaign_name}
+- Click "Save". WAIT until modal closes.
+
+STEP 8 — Create:
+- Confirm store, bid, schedule, and name "{campaign_name}" in the summary.
+- Click the button to create/launch the sponsored listing campaign. Wait for success.
+- If you see a duplicate/live-campaign warning, use done immediately and say DUPLICATE.
+
+DONE: Use done action. Say: "{campaign_name}" created for store {store_id}.
+"""
+
+
+async def _login_for_campaigns(browser, llm, email: str, password: str) -> None:
+    from browser_use import Agent
+    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
+
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    login_task = build_compact_login_task(resolved_email, resolved_password)
+    login_agent = Agent(task=login_task, llm=llm, browser=browser)
+    await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
+    logger.info("Login successful for campaign-only run")
+    push_to_slack(f"Login successful for {email}")
+
+
+async def _run_campaign_items(
+    *,
+    download_dir: Path,
+    email: str,
+    password: str,
+    items: list[dict],
+    task_builder: Callable[[dict], str],
+    label: str,
+    use_offer_tools: bool = True,
+) -> dict[str, Any]:
+    """Login once, then create campaigns from pre-built row/combo dicts."""
+    from browser_use import Agent
+    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
+
+    if not items:
+        return {"status": "success", "total": 0, "successful": 0, "failed": 0, "skipped": 0}
+
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    llm = _get_llm()
+    browser = _get_browser(download_dir, keep_alive=True)
+
+    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    relogin_task = build_compact_login_task(resolved_email, resolved_password)
+    reset_task = (
+        "IMPORTANT: Before navigating, close any modal/popup (X, Close, Cancel, or Escape). "
+        "Navigate to DoorDash Merchant Portal, click 'Marketing' in the left sidebar, "
+        "WAIT until Marketing page loads. Use done."
+    )
+    nav_to_marketing_task = (
+        "Go to https://merchant-portal.doordash.com/merchant/marketing "
+        "WAIT until loaded. Close any modal. Use done when Marketing page is visible."
+    )
+
+    try:
+        push_to_slack(f"*Ralph {label}* — starting {len(items)} campaign(s) for {email}")
+        await _login_for_campaigns(browser, llm, email, password)
+
+        total = len(items)
+        stats = {"successful": 0, "failed": 0, "skipped": 0, "timed_out": 0}
+        campaign_times: list[float] = []
+        phase_start = time.time()
+
+        logger.info("=" * 70)
+        logger.info("CAMPAIGN CREATION — %s %s items", label, total)
+        logger.info("=" * 70)
+        push_to_slack(
+            f"*Phase 2 started* — {total} {label.lower()} campaign(s) | "
+            f"Timeout: {AGENT_CAMPAIGN_TIMEOUT}s/campaign"
+        )
+
+        for i, item in enumerate(items, 1):
+            campaign_start = time.time()
+
+            if i > 1 and (i - 1) % MAX_CAMPAIGNS_PER_SESSION == 0:
+                logger.info("--- Browser restart after %d campaigns ---", i - 1)
+                await _kill_browser(browser)
+                browser = _get_browser(download_dir, keep_alive=True)
+                relogin_ok = False
+                for relogin_attempt in range(1, 3):
+                    try:
+                        login_agent = Agent(task=relogin_task, llm=llm, browser=browser)
+                        await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
+                        relogin_ok = True
+                        break
+                    except Exception as e:
+                        logger.warning("Re-login attempt %d failed: %s", relogin_attempt, e)
+                        await _kill_browser(browser)
+                        browser = _get_browser(download_dir, keep_alive=True)
+                if not relogin_ok:
+                    push_to_slack(f"*ABORTED* — Re-login failed at campaign {i}/{total}")
+                    break
+
+            try:
+                reset_agent = Agent(task=nav_to_marketing_task, llm=llm, browser=browser)
+                await asyncio.wait_for(reset_agent.run(), timeout=AGENT_RESET_TIMEOUT)
+            except Exception:
+                try:
+                    fallback_agent = Agent(task=reset_task, llm=llm, browser=browser)
+                    await asyncio.wait_for(fallback_agent.run(), timeout=AGENT_RESET_TIMEOUT)
+                except Exception as e:
+                    logger.warning("[%d/%d] Nav reset failed: %s", i, total, e)
+
+            campaign_name = str(item.get("campaign_name", ""))
+            campaign_task = task_builder(item)
+            status = "Failed"
+            try:
+                tools = _build_campaign_tools() if use_offer_tools else _build_campaign_tools()
+                campaign_agent = Agent(task=campaign_task, llm=llm, browser=browser, tools=tools)
+                history = await asyncio.wait_for(campaign_agent.run(), timeout=AGENT_CAMPAIGN_TIMEOUT)
+                completed_ok = True
+                if history is not None:
+                    if hasattr(history, "is_successful") and callable(history.is_successful):
+                        completed_ok = history.is_successful()
+                    elif hasattr(history, "final_result"):
+                        val = history.final_result
+                        completed_ok = bool(val() if callable(val) else val) if val is not None else False
+                final_text = ""
+                if history is not None and hasattr(history, "final_result"):
+                    val = history.final_result
+                    final_text = str(val() if callable(val) else val) if val is not None else ""
+                is_duplicate = any(
+                    p in final_text.lower()
+                    for p in (
+                        "same as one of your live campaigns",
+                        "duplicate",
+                        "already exists",
+                        "campaign are the same",
+                    )
+                )
+                if is_duplicate:
+                    status = "Skipped (duplicate)"
+                    stats["skipped"] += 1
+                elif completed_ok:
+                    status = "Successful"
+                    stats["successful"] += 1
+                else:
+                    status = "Failed"
+                    stats["failed"] += 1
+            except asyncio.TimeoutError:
+                status = "Failed"
+                stats["timed_out"] += 1
+                stats["failed"] += 1
+            except Exception as e:
+                status = "Failed"
+                stats["failed"] += 1
+                logger.warning("[%d/%d] %s error: %s", i, total, campaign_name, e)
+
+            campaign_elapsed = time.time() - campaign_start
+            campaign_times.append(campaign_elapsed)
+            item["status"] = status
+            logger.info("[%d/%d] %s %s (%.0fs)", i, total, status, campaign_name, campaign_elapsed)
+
+            if status == "Successful":
+                push_to_slack(f"[{i}/{total}] {campaign_name} — done ({campaign_elapsed:.0f}s)")
+            elif status == "Skipped (duplicate)":
+                push_to_slack(f"[{i}/{total}] {campaign_name} — skipped (duplicate)")
+            else:
+                push_to_slack(f"[{i}/{total}] {campaign_name} — failed ({campaign_elapsed:.0f}s)")
+
+            if i % 10 == 0 or i == total:
+                push_to_slack(
+                    f"*Progress: {i}/{total}* — "
+                    f"{stats['successful']} ok | {stats['failed']} failed | {stats['skipped']} skipped"
+                )
+
+            await asyncio.sleep(1)
+
+        total_elapsed = time.time() - phase_start
+        push_to_slack(
+            f"*{label} complete* — {stats['successful']} ok | {stats['failed']} failed | "
+            f"{stats['skipped']} skipped | {total_elapsed/60:.0f} min"
+        )
+        return {
+            "status": "success",
+            "total": total,
+            "successful": stats["successful"],
+            "failed": stats["failed"],
+            "skipped": stats["skipped"],
+            "timed_out": stats["timed_out"],
+            "elapsed_seconds": total_elapsed,
+            "download_dir": str(download_dir),
+        }
+    finally:
+        await _kill_browser(browser)
+
+
+async def run_offers_campaigns_from_combos(
+    *,
+    download_dir: Path,
+    email: str,
+    password: str,
+    combos: list[dict],
+) -> dict[str, Any]:
+    """Create discount/promo campaigns from Strategist Offers rows (combo dicts)."""
+    enriched = []
+    for c in combos:
+        row = dict(c)
+        row.setdefault("doordash_email", email)
+        row.setdefault("doordash_password", password)
+        enriched.append(row)
+    return await _run_campaign_items(
+        download_dir=download_dir,
+        email=email,
+        password=password,
+        items=enriched,
+        task_builder=get_task_description_campaign_for_subtotal_combo,
+        label="Offers",
+        use_offer_tools=True,
+    )
+
+
+async def run_ads_campaigns_from_rows(
+    *,
+    download_dir: Path,
+    email: str,
+    password: str,
+    rows: list[dict],
+) -> dict[str, Any]:
+    """Create sponsored listing campaigns from Strategist Ads rows."""
+    enriched = []
+    for r in rows:
+        row = dict(r)
+        row.setdefault("doordash_email", email)
+        row.setdefault("doordash_password", password)
+        enriched.append(row)
+    return await _run_campaign_items(
+        download_dir=download_dir,
+        email=email,
+        password=password,
+        items=enriched,
+        task_builder=get_task_description_ads_campaign,
+        label="Ads",
+        use_offer_tools=True,
+    )
+
+
+async def run_ads_campaigns_from_sheet(
+    *,
+    download_dir: Path,
+    email: str,
+    password: str,
+    sheet_path: Path,
+) -> dict[str, Any]:
+    """Create sponsored listings from a CSV/Excel Ads sheet (upload or Strategist export)."""
+    from shared.strategist_campaign_sheets import load_ads_rows_from_path
+
+    rows = load_ads_rows_from_path(Path(sheet_path))
+    return await run_ads_campaigns_from_rows(
+        download_dir=download_dir,
+        email=email,
+        password=password,
+        rows=rows,
+    )

@@ -19,14 +19,8 @@ _GEMINI_FORKS = frozenset(
 
 _BROWSER_USE_FORKS = frozenset({"reporting_browser_use_browser"})
 
-_STUB_FORKS = frozenset(
-    {
-        "reporting_browser_use_new",
-    }
-)
-
 ALL_FORK_IDS = tuple(
-    sorted(_GEMINI_FORKS | _BROWSER_USE_FORKS | _STUB_FORKS)
+    sorted(_GEMINI_FORKS | _BROWSER_USE_FORKS)
 )
 
 
@@ -77,8 +71,6 @@ def _description(fork_id: str, llm: str) -> str:
         return "Store-ID normalization in analysis/campaign params (Gemini)."
     if fork_id == "reporting_browser_use_savvy":
         return "Savvy variant — same lineage as melt (Gemini)."
-    if fork_id in _STUB_FORKS:
-        return "Reserved fork name — main.py not installed in this directory yet."
     return f"Reporting browser-use fork ({llm})."
 
 
@@ -88,9 +80,7 @@ def fork_metadata(fork_id: str) -> ForkMeta:
     llm, llm_key = _llm_for_fork(fork_id)
     runnable = is_fork_runnable(fork_id)
     note = ""
-    if fork_id in _STUB_FORKS:
-        note = "Stub only — copy a full reporting_browser_use tree here or remove this fork."
-    elif not runnable:
+    if not runnable:
         note = "main.py missing — fork cannot run."
     return {
         "id": fork_id,
@@ -112,7 +102,6 @@ def list_fork_metadata() -> list[ForkMeta]:
 SERVER_ENV_KEYS = (
     "GEMINI_API_KEY",
     "BROWSER_USE_API_KEY",
-    "USE_MULTILOGIN",
     "MULTILOGIN_USERNAME",
     "MULTILOGIN_PASSWORD",
     "MULTILOGIN_PASSWORD_B64",
@@ -131,7 +120,6 @@ SERVER_ENV_KEYS = (
     "GCP_SERVICE_ACCOUNT_JSON",
     "OPERATOR_NAME",
     "DOORDASH_PARALLEL_CAMPAIGNS_BY_STORE",
-    "USE_LOCAL_BROWSER",
 )
 
 

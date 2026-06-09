@@ -11,7 +11,6 @@ def repo_root() -> Path:
 
 
 _MULTILOGIN_ENV_KEYS = (
-    "USE_MULTILOGIN",
     "MULTILOGIN_USERNAME",
     "MULTILOGIN_PASSWORD",
     "MULTILOGIN_PASSWORD_B64",
@@ -23,6 +22,7 @@ _MULTILOGIN_ENV_KEYS = (
 
 
 def reporting_subprocess_env(reporting_root: Path) -> dict[str, str]:
+    from shared.browser_settings import apply_browser_mode_to_env
     from shared.reporting_browser_use_forks import SERVER_ENV_KEYS
 
     env = os.environ.copy()
@@ -34,4 +34,5 @@ def reporting_subprocess_env(reporting_root: Path) -> dict[str, str]:
         val = os.getenv(key)
         if val is not None and val != "":
             env[key] = val
+    apply_browser_mode_to_env(env)
     return env

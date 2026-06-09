@@ -17,11 +17,9 @@ CampaignKind = Literal["offers", "ads"]
 
 def run_onboarding_chain(operator_id: str) -> dict[str, Any]:
     from agents.deepdive.agent import run as deepdive_run
-    from agents.marketingreco.agent import run as reco_run
 
     dd = deepdive_run(operator_id=operator_id)
-    plan = reco_run(operator_id)
-    return {"deepdive": dd, "marketing_plan": plan}
+    return {"deepdive": dd}
 
 
 def run_full_setup(

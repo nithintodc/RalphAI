@@ -148,7 +148,7 @@ def notify(text: str) -> None:
 
 def slack_notification_channel() -> str:
     """
-    Default Slack channel for agent notifications (Campaign Killer, etc.)
+    Default Slack channel for agent notifications
     Set ``SLACK_CHANNEL`` to a channel ID (e.g. C01234567). Same token as
     ``SLACK_BOT_TOKEN`` as used elsewhere.
     """

@@ -90,7 +90,7 @@ def reporting_browser_use_root() -> Path:
 
 def marketingreco_reporting_root() -> Path:
     """
-    Reporting workflow root used by MarketingReco manual/auto and Offers/Ads automation.
+    Reporting workflow root used by Strategist, Offers/Ads automation, and related agents.
     """
     raw = os.environ.get("MARKETINGRECO_REPORTING_ROOT", "").strip()
     if raw:

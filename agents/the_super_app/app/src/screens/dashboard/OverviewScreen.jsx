@@ -16,6 +16,7 @@ import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
 import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
+import RankedBarChart from '../../components/charts/RankedBarChart';
 import {
   getStarAndDecliningStores,
   getPlatformDailyExtremes,
@@ -386,30 +387,23 @@ export default function OverviewScreen() {
           />
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0">
-            <div className="card min-w-0 flex flex-col max-h-[min(480px,70vh)]">
-              <h3 className="text-sm font-semibold text-[var(--text)] mb-1 shrink-0">Store Spotlight — {p.label}</h3>
-              <p className="text-[10px] text-[var(--text-subtle)] mb-3 shrink-0">
-                Top &amp; low {p.storeSpotlight.count || 0} store{p.storeSpotlight.count === 1 ? '' : 's'} by sales growth
-              </p>
-              <div className="overflow-y-auto min-h-0 flex-1 grid grid-cols-2 gap-x-4">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase text-[var(--positive)] mb-1">Star stores</p>
-                  {p.storeSpotlight.stars.length > 0
-                    ? p.storeSpotlight.stars.map((store) => (
-                      <GrowthSpotlightRow key={`star-${p.key}-${store.storeId}`} id={store.storeId} pct={store.sales_growth_pct} tone="star" />
-                    ))
-                    : <p className="text-xs text-[var(--text-subtle)]">—</p>}
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase text-[var(--negative)] mb-1">Declining stores</p>
-                  {p.storeSpotlight.declining.length > 0
-                    ? p.storeSpotlight.declining.map((store) => (
-                      <GrowthSpotlightRow key={`dec-${p.key}-${store.storeId}`} id={store.storeId} pct={store.sales_growth_pct} tone="decline" />
-                    ))
-                    : <p className="text-xs text-[var(--text-subtle)]">—</p>}
-                </div>
+            {(p.storeSpotlight.stars.length > 0 || p.storeSpotlight.declining.length > 0) ? (
+              <RankedBarChart
+                className="min-w-0"
+                title={`Store Spotlight — ${p.label}`}
+                subtitle={`Top & low ${p.storeSpotlight.count || 0} store${p.storeSpotlight.count === 1 ? '' : 's'} by Pre→Post sales growth.`}
+                data={[...p.storeSpotlight.stars, ...p.storeSpotlight.declining].map((s) => ({
+                  label: s.storeId,
+                  value: s.sales_growth_pct,
+                }))}
+                valueFormatter={fmt.delta}
+              />
+            ) : (
+              <div className="card min-w-0">
+                <h3 className="text-sm font-semibold text-[var(--text)] mb-1">Store Spotlight — {p.label}</h3>
+                <p className="text-xs text-[var(--text-subtle)]">No store-level growth data.</p>
               </div>
-            </div>
+            )}
 
             <div className="card min-w-0 flex flex-col max-h-[min(480px,70vh)]">
               <h3 className="text-sm font-semibold text-[var(--text)] mb-1 shrink-0">Date Spotlight — {p.label}</h3>

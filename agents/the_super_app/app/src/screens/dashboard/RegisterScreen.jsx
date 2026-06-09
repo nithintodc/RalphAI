@@ -13,6 +13,47 @@ import {
   UE_REGISTER_COLUMNS,
 } from '../../lib/engine/register';
 import { coerceDdSalesByOrderParsed } from '../../lib/parsers/ddSalesByOrder';
+import GroupedBarChart from '../../components/charts/GroupedBarChart';
+import { SLOT_NAMES } from '../../lib/engine/slots';
+import { fmt } from '../../lib/utils/formatters';
+import { SERIES } from '../../components/charts/chartTheme';
+
+/** Roll the store × day × slot register up to a 6-slot daypart summary. */
+function RegisterDaypartCharts({ rows }) {
+  const bySlot = SLOT_NAMES.map((slot) => {
+    const rs = rows.filter((r) => r.slot === slot);
+    return {
+      slot,
+      sales: rs.reduce((s, r) => s + (Number(r.sales) || 0), 0),
+      orders: rs.reduce((s, r) => s + (Number(r.orders) || 0), 0),
+    };
+  });
+  if (!bySlot.some((s) => s.sales || s.orders)) return null;
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <GroupedBarChart
+        title="Sales by day-part"
+        subtitle="Total register sales rolled up across stores & weekdays."
+        data={bySlot}
+        xKey="slot"
+        height={240}
+        valueFormatter={fmt.usdK}
+        series={[{ key: 'sales', name: 'Sales', color: SERIES.post }]}
+        legend={false}
+      />
+      <GroupedBarChart
+        title="Orders by day-part"
+        subtitle="Total order count by day-part slot."
+        data={bySlot}
+        xKey="slot"
+        height={240}
+        valueFormatter={fmt.int}
+        series={[{ key: 'orders', name: 'Orders', color: SERIES.pre }]}
+        legend={false}
+      />
+    </div>
+  );
+}
 
 function hasDdSalesByOrderUpload(byOrder) {
   const { data } = coerceDdSalesByOrderParsed(byOrder);
@@ -79,6 +120,7 @@ function RegisterPanel({ platform, label, rows, columnSpecs, onExport, isExporti
           {isExporting ? 'Exporting…' : `Export ${label}`}
         </button>
       </div>
+      <RegisterDaypartCharts rows={rows} />
       <DataTable
         columns={columns}
         data={rows}

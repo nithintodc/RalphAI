@@ -1,7 +1,7 @@
 """
 Canonical operator ↔ Multilogin profile mapping for all browser-use agents.
 
-Source of truth: repo-root ``operator_multilogin_mapping.json`` (override with
+Source of truth: ``multilogin/operator_multilogin_mapping.json`` (override with
 ``OPERATOR_PROFILE_MAPPING``). Regenerate with::
 
     python -m multilogin.sync_operator_mapping
@@ -22,7 +22,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BASENAME = "operator_multilogin_mapping.json"
+_DEFAULT_BASENAME = "multilogin/operator_multilogin_mapping.json"
 _LEGACY_CSV_BASENAME = "multilogin/DD_Creds_with_profiles.csv"
 
 _mapping_cache: dict[str, Any] | None = None
@@ -403,7 +403,7 @@ def save_mapping_payload(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_mapping(data: dict[str, Any], *, write_csv: bool = True) -> tuple[Path, Path]:
-    """Persist mapping JSON and companion CSV to repo root; returns both paths."""
+    """Persist mapping JSON and companion CSV under multilogin/; returns both paths."""
     _clear_indexes()
     path = mapping_path()
     csv_path = mapping_csv_path()

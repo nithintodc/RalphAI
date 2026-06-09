@@ -1083,44 +1083,18 @@ def _get_llm():
     return ChatBrowserUse()
 
 
-def _get_browser(download_dir: Path, keep_alive: bool = False):
-    """
-    Browser with download path set to the given directory.
-    keep_alive=True keeps browser open for reuse.
+def _get_browser(
+    download_dir: Path,
+    keep_alive: bool = False,
+    *,
+    doordash_email: str | None = None,
+):
+    """Browser for DoorDash automation (Multilogin or native — see Settings)."""
+    from shared.browser_use_factory import create_browser_use_browser
 
-    Connection priority:
-      1. LOCAL_BROWSER_CDP_URL — Remote headless Chrome via CDP (GCP/cloud deployment)
-      2. Local Chrome executable (macOS laptop)
-      3. Default browser-use browser
-    """
-    from browser_use import Browser
-
-    downloads_path = str(download_dir.resolve())
-
-    # --- Remote CDP (headless Chrome on GCP VM, Browserless, etc.) ---
-    cdp_url = os.getenv("LOCAL_BROWSER_CDP_URL", "").strip()
-    if cdp_url:
-        logger.info("Connecting to remote Chrome via CDP: %s", cdp_url)
-        return Browser(
-            cdp_url=cdp_url,
-            downloads_path=downloads_path,
-            enable_default_extensions=False,
-            keep_alive=keep_alive,
-        )
-
-    # --- Local Chrome executable (laptop/macOS) ---
-    common = dict(
-        downloads_path=downloads_path,
-        enable_default_extensions=False,
-        keep_alive=keep_alive,
+    return create_browser_use_browser(
+        download_dir, keep_alive=keep_alive, doordash_email=doordash_email
     )
-    if os.name == "posix":
-        chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if Path(chrome).exists():
-            return Browser(executable_path=chrome, **common)
-
-    # --- Default browser-use browser ---
-    return Browser(**common)
 
 
 def _peek_zip_type(path: Path) -> str:

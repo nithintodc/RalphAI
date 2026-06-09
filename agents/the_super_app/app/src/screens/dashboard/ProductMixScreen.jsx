@@ -14,6 +14,24 @@ import {
   pickProductMixQtyColumn,
   isCoarseProductMixDates,
 } from '../../lib/utils/opsProductPivot';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import ChartCard from '../../components/charts/ChartCard';
+import {
+  ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ReferenceLine,
+} from 'recharts';
+import { AXIS_TICK, GRID, POS } from '../../components/charts/chartTheme';
+
+function ProductScatterTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs shadow-md max-w-[16rem]">
+      <p className="font-semibold text-[var(--text)] mb-1 truncate">{d.name}</p>
+      <p className="tnum text-[var(--text-muted)]">Post sales: {fmt.usd(d.x)}</p>
+      <p className="tnum text-[var(--text-muted)]">Growth: {fmt.delta(d.y)}</p>
+    </div>
+  );
+}
 
 function toNum(v) {
   if (v == null) return 0;
@@ -209,7 +227,7 @@ export default function ProductMixScreen() {
       label: valueLabel,
       align: 'right',
       sortable: true,
-      render: (v) => formatCell(v),
+      render: (v) => fmt.usd(v || 0),
     },
   ];
 
@@ -239,8 +257,46 @@ export default function ProductMixScreen() {
     { key: 'growthPct', label: 'Growth %', align: 'right', sortable: true, delta: true, render: (v) => fmt.delta(v || 0) },
   ];
 
+  const topSalesBar = [...productAgg].sort((a, b) => b.sales - a.sales).slice(0, 12)
+    .map((p) => ({ label: p.product, value: p.sales }));
+  const scatterRows = (productPeriods || [])
+    .filter((p) => p.post > 0 && p.growthPct != null)
+    .map((p) => ({ x: p.post, y: p.growthPct, name: p.product }));
+
   return (
     <div className="space-y-5 max-w-full min-w-0 overflow-x-hidden">
+      {(topSalesBar.length > 0 || scatterRows.length > 1) && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {topSalesBar.length > 0 && (
+            <RankedBarChart
+              title="Top products by gross sales"
+              subtitle="The biggest revenue drivers across all stores."
+              data={topSalesBar}
+              topN={12}
+              color="var(--accent)"
+              valueFormatter={fmt.usdK}
+            />
+          )}
+          {scatterRows.length > 1 && (
+            <ChartCard
+              title="Sales vs growth — by product"
+              subtitle="Post sales (x) vs Pre→Post growth % (y). Top-right = big & growing; bottom-right = big but declining."
+              height={300}
+            >
+              <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                <XAxis type="number" dataKey="x" name="Post sales" tick={AXIS_TICK} axisLine={false} tickLine={false} tickFormatter={fmt.usdK} />
+                <YAxis type="number" dataKey="y" name="Growth %" tick={AXIS_TICK} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `${Math.round(v)}%`} />
+                <ZAxis type="number" range={[50, 50]} />
+                <ReferenceLine y={0} stroke="var(--border-strong)" />
+                <Tooltip content={<ProductScatterTip />} cursor={{ strokeDasharray: '3 3' }} />
+                <Scatter data={scatterRows} fill={POS} fillOpacity={0.55} />
+              </ScatterChart>
+            </ChartCard>
+          )}
+        </div>
+      )}
+
       {(topSellingRows.length > 0 || topAovRows.length > 0 || topErrorChargeRows.length > 0) && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {topSellingRows.length > 0 && (

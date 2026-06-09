@@ -60,10 +60,10 @@ class TestOperatorProfileMapping:
         assert profile_id_for_email(_SAMPLE_EMAIL) == _SAMPLE_PROFILE_ID
 
     def test_mapping_path_relative_to_repo_not_cwd(self, monkeypatch):
-        monkeypatch.setenv("OPERATOR_PROFILE_MAPPING", "operator_multilogin_mapping.json")
+        monkeypatch.setenv("OPERATOR_PROFILE_MAPPING", "multilogin/operator_multilogin_mapping.json")
         reporting = ROOT / "agents" / "reporting_browser_use"
         monkeypatch.chdir(reporting)
-        assert mapping_path() == (ROOT / "operator_multilogin_mapping.json").resolve()
+        assert mapping_path() == (ROOT / "multilogin/operator_multilogin_mapping.json").resolve()
 
     def test_build_venn_view(self):
         data = {

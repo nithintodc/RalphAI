@@ -15,6 +15,48 @@ import {
   pivotStoreReasonMatrix,
   pivotTopDatesPerStore,
 } from '../../lib/utils/opsProductPivot';
+import { PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import ChartCard from '../../components/charts/ChartCard';
+import { TOOLTIP_STYLE, CATEGORICAL, WARN } from '../../components/charts/chartTheme';
+
+/** Downtime ranked-by-store + by-category donut, above the ops tables. */
+function DowntimeCharts({ storeRows, categoryRows, categoryCol }) {
+  const hasStore = storeRows.some((r) => (r.totalMinutes || 0) > 0);
+  const sortedCats = [...(categoryRows || [])].sort((a, b) => (b.totalMinutes || 0) - (a.totalMinutes || 0));
+  const top = sortedCats.slice(0, 7);
+  const restTotal = sortedCats.slice(7).reduce((s, r) => s + (r.totalMinutes || 0), 0);
+  const pieData = top.map((r) => ({ name: r.label, value: Math.round(r.totalMinutes || 0) }));
+  if (restTotal > 0) pieData.push({ name: 'Other', value: Math.round(restTotal) });
+  const hasCat = pieData.some((d) => d.value > 0);
+  if (!hasStore && !hasCat) return null;
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {hasStore && (
+        <RankedBarChart
+          title="Downtime by store"
+          subtitle="Total store offline time. Longer bars = more lost availability."
+          data={storeRows.map((r) => ({ label: r.label, value: r.totalMinutes || 0 }))}
+          topN={15}
+          color={WARN}
+          valueFormatter={formatDurationDHM}
+        />
+      )}
+      {hasCat && (
+        <ChartCard title="Downtime by category" subtitle={`Share of total downtime by ${categoryCol || 'category'}.`} height={300}>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={2}>
+              {pieData.map((_, i) => <Cell key={i} fill={CATEGORICAL[i % CATEGORICAL.length]} />)}
+            </Pie>
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => formatDurationDHM(v)} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+          </PieChart>
+        </ChartCard>
+      )}
+    </div>
+  );
+}
 
 function cols(rows) {
   return rows?.[0] ? Object.keys(rows[0]) : [];
@@ -342,6 +384,12 @@ export default function OperationsScreen() {
 
   return (
     <div className="space-y-8 max-w-full min-w-0 overflow-x-hidden">
+      <DowntimeCharts
+        storeRows={downtimeStoreRows}
+        categoryRows={downtimeCategoryRows}
+        categoryCol={categoryCol}
+      />
+
       {downtimeStoreRows.length > 0 && (
         <OpsSection
           title="Downtime by store"

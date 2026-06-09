@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows, slot_table_row_to_schedule_tag
+from shared.campaign_planning.ralph_ads_excel import ralph_ads_upload_rows, slot_table_row_to_schedule_tag
 
 
 def test_slot_tag_monday_early_morning():

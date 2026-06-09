@@ -7,7 +7,7 @@ type AdsMode = "manual" | "auto";
 
 export function AdsPage() {
   const [operatorId, setOperatorId] = useState("");
-  const [mode, setMode] = useState<AdsMode>("manual");
+  const [mode, setMode] = useState<AdsMode>("auto");
   const [adsSheetFile, setAdsSheetFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -69,18 +69,13 @@ export function AdsPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI — Ads</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          <strong>Manual</strong>: upload any CSV/Excel plus DoorDash credentials for browser-use login. For Excel,
-          the backend reads the sheet named <strong>Ads</strong> automatically. Expected Ads columns:{" "}
-          <strong>Merchant store ID</strong> (or legacy <strong>Store ID</strong>), <strong>Slots</strong> (tags
-          1–42), <strong>Bid strategy</strong>, <strong>Budget</strong>, <strong>Campaign name</strong>. The agent opens
-          Marketing → Run a campaign → <strong>Advertise to all customers</strong>, audience{" "}
-          <strong>Existing customers</strong>, and your schedule.
+          <strong>Auto</strong> (default): loads the latest Strategist <strong>Ads Campaigns</strong> sheet from{" "}
+          <code>data/Strategist/</code>, then runs sponsored listing browser automation with Slack updates.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">
-          <strong>Auto</strong>: browser logs in and downloads financial + marketing reports, runs the analysis agents and
-          builds the combined workbook (campaign recommendations), derives Ads upload rows from financial data,           then runs <strong>sponsored listing</strong> creation in the portal (same flow as Manual). Offers / promos use
-          the
-          separate Offers agent.
+          <strong>Manual</strong>: upload CSV/Excel (sheet <strong>Ads</strong>). Columns: Merchant store ID, Slots
+          (tags 1–42), Bid strategy, Budget, Campaign name. Portal flow: Marketing → Run a campaign →{" "}
+          <strong>Advertise to all customers</strong>, audience <strong>Existing customers</strong>, custom schedule.
         </p>
       </div>
 
@@ -102,8 +97,8 @@ export function AdsPage() {
             value={mode}
             onChange={(e) => setMode(e.target.value as AdsMode)}
           >
+            <option value="auto">Auto (latest Strategist Ads sheet)</option>
             <option value="manual">Manual (upload Ads sheet)</option>
-            <option value="auto">Auto (reports → analysis → ads recommendations → sponsored listings)</option>
           </select>
         </label>
 
@@ -133,7 +128,7 @@ export function AdsPage() {
             {loading
               ? mode === "manual"
                 ? "Running Ads setup..."
-                : "Running Reporting (auto)..."
+                : "Creating Ads campaigns..."
               : "Run RalphAI — Ads"}
           </button>
         </div>

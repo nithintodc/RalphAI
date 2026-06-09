@@ -48,14 +48,33 @@ PATH A — Already logged in (go straight to Reports; do NOT enter credentials):
 3. WAIT until the Reports page is fully loaded and "Create report" is visible. Continue to the next step.
 
 PATH B — Not logged in (login screen: identity.doordash.com, "Welcome back", or Email field):
+CRITICAL: Email and password are SEPARATE fields. NEVER append or paste the password into the email field.
+
 1. Go to {MERCHANT_LOGIN_URL}
-2. EMAIL screen: enter ONLY this email: {resolved_email}
-3. Click "Continue to Log In". WAIT until the password screen appears.
-4. PASSWORD screen: enter ONLY this password: {resolved_password}
-5. Click "Log In". WAIT until the dashboard loads (sidebar navigation visible).
-6. Click "Reports" in the left sidebar. WAIT until the Reports page loads.
+2. If BOTH Email and Password fields are visible on the SAME screen ("Welcome back"):
+   a. Click the Email field. CLEAR it completely. Type ONLY: {resolved_email}
+   b. Click the Password field (separate box below email). Type ONLY: {resolved_password}
+   c. Click "Log In". WAIT until the dashboard loads (sidebar navigation visible).
+3. If ONLY an Email field is visible (two-step login):
+   a. CLEAR the Email field. Type ONLY: {resolved_email}
+   b. Click "Continue to Log In". WAIT until the password screen appears.
+   c. Click the Password field. Type ONLY: {resolved_password}
+   d. Click "Log In". WAIT until the dashboard loads.
+4. Click "Reports" in the left sidebar if not already there. WAIT until the Reports page loads.
 
 Use PATH A when already authenticated. Use PATH B only when you see a login screen.
+"""
+    return text, step_num + 1
+
+
+def build_post_login_reports_preamble(*, step_num: int = 0) -> tuple[str, int]:
+    """Browser-use block when Playwright already signed in — go straight to Reports."""
+    text = f"""
+=== STEP {step_num}: Open Reports (already logged in) ===
+You are already signed into the DoorDash Merchant Portal. Do NOT enter email or password.
+1. Go to {MERCHANT_REPORTS_URL}
+2. Dismiss any popup (e.g. "All your DoorDash reports in one place").
+3. WAIT until the Reports page is fully loaded and "Create report" is visible. Continue to the next step.
 """
     return text, step_num + 1
 
@@ -75,9 +94,8 @@ def build_compact_login_task(
 1. Go to {MERCHANT_REPORTS_URL}
 2. If Reports loads with sidebar and "Create report", you are logged in — use done.
 3. If you see a login screen ("Welcome back" or identity.doordash.com), go to {MERCHANT_LOGIN_URL}
-4. Email: {resolved_email} → click "Continue to Log In"
-5. Password: {resolved_password} → click "Log In"
-6. Open Reports from the sidebar if needed. Use done when on the Reports page."""
+4. NEVER put the password in the email field. If both fields are on one screen: email {resolved_email} in Email, password {resolved_password} in Password, then Log In. If two-step: email only → Continue to Log In → password only → Log In.
+5. Open Reports from the sidebar if needed. Use done when on the Reports page."""
 
 
 def build_campaign_session_preamble(email: str, password: str | None = None) -> str:

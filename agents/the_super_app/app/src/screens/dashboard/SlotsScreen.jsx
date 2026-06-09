@@ -1,12 +1,12 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import BarShareLabels from '../../components/charts/BarShareLabels';
-import { addBarSharePct } from '../../lib/utils/barChartShare';
+import GroupedBarChart from '../../components/charts/GroupedBarChart';
 import SplitDataTable from '../../components/ui/SplitDataTable';
 import { SLOT_CORE_METRICS } from '../../lib/engine/slots';
 import { buildSlotPvpColumns, buildSlotYoyColumns } from '../../lib/slots/slotTableColumns';
 import { useSlotFinancialAnalyses } from '../../hooks/useSlotFinancialAnalyses';
 import { DATA_PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
+import { formatByKind } from '../../lib/utils/formatters';
+import { SERIES } from '../../components/charts/chartTheme';
 
 function SlotTicketMixSummary({ summary, platformLabel }) {
   const { towardsLesserGcBaskets, towardsHigherTicket, roughlyUnchanged } = summary;
@@ -37,47 +37,55 @@ function SlotTicketMixSummary({ summary, platformLabel }) {
   );
 }
 
+/** Pre vs Post comparison of each core metric, by day-part slot — at-a-glance view. */
+function SlotMetricCharts({ sa }) {
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {SLOT_CORE_METRICS.map((spec) => {
+        const rows = sa[`${spec.key}PrePost`] || [];
+        if (!rows.length) return null;
+        const fmtVal = (v) => formatByKind(spec.valueKind, v);
+        const title = `${spec.label} — Pre vs Post by slot${spec.dailyAvg ? ' (avg/day)' : ''}`;
+        return (
+          <GroupedBarChart
+            key={`${spec.key}-chart`}
+            title={title}
+            data={rows}
+            xKey="slot"
+            height={260}
+            valueFormatter={fmtVal}
+            series={[
+              { key: 'pre', name: 'Pre', color: SERIES.pre },
+              { key: 'post', name: 'Post', color: SERIES.post },
+            ]}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function SlotTicketBucketCharts({ bySlotCharts }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {bySlotCharts.map(({ slot, data }) => {
-        const chartData = addBarSharePct(data, ['pre_orders', 'post_orders']);
-        return (
-          <div key={slot} className="card">
-            <h4 className="text-xs font-semibold text-[var(--text)] mb-3">{slot} — ticket-size mix</h4>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={chartData} barGap={1} margin={{ top: 18, bottom: 36, left: 0, right: 4 }}>
-                <XAxis
-                  dataKey="range"
-                  tick={{ fontSize: 8, fill: 'var(--text-muted)' }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval={0}
-                  angle={-35}
-                  textAnchor="end"
-                  height={52}
-                />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--text-subtle)' }} axisLine={false} tickLine={false} width={36} />
-                <Tooltip
-                  contentStyle={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    fontSize: 11,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Bar dataKey="pre_orders" name="Pre" fill="var(--border-strong)" radius={[2, 2, 0, 0]}>
-                  <BarShareLabels dataKey="pre_orders" fill="var(--text-subtle)" />
-                </Bar>
-                <Bar dataKey="post_orders" name="Post" fill="var(--accent)" radius={[2, 2, 0, 0]}>
-                  <BarShareLabels dataKey="post_orders" />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        );
-      })}
+      {bySlotCharts.map(({ slot, data }) => (
+        <GroupedBarChart
+          key={slot}
+          title={`${slot} — ticket-size mix`}
+          data={data}
+          xKey="range"
+          height={300}
+          angle={-35}
+          smallTicks
+          shareLabels
+          labelSeriesKeys={['post_orders']}
+          valueFormatter={(v) => formatByKind('int', v)}
+          series={[
+            { key: 'pre_orders', name: 'Pre', color: SERIES.pre, labelFill: 'var(--text-subtle)' },
+            { key: 'post_orders', name: 'Post', color: SERIES.post },
+          ]}
+        />
+      ))}
     </div>
   );
 }
@@ -114,6 +122,13 @@ export default function SlotsScreen() {
 
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-[var(--text)] border-b border-[var(--border)] pb-2">
+                Pre vs Post by slot
+              </h3>
+              <SlotMetricCharts sa={sa} />
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-[var(--text)] border-b border-[var(--border)] pb-2">
                 Pre vs Post growth
               </h3>
               {SLOT_CORE_METRICS.map((spec) => (
@@ -123,6 +138,7 @@ export default function SlotsScreen() {
                     columns={buildSlotPvpColumns(spec)}
                     data={sa[`${spec.key}PrePost`] || []}
                     sortable={false}
+                    layout="full"
                     dense
                   />
                 </div>
@@ -140,6 +156,7 @@ export default function SlotsScreen() {
                     columns={buildSlotYoyColumns(spec)}
                     data={sa[`${spec.key}YoY`] || []}
                     sortable={false}
+                    layout="full"
                     dense
                   />
                 </div>

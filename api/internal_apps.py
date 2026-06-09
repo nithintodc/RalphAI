@@ -58,7 +58,11 @@ def _read_default_dataset(base: Path, prefix: str, label: str) -> dict:
 
 def _missing_app_html(slug: str, directory: Path) -> HTMLResponse:
     return HTMLResponse(
-        f"""<!DOCTYPE html><html><body style="font-family:system-ui;padding:2rem">
+        f"""<!DOCTYPE html><html><head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet" />
+        </head><body style="font-family:'Google Sans',system-ui,sans-serif;padding:2rem">
         <h2>{slug.replace("-", " ").title()} is not built yet</h2>
         <p>Expected files at: <code>{directory}</code></p>
         <p>For The Super App, run:<br>

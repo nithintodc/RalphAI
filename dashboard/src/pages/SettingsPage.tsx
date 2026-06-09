@@ -1,14 +1,70 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Moon, Sun, Link2, ChevronRight } from "lucide-react";
+import { Link2, ChevronRight, Globe, Monitor } from "lucide-react";
+
+type BrowserMode = "multilogin" | "native";
+
+type BrowserSettings = {
+  mode: BrowserMode;
+  multilogin: boolean;
+  native: boolean;
+};
 
 export function SettingsPage() {
-  const [dark, setDark] = useState(false);
+  const [savedMode, setSavedMode] = useState<BrowserMode>("native");
+  const [selectedMode, setSelectedMode] = useState<BrowserMode>("native");
+  const [browserLoading, setBrowserLoading] = useState(true);
+  const [browserSaving, setBrowserSaving] = useState(false);
+  const [browserError, setBrowserError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const hasUnsavedChanges = selectedMode !== savedMode;
+
+  const loadBrowserSettings = useCallback(async () => {
+    setBrowserLoading(true);
+    setBrowserError(null);
+    try {
+      const res = await fetch("/api/browser-settings");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: BrowserSettings = await res.json();
+      setSavedMode(data.mode);
+      setSelectedMode(data.mode);
+    } catch (err) {
+      setBrowserError(err instanceof Error ? err.message : "Failed to load browser settings");
+    } finally {
+      setBrowserLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (dark) document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-  }, [dark]);
+    void loadBrowserSettings();
+  }, [loadBrowserSettings]);
+
+  async function handleSaveBrowserMode() {
+    setBrowserSaving(true);
+    setBrowserError(null);
+    setSaveSuccess(false);
+    try {
+      const res = await fetch("/api/browser-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: selectedMode }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${res.status}`);
+      }
+      const data: BrowserSettings = await res.json();
+      setSavedMode(data.mode);
+      setSelectedMode(data.mode);
+      setSaveSuccess(true);
+    } catch (err) {
+      setBrowserError(err instanceof Error ? err.message : "Failed to save");
+      void loadBrowserSettings();
+    } finally {
+      setBrowserSaving(false);
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
@@ -17,35 +73,9 @@ export function SettingsPage() {
           Settings
         </h2>
         <p className="mt-1 text-ink-600 dark:text-white/65">
-          Appearance and API connection. Values persist in localStorage when wired.
+          API connection and browser automation for all agents.
         </p>
       </div>
-
-      <section className="brand-card rounded-[28px] p-6">
-        <h3 className="font-display text-lg font-semibold text-ink-900 dark:text-white">
-          Appearance
-        </h3>
-        <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-brand-100 bg-brand-50/70 p-4 dark:border-white/10 dark:bg-white/5">
-          <div>
-            <p className="font-medium text-ink-900 dark:text-white">Dark mode</p>
-            <p className="text-sm text-ink-500 dark:text-white/55">
-              Reduce glare for long monitoring sessions.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDark(!dark)}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-brand-100 bg-white text-ink-700 transition hover:bg-brand-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-            aria-label="Toggle dark mode"
-          >
-            {dark ? (
-              <Sun className="h-5 w-5 text-amber-500" />
-            ) : (
-              <Moon className="h-5 w-5" />
-            )}
-          </button>
-        </div>
-      </section>
 
       <section className="brand-card rounded-[28px] p-6">
         <h3 className="font-display text-lg font-semibold text-ink-900 dark:text-white">
@@ -73,9 +103,93 @@ export function SettingsPage() {
           Browser automation
         </h3>
         <p className="mt-1 text-sm text-ink-500 dark:text-white/55">
-          Map Airtable operators to Multilogin browser profiles. Used by Health Check, Data Run,
-          Strategist, and all browser-use agents.
+          Choose how agents open DoorDash: Multilogin profiles (pre-logged-in) or local
+          browser-use with operator portal login. Applies to Health Check, Data Run,
+          Strategist, Offers, Ads, and reporting browser-use forks.
         </p>
+
+        {browserError && (
+          <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+            {browserError}
+          </p>
+        )}
+
+        {saveSuccess && !hasUnsavedChanges && (
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+            Browser mode saved. All agents will use this setting on their next run.
+          </p>
+        )}
+
+        <div className="mt-4 flex flex-col gap-3">
+          <button
+            type="button"
+            disabled={browserLoading || browserSaving}
+            onClick={() => {
+              setSelectedMode("multilogin");
+              setSaveSuccess(false);
+            }}
+            className={`flex items-start gap-4 rounded-2xl border p-4 text-left transition ${
+              selectedMode === "multilogin"
+                ? "border-brand-500 bg-brand-50 ring-2 ring-brand-500/20 dark:border-brand-400 dark:bg-brand-500/10"
+                : "border-brand-100 bg-brand-50/70 hover:border-brand-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-brand-500/40"
+            }`}
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+              <Globe className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="font-medium text-ink-900 dark:text-white">
+                Multilogin profiles
+              </p>
+              <p className="mt-0.5 text-sm text-ink-500 dark:text-white/55">
+                Connect via MLX APIs to the operator&apos;s mapped profile — session already
+                logged in. Requires Multilogin desktop app and operator ↔ profile mapping.
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            disabled={browserLoading || browserSaving}
+            onClick={() => {
+              setSelectedMode("native");
+              setSaveSuccess(false);
+            }}
+            className={`flex items-start gap-4 rounded-2xl border p-4 text-left transition ${
+              selectedMode === "native"
+                ? "border-brand-500 bg-brand-50 ring-2 ring-brand-500/20 dark:border-brand-400 dark:bg-brand-500/10"
+                : "border-brand-100 bg-brand-50/70 hover:border-brand-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-brand-500/40"
+            }`}
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+              <Monitor className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="font-medium text-ink-900 dark:text-white">
+                Local browser (browser-use)
+              </p>
+              <p className="mt-0.5 text-sm text-ink-500 dark:text-white/55">
+                Launch local Chrome via Python browser-use; agents log in with operator
+                email and password from Airtable / mapping.
+              </p>
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-3">
+          {hasUnsavedChanges && (
+            <span className="text-sm text-ink-500 dark:text-white/55">Unsaved changes</span>
+          )}
+          <button
+            type="button"
+            disabled={browserLoading || browserSaving || !hasUnsavedChanges}
+            onClick={() => void handleSaveBrowserMode()}
+            className="rounded-2xl bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
+          >
+            {browserSaving ? "Saving…" : "Save browser mode"}
+          </button>
+        </div>
+
         <Link
           to="/settings/operator-mapping"
           className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-brand-100 bg-brand-50/70 p-4 transition hover:border-brand-300 hover:bg-brand-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-brand-500/40"
@@ -89,22 +203,12 @@ export function SettingsPage() {
                 Operator ↔ Multilogin mapping
               </p>
               <p className="mt-0.5 text-sm text-ink-500 dark:text-white/55">
-                Venn view, edit assignments, save JSON + CSV
+                Required for Multilogin mode — Venn view, edit assignments, save JSON + CSV
               </p>
             </div>
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-ink-400" />
         </Link>
-      </section>
-
-      <section className="brand-card rounded-[28px] p-6">
-        <h3 className="font-display text-lg font-semibold text-ink-900 dark:text-white">
-          Data directory
-        </h3>
-        <p className="mt-1 text-sm text-ink-500 dark:text-white/55">
-          TODC agents write under <code className="font-mono text-xs">data/operators/</code>.
-          Set <code className="font-mono text-xs">TODC_DATA_DIR</code> on the server.
-        </p>
       </section>
     </div>
   );

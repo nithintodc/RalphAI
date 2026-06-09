@@ -11,10 +11,65 @@ import {
   MARKETING_IMPACT_METRICS,
   sliceMarketingPct,
 } from '../../lib/engine/marketing';
-import { formatByKind } from '../../lib/utils/formatters';
+import { formatByKind, fmt } from '../../lib/utils/formatters';
+import {
+  ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
+} from 'recharts';
+import ChartCard from '../../components/charts/ChartCard';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import { TOOLTIP_STYLE, AXIS_TICK, GRID } from '../../components/charts/chartTheme';
 
 function formatMetricCell(kind, v) {
   return formatByKind(kind, v);
+}
+
+function ScatterTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs shadow-md max-w-[16rem]">
+      <p className="font-semibold text-[var(--text)] mb-1 truncate">{d.name}</p>
+      <p className="tnum text-[var(--text-muted)]">Spend: {fmt.usd(d.x)}</p>
+      <p className="tnum text-[var(--text-muted)]">ROAS: {fmt.x(d.y)}</p>
+      <p className="tnum text-[var(--text-muted)]">Sales: {fmt.usd(d.z)}</p>
+    </div>
+  );
+}
+
+/** Spend vs ROAS scatter + top-spend ranking for a campaign source. */
+function MarketingCharts({ label, campaigns }) {
+  const eligible = (campaigns || []).filter((c) => (c.spend || 0) > 0);
+  if (eligible.length < 2) return null;
+  const scatterData = eligible.map((c) => ({
+    x: Math.abs(c.spend || 0), y: c.roas || 0, z: Math.abs(c.sales || 0), name: c.campaignName,
+  }));
+  const topSpend = eligible.map((c) => ({ label: c.campaignName, value: Math.abs(c.spend || 0) }));
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <ChartCard
+        title={`${label} — Spend vs ROAS`}
+        subtitle="Each bubble is a campaign; size = sales. Higher & left-er = more efficient spend."
+        height={300}
+      >
+        <ScatterChart margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+          <XAxis type="number" dataKey="x" name="Spend" tick={AXIS_TICK} axisLine={false} tickLine={false} tickFormatter={fmt.usdK} />
+          <YAxis type="number" dataKey="y" name="ROAS" tick={AXIS_TICK} axisLine={false} tickLine={false} tickFormatter={(v) => fmt.x(v)} width={48} />
+          <ZAxis type="number" dataKey="z" range={[40, 420]} />
+          <Tooltip content={<ScatterTip />} cursor={{ strokeDasharray: '3 3' }} contentStyle={TOOLTIP_STYLE} />
+          <Scatter data={scatterData} fill="var(--accent)" fillOpacity={0.55} />
+        </ScatterChart>
+      </ChartCard>
+      <RankedBarChart
+        title={`${label} — Top campaigns by spend`}
+        subtitle="Where the marketing budget is going (post period)."
+        data={topSpend}
+        topN={12}
+        color="var(--accent)"
+        valueFormatter={fmt.usdK}
+      />
+    </div>
+  );
 }
 
 function buildImpactColumns(includeCampaign = false) {
@@ -195,6 +250,8 @@ export default function MarketingScreen() {
         </Section>
       )}
 
+      <MarketingCharts label="Promo" campaigns={promoCampaigns} />
+
       {promoCampaigns.length > 0 && (
         <Section
           title="Promo campaigns"
@@ -211,6 +268,8 @@ export default function MarketingScreen() {
       )}
 
       <CampaignHighlights label="Promo" campaigns={promoCampaigns} />
+
+      <MarketingCharts label="Ads" campaigns={adsCampaigns} />
 
       {adsCampaigns.length > 0 && (
         <Section

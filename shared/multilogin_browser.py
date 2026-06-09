@@ -1,7 +1,7 @@
 """
 RalphAI wrapper: map operator → Multilogin profile, then use multilogin/connect.py only.
 
-Profile lookup uses repo-root ``operator_multilogin_mapping.json`` via
+Profile lookup uses ``multilogin/operator_multilogin_mapping.json`` via
 ``shared.operator_profile_mapping`` (regenerate with ``python -m multilogin.sync_operator_mapping``).
 """
 
@@ -31,7 +31,9 @@ _active_headers: dict[str, str] | None = None
 
 
 def multilogin_enabled() -> bool:
-    return os.getenv("USE_MULTILOGIN", "").strip().lower() in ("1", "true", "yes", "on")
+    from shared.browser_settings import multilogin_mode_active
+
+    return multilogin_mode_active()
 
 
 def _repo_root() -> Path:

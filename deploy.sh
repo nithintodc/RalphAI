@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 #
-# deploy.sh — Path A: RalphAI → Cloud Run (todc-reporting-app)
+# deploy.sh — RalphAI → Cloud Run (todc-reporting-app)
 #
-# Replaces the old app on your existing Cloud Run service in todc-marketing.
-# Dashboard + API + Super App ship in one container (infra/gcp/Dockerfile.api).
+# Deploy from your laptop: gcloud auth → Cloud Build → Cloud Run.
+# Git is for code storage only; this script does not use GitHub Actions.
 #
 # Usage:
 #   ./deploy.sh                    # full: bootstrap (if needed) + build + deploy
 #   ./deploy.sh todc-marketing     # same, explicit project
-#   ./deploy.sh --bootstrap-only   # one-time GCP APIs, secrets, GitHub deploy key
+#   ./deploy.sh --bootstrap-only   # one-time GCP APIs, Artifact Registry, secrets
 #   ./deploy.sh --deploy-only      # Cloud Build + Cloud Run (skip bootstrap)
-#   ./deploy.sh --github-secrets   # print / optionally set GitHub Actions secrets (needs gh)
 #   ./deploy.sh --prepare          # local npm/py build + tests only
-#   ./deploy.sh --fix-ci-permissions  # fix Cloud Build bucket / serviceusage errors
 #   ./deploy.sh --legacy-superapp  # old path: todc-export-api + Firebase Hosting
 #
 # Env (optional):
@@ -24,17 +22,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-# Path A defaults (existing Cloud Run service in Console)
 GCP_PROJECT_ID="${GCP_PROJECT_ID:-${GCP_PROJECT:-todc-marketing}}"
 GCP_REGION="${GCP_REGION:-us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-todc-reporting-app}"
 AR_REPOSITORY="${AR_REPOSITORY:-ralphai}"
 GOOGLE_SHARED_DRIVE_NAME="${GOOGLE_SHARED_DRIVE_NAME:-Data-Analysis-Uploads}"
-DEPLOY_KEY_FILE="${ROOT}/.gcp/ralphai-github-deploy-key.json"
 
 MODE="full"
 SKIP_BOOTSTRAP=0
-SET_GITHUB_SECRETS=0
 
 c_blue='\033[1;34m'; c_green='\033[1;32m'; c_yellow='\033[1;33m'; c_red='\033[1;31m'; c_off='\033[0m'
 step() { echo -e "\n${c_blue}▸ $*${c_off}"; }
@@ -52,12 +47,9 @@ for arg in "$@"; do
     -h|--help) usage ;;
     --bootstrap-only)     MODE="bootstrap" ;;
     --deploy-only)      MODE="deploy"; SKIP_BOOTSTRAP=1 ;;
-    --github-secrets)     MODE="github" ;;
     --prepare)            MODE="prepare" ;;
     --legacy-superapp)    MODE="legacy" ;;
     --skip-bootstrap)     SKIP_BOOTSTRAP=1 ;;
-    --set-github-secrets) SET_GITHUB_SECRETS=1 ;;
-    --fix-ci-permissions) MODE="fix-ci" ;;
     --*) die "Unknown flag: $arg (try --help)" ;;
     *)
       if [[ -z "${GCP_PROJECT_ID_SET:-}" ]]; then
@@ -87,48 +79,15 @@ load_env() {
   fi
 }
 
+gcp_bootstrapped() {
+  gcloud artifacts repositories describe "$AR_REPOSITORY" \
+    --location="$GCP_REGION" --project="$GCP_PROJECT_ID" >/dev/null 2>&1
+}
+
 run_bootstrap() {
-  step "GCP bootstrap (APIs, Artifact Registry, secrets, GitHub deploy key)"
+  step "GCP bootstrap (APIs, Artifact Registry, secrets)"
   GCP_PROJECT_ID="$GCP_PROJECT_ID" GCP_REGION="$GCP_REGION" SERVICE_NAME="$SERVICE_NAME" \
     "$ROOT/scripts/gcp-bootstrap.sh"
-}
-
-print_github_secrets_help() {
-  echo
-  echo -e "${c_green}════════════════════════════════════════════════════════════${c_off}"
-  echo -e "${c_green}  GitHub Actions secrets (one-time)${c_off}"
-  echo -e "${c_green}════════════════════════════════════════════════════════════${c_off}"
-  echo
-  echo "  https://github.com/YOUR_ORG/RalphAI/settings/secrets/actions"
-  echo
-  echo "  GCP_PROJECT_ID  =  ${GCP_PROJECT_ID}"
-  echo "  GCP_REGION      =  ${GCP_REGION}"
-  echo "  GCP_SA_KEY      =  entire file:"
-  echo "                     ${DEPLOY_KEY_FILE}"
-  echo
-  echo "  Copy key to clipboard (macOS):"
-  echo "    cat ${DEPLOY_KEY_FILE} | pbcopy"
-  echo
-  echo "  After secrets are set, every push to main deploys via:"
-  echo "    .github/workflows/deploy-ralphai.yml"
-  echo
-  if [[ -f "$DEPLOY_KEY_FILE" ]]; then
-    warn "Never commit ${DEPLOY_KEY_FILE}"
-  else
-    warn "Run ./deploy.sh --bootstrap-only first to create ${DEPLOY_KEY_FILE}"
-  fi
-}
-
-set_github_secrets_with_gh() {
-  command -v gh >/dev/null || die "Install GitHub CLI: brew install gh && gh auth login"
-  gh auth status >/dev/null 2>&1 || die "Run: gh auth login"
-  [[ -f "$DEPLOY_KEY_FILE" ]] || die "Missing ${DEPLOY_KEY_FILE} — run --bootstrap-only first"
-
-  step "Setting GitHub Actions secrets via gh CLI"
-  gh secret set GCP_PROJECT_ID --body "$GCP_PROJECT_ID"
-  gh secret set GCP_REGION --body "$GCP_REGION"
-  gh secret set GCP_SA_KEY < "$DEPLOY_KEY_FILE"
-  ok "GitHub secrets set (GCP_PROJECT_ID, GCP_REGION, GCP_SA_KEY)"
 }
 
 build_cloud_run_secret_flags() {
@@ -177,7 +136,7 @@ deploy_cloud_run() {
     ok "Skipping build — using existing image ${IMAGE}"
   fi
 
-  # Path A: UI + API same host — gcloud --env-vars-file requires YAML (not KEY=VALUE).
+  # UI + API same host — gcloud --env-vars-file requires YAML (not KEY=VALUE).
   ENV_FILE="$(mktemp)"
   {
     echo "LOG_LEVEL: INFO"
@@ -308,15 +267,9 @@ case "$MODE" in
     preflight_gcloud
     load_env
     run_bootstrap
-    print_github_secrets_help
     ;;
   deploy)
     deploy_cloud_run
-    print_github_secrets_help
-    ;;
-  github)
-    print_github_secrets_help
-    [[ "$SET_GITHUB_SECRETS" == "1" ]] && set_github_secrets_with_gh
     ;;
   prepare)
     run_prepare
@@ -324,27 +277,16 @@ case "$MODE" in
   legacy)
     deploy_legacy_superapp
     ;;
-  fix-ci)
-    preflight_gcloud
-    GCP_PROJECT_ID="$GCP_PROJECT_ID" "$ROOT/scripts/gcp-fix-ci-permissions.sh"
-    ;;
   full)
     preflight_gcloud
     load_env
-    if [[ "$SKIP_BOOTSTRAP" == "0" && ! -f "$DEPLOY_KEY_FILE" ]]; then
-      warn "No ${DEPLOY_KEY_FILE} — running bootstrap first"
+    if [[ "$SKIP_BOOTSTRAP" == "0" ]] && ! gcp_bootstrapped; then
+      warn "GCP not bootstrapped — running bootstrap first"
       run_bootstrap
     elif [[ "$SKIP_BOOTSTRAP" == "0" ]]; then
-      ok "Bootstrap key exists — skipping (use --bootstrap-only to re-run)"
+      ok "GCP bootstrapped — skipping (use --bootstrap-only to re-run)"
     fi
     deploy_cloud_run
-    print_github_secrets_help
-    if [[ "$SET_GITHUB_SECRETS" == "1" ]]; then
-      set_github_secrets_with_gh || warn "Could not set GitHub secrets automatically"
-    fi
-    echo
-    echo "  Optional: push to main for CI deploys"
-    echo "    git push origin main"
     ;;
 esac
 

@@ -15,11 +15,11 @@ from typing import Any
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(_ROOT)]
 
-from agents.campaign_review.contract_pipeline import run as review_contract_run
+from agents.health_check.contract_pipeline import run as review_contract_run
 from agents.campaign_setup.contract_pipeline import run as execution_contract_run
 from agents.deepdive.contract_pipeline import run as deepdive_contract_run
 from agents.ingestion.pipeline import run as ingestion_run
-from agents.marketingreco.contract_pipeline import run as marketing_contract_run
+from orchestrator.legacy_marketing_contract import build_campaign_plan
 
 from shared.config import Settings
 from shared.logger import get_logger, log_step
@@ -95,7 +95,8 @@ def run_marketing_reco(
         payload={},
         correlation_id=correlation_id,
     )
-    out = marketing_contract_run(payload)
+    campaign_plan = build_campaign_plan(operator_id, payload.get("insights") or [])
+    out = {"operator_id": operator_id, "campaign_plan": campaign_plan}
     log_step(log, step="pipeline.marketing.done", operator_id=operator_id, payload={})
     return out
 

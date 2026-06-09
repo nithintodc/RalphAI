@@ -2,17 +2,14 @@ import { REPORTING_BROWSER_USE_FORKS, reportingBrowserUseRoute } from "./reporti
 
 /** Internal RalphAI routes for agent UIs (no separate localhost embed). */
 export const AGENT_RUN_ROUTES: Record<string, string> = {
-  marketingreco: "/agents/marketingreco",
   "ralphai-offers": "/agents/offers",
   "ralphai-ads": "/agents/ads",
-  review: "/agents/campaign-review",
+  review: "/agents/health-check#campaign-review",
   "data-run": "/agents/data-run",
   strategist: "/agents/strategist",
   "health-check": "/agents/health-check",
-  "campaign-killer": "/agents/campaign-killer",
   the_super_app: "/agents/the-super-app",
-  app2_0: "/agents/the-super-app?tab=breakdown",
-  app3_0: "/agents/the-super-app",
+  app2_0: "/agents/the-super-app",
   markup_app: "/agents/markup-app",
   ...Object.fromEntries(
     REPORTING_BROWSER_USE_FORKS.map((f) => [f.id, reportingBrowserUseRoute(f.id)])

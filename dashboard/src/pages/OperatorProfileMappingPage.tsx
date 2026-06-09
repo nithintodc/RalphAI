@@ -284,11 +284,11 @@ export function OperatorProfileMappingPage() {
             Canonical mapping used by Health Check, Data Run, Strategist, and all browser-use
             agents. Saved to{" "}
             <code className="rounded bg-brand-100 px-1 text-xs dark:bg-white/10">
-              {mappingPath || "operator_multilogin_mapping.json"}
+              {mappingPath || "multilogin/operator_multilogin_mapping.json"}
             </code>
             {" "}and{" "}
             <code className="rounded bg-brand-100 px-1 text-xs dark:bg-white/10">
-              {csvPath || "operator_multilogin_mapping.csv"}
+              {csvPath || "multilogin/operator_multilogin_mapping.csv"}
             </code>
             {" "}(<code className="text-xs">mapped</code> column updated on save).
           </p>
@@ -499,8 +499,8 @@ export function OperatorProfileMappingPage() {
                 Multilogin (requires API credentials in <code>.env</code>).
               </li>
               <li>
-                <strong>Save mapping</strong> writes <code>operator_multilogin_mapping.json</code> at
-                repo root — all browser-use agents read this file immediately on next run.
+                <strong>Save mapping</strong> writes <code>multilogin/operator_multilogin_mapping.json</code> —
+                all browser-use agents read this file immediately on next run.
               </li>
               <li>
                 Manual edits are preserved across re-sync when <code>match_method</code> is{" "}

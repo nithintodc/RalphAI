@@ -4,9 +4,7 @@ import {
   Cpu,
   Bot,
   ShoppingBag,
-  Megaphone,
   BarChart3,
-  Skull,
   Activity,
   Globe,
 } from "lucide-react";
@@ -28,7 +26,7 @@ const agents = [
       "DoorDash credentials from Airtable Account Information",
     ],
     outputs: [
-      "Zip files under data/DataRun_{timestamp}_{operator}/",
+      "Zip files under data/DataRun/{timestamp}/{operator}/",
       "One fresh browser session per operator",
       "Per-operator status: success | partial | no_files | failed",
     ],
@@ -46,25 +44,24 @@ const agents = [
   {
     id: "strategist",
     name: "Strategist",
-    desc: "Logs into each operator's DoorDash portal, downloads 90-day reports, and generates ads + promo marketing plans.",
+    desc: "Auto: portal login + 90-day download → Offers + Ads campaigns. Manual: DD register upload → marketing plan.",
     icon: Bot,
     status: "ready",
     color: "from-violet-500 to-purple-700",
     inputs: [
-      "Operators (multi-select) from Airtable account directory",
-      "DoorDash credentials auto-loaded from Airtable Account Information",
-      "Downloads 90-day financial + marketing reports per operator",
+      "Auto: operators (multi-select) from Airtable; credentials auto-loaded",
+      "Manual: one operator + DD register Excel/CSV upload",
     ],
     outputs: [
-      "90days/<operator_email>/ads.csv — ads campaign plan",
-      "90days/<operator_email>/promo.csv — promo campaign plan",
+      "Auto: combined_analysis + campaigns.xlsx per operator",
+      "Manual: marketing_plan.json + marketing_plan.xlsx (Offers, Ads, Register slots)",
       "Per-operator status: success | failed | skipped",
     ],
   },
   {
     id: "health-check",
     name: "Health Check",
-    desc: "One combined DoorDash export per operator for the last two Mon–Sun weeks; splits into weekly CSVs and WoW (prior vs latest completed week).",
+    desc: "One combined DoorDash export per operator for the last two Mon–Sun weeks; WoW analysis plus campaign review (pre/post metrics, /update /delete /keep /new).",
     icon: Activity,
     status: "ready",
     color: "from-emerald-500 to-teal-700",
@@ -76,96 +73,43 @@ const agents = [
     outputs: [
       "data/healthcheck/run-<timestamp>/<operator>/rawdata, operatorlevel, WoW",
       "WoW/register_wow_report.html and .pdf (one HTML per operator)",
+      "campaign_review.json — per-campaign pre/post metrics and recommendations",
       "Slack: PDF link on Google Drive",
-    ],
-  },
-  {
-    id: "campaign-killer",
-    name: "Campaign Killer",
-    desc: "Ends active DoorDash campaigns named TODC-*: login → Campaigns → Active + Apply → row menu → End campaign → confirm → Technical issue reason → End campaign.",
-    icon: Skull,
-    status: "ready",
-    color: "from-red-500 to-red-800",
-    inputs: [
-      "Operators (multi-select) from Airtable account directory",
-      "DoorDash credentials auto-loaded from Airtable Account Information",
-      "Typing TODC in campaigns search (optional; on by default) then Active filter; bot still only ends names starting with TODC-",
-    ],
-    outputs: [
-      "Per-operator: campaigns ended count + names",
-      "Status: success | login_failed | partial | error",
-      "JSON report under data/runs/campaign_killer/",
-    ],
-  },
-  {
-    id: "marketingreco",
-    name: "MarketingReco",
-    desc: "Two tracks: Offers (promotion mappings to keep) and Ads",
-    icon: Megaphone,
-    status: "idle",
-    color: "from-ink-700 to-black",
-    inputs: [
-      "Manual / Auto: FINANCIAL_DETAILED (.zip or .csv) or DoorDash credentials",
-      "DeepDive mode: deepdive_report JSON, operator_profile, budget_cap (optional)",
-    ],
-    outputs: [
-      "Offers: campaign_mappings — store, min subtotal, slot tags, campaign name, status",
-      "Ads: ads_plan — day × daypart tiers, budgets as allocation %, bid hints, campaign names",
-      "marketing_plan.json — recommended_campaigns[]; approval workflow",
     ],
   },
   {
     id: "ralphai-offers",
     name: "RalphAI — Offers",
-    desc: "Browser automation for promo campaigns in Merchant Portal.",
+    desc: "Latest Strategist Offers sheet → browser-use discount campaigns (Slack progress).",
     icon: ShoppingBag,
     status: "ready",
     color: "from-brand-400 to-emerald-700",
     inputs: [
-      "Approved marketing_plan (promo / combo rows)",
-      "campaign_type: offers",
-      "store_ids, Merchant Portal credentials (secrets)",
+      "Operator from Airtable account directory",
+      "DoorDash credentials (auto-filled from directory)",
+      "Requires Strategist campaigns.xlsx under data/Strategist/",
     ],
     outputs: [
-      "setup.json — campaigns_created[] with portal campaign_id",
-      "status: active | scheduled | failed per campaign",
-      "review_scheduled_at (e.g. +7 days)",
+      "Promo campaigns created in Merchant Portal",
+      "Per-campaign Slack updates",
+      "Run artifacts under data/runs/offers/",
     ],
   },
   {
     id: "ralphai-ads",
     name: "RalphAI — Ads",
-    desc: "Sponsored listing setup and scheduling.",
+    desc: "Latest Strategist Ads sheet → sponsored listing browser automation.",
     icon: Cpu,
     status: "ready",
     color: "from-brand-500 to-ink-800",
     inputs: [
-      "Approved marketing_plan (sponsored_listing rows)",
-      "campaign_type: ads",
-      "store_ids, Merchant Portal credentials (secrets)",
+      "Operator + DoorDash credentials (auto mode)",
+      "Optional manual Ads CSV/Excel upload",
     ],
     outputs: [
-      "setup.json — campaigns_created[] (sponsored listings)",
-      "scheduled_start / scheduled_end per campaign",
-      "review_scheduled_at for /marketingperf",
-    ],
-  },
-  {
-    id: "review",
-    name: "Campaign Review",
-    desc: "Post-campaign metrics and /update /delete /keep /new.",
-    icon: BarChart3,
-    status: "idle",
-    color: "from-amber-500 to-orange-600",
-    inputs: [
-      "active_campaigns (RalphAI setup output)",
-      "post_campaign_data — 7-day DoorDash export",
-      "pre_campaign_baseline (DeepDive or prior metrics)",
-    ],
-    outputs: [
-      "campaign_review.json — per-campaign pre/post metrics",
-      "recommendation: /update | /delete | /new | /keep",
-      "next_review_date, optional update_params",
+      "Sponsored listing campaigns in Merchant Portal",
+      "Per-campaign Slack updates",
+      "Run artifacts under data/runs/ads/",
     ],
   },
   {
@@ -177,16 +121,6 @@ const agents = [
     color: "from-emerald-600 to-emerald-800",
     inputs: ["Financial and Marketing exports"],
     outputs: ["Redirected to Super App Breakdown"],
-  },
-  {
-    id: "app3_0",
-    name: "App3.0 (Legacy)",
-    desc: "Cloud-ready Streamlit app with comparison engine.",
-    icon: BarChart3,
-    status: "ready",
-    color: "from-teal-600 to-teal-800",
-    inputs: ["Financial and Marketing exports"],
-    outputs: ["Streamlit Interactive UI"],
   },
   {
     id: "markup_app",
@@ -266,18 +200,9 @@ export function AgentsPage() {
               {agentRunRoute(a.id) ? (
                 <Link
                   to={agentRunRoute(a.id)!}
-                  className={[
-                    "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold text-white transition",
-                    a.id === "campaign-killer"
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-ink-900 hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400",
-                  ].join(" ")}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-700 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
                 >
-                  {a.id === "campaign-killer" ? (
-                    <Skull className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                  <Play className="h-4 w-4" />
                   Run
                 </Link>
               ) : (

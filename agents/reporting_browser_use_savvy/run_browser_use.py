@@ -55,38 +55,10 @@ def _get_llm():
 
 
 def _get_browser():
-    """
-    Browser with download path set to project downloads/.
-    Supports remote CDP (GCP headless Chrome), Multilogin, or local Chrome.
-    """
-    from browser_use import Browser
+    """Browser with download path set to project downloads/ (Multilogin, CDP, or local Chrome)."""
+    from shared.browser_use_factory import create_browser_use_browser
 
-    downloads_path = str(DOWNLOAD_DIR.resolve())
-
-    # Remote CDP (GCP headless Chrome, Browserless, etc.)
-    cdp_url = os.environ.get("LOCAL_BROWSER_CDP_URL", "").strip()
-    if cdp_url:
-        return Browser(
-            cdp_url=cdp_url,
-            downloads_path=downloads_path,
-            enable_default_extensions=False,
-        )
-
-    # Local Chrome with persistent profile (laptop fallback)
-    raw_dir = os.environ.get("CHROME_USER_DATA_DIR", "").strip()
-    if raw_dir:
-        user_data_dir = str(Path(raw_dir).expanduser().resolve())
-    else:
-        user_data_dir = str(Path(__file__).resolve().parent / ".cursor" / "chrome-debug-profile")
-
-    common = dict(
-        user_data_dir=user_data_dir,
-        downloads_path=downloads_path,
-        enable_default_extensions=False,
-    )
-    if os.name == "posix" and Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome").exists():
-        return Browser(executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", **common)
-    return Browser(**common)
+    return create_browser_use_browser(DOWNLOAD_DIR)
 
 
 async def main():

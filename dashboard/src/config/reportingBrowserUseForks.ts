@@ -24,13 +24,6 @@ export const REPORTING_BROWSER_USE_FORKS = [
     desc: "Savvy variant — melt lineage (Gemini).",
     color: "from-fuchsia-500 to-pink-800",
   },
-  {
-    id: "reporting_browser_use_new",
-    shortLabel: "New",
-    desc: "Reserved stub — main.py not installed.",
-    color: "from-ink-400 to-ink-600",
-    stub: true,
-  },
 ] as const;
 
 export function reportingBrowserUseRoute(forkId: string): string {

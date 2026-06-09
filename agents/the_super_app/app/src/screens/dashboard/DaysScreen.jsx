@@ -1,4 +1,5 @@
 import SlotOrderDimensionSection from '../../components/slots/SlotOrderDimensionSection';
+import SlotOrderCharts from '../../components/slots/SlotOrderCharts';
 import { useSlotOrderAnalyses } from '../../hooks/useSlotOrderAnalyses';
 import { DATA_PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
@@ -30,6 +31,7 @@ export default function DaysScreen() {
               <PlatformLogo platform={key} size={18} />
               <h2 className="text-base font-semibold text-[var(--text)]">{label}</h2>
             </div>
+            <SlotOrderCharts analysis={analysis} dimension="day" />
             <SlotOrderDimensionSection
               analysis={analysis}
               platformLabel={label}

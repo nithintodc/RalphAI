@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from shared.models.report import DeepDiveReport, OrderBreakdown, RevenueMetrics
+from shared.models.campaign import RecommendedCampaign
+from shared.models.report import DeepDiveReport, MarketingPlan, OrderBreakdown, RevenueMetrics
+from shared.utils.date_helpers import utc_now_iso
 
 
 def write_min_deepdive(data_dir: Path, operator_id: str) -> None:
@@ -15,3 +17,24 @@ def write_min_deepdive(data_dir: Path, operator_id: str) -> None:
         recommendations_seed="Increase breakfast promo coverage.",
     )
     (reports / "deepdive.json").write_text(dd.model_dump_json(), encoding="utf-8")
+
+
+def write_min_marketing_plan(data_dir: Path, operator_id: str) -> None:
+    """Seed a minimal marketing_plan.json for pipeline tests."""
+    reports = data_dir / "operators" / operator_id / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    plan = MarketingPlan(
+        operator_id=operator_id,
+        plan_date=utc_now_iso(),
+        recommended_campaigns=[
+            RecommendedCampaign(
+                campaign_type="sponsored_listing",
+                campaign_name="Test Ads",
+                budget=50.0,
+                start_date=utc_now_iso(),
+                duration_days=28,
+                rationale="test plan",
+            )
+        ],
+    )
+    (reports / "marketing_plan.json").write_text(plan.model_dump_json(), encoding="utf-8")

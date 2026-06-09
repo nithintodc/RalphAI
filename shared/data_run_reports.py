@@ -139,12 +139,16 @@ def zip_filename_matches_date_range(path: Path, start_date: str, end_date: str) 
     return file_start == expected_start and file_end == expected_end
 
 
+def _safe_operator_dirname(name: str) -> str:
+    """Sanitize operator/business name for use as a directory name (keeps spaces)."""
+    safe = (name or "operator").strip()
+    for ch in ('/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+        safe = safe.replace(ch, "-")
+    safe = safe.strip(". ")
+    return (safe[:100] if len(safe) > 100 else safe) or "operator"
+
+
 def data_run_operator_dir(data_root: Path, operator_name: str, *, timestamp: str | None = None) -> Path:
+    """``data/DataRun/<timestamp>/<operator>/`` — same layout style as Strategist."""
     ts = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe = (operator_name or "operator").strip()
-    for ch in ("@", ".", " ", "/", "\\", ","):
-        safe = safe.replace(ch, "_")
-    while "__" in safe:
-        safe = safe.replace("__", "_")
-    safe = safe.strip("_")[:80] or "operator"
-    return Path(data_root) / f"DataRun_{ts}_{safe}"
+    return Path(data_root) / "DataRun" / ts / _safe_operator_dirname(operator_name)

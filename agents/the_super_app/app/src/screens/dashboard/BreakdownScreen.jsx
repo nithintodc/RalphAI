@@ -6,6 +6,9 @@ import PlatformLogo from '../../components/ui/PlatformLogo';
 import { fmt } from '../../lib/utils/formatters';
 import { buildPlatformFinancialBreakdowns } from '../../lib/engine/financialBreakdown';
 import { deltaCellClass } from '../../lib/utils/deltaTone';
+import GroupedBarChart from '../../components/charts/GroupedBarChart';
+import RankedBarChart from '../../components/charts/RankedBarChart';
+import { SERIES } from '../../components/charts/chartTheme';
 
 function formatAmount(row, value) {
   if (value == null || Number.isNaN(value)) return '—';
@@ -93,7 +96,51 @@ function BreakdownTable({ title, columns, data }) {
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">{title}</h4>
-      <DataTable columns={columns} data={data} sortable={false} dense allowHorizontalScroll />
+      <DataTable columns={columns} data={data} sortable={false} dense />
+    </div>
+  );
+}
+
+/** Composition shift (% of sales, Pre vs Post) + per-line growth, above the tables. */
+function BreakdownCharts({ section }) {
+  const shareRows = (section.post || [])
+    .filter((r) => !r.isProfitability && r.sharePct != null)
+    .map((r) => {
+      const preR = (section.pre || []).find((p) => p.metric === r.metric);
+      return { metric: r.metric, preShare: preR?.sharePct ?? 0, postShare: r.sharePct };
+    });
+  const growthRows = (section.pvp || [])
+    .filter((r) => !r.isProfitability && r.growthPct != null)
+    .map((r) => ({ label: r.metric, value: r.growthPct }));
+
+  if (!shareRows.length && !growthRows.length) return null;
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {shareRows.length > 0 && (
+        <GroupedBarChart
+          title="Lines as % of sales — Pre vs Post"
+          subtitle="How each cost/credit line's share of sales shifted."
+          data={shareRows}
+          xKey="metric"
+          height={320}
+          angle={-35}
+          smallTicks
+          valueFormatter={fmt.pct}
+          series={[
+            { key: 'preShare', name: 'Pre', color: SERIES.pre },
+            { key: 'postShare', name: 'Post', color: SERIES.post },
+          ]}
+        />
+      )}
+      {growthRows.length > 0 && (
+        <RankedBarChart
+          title="Pre → Post change by line"
+          subtitle="% change in each line from Pre to Post. Green = up, red = down."
+          data={growthRows}
+          valueFormatter={fmt.delta}
+        />
+      )}
     </div>
   );
 }
@@ -107,6 +154,8 @@ function PlatformBreakdownSection({ section }) {
         <PlatformLogo platform={section.platform} size={18} />
         <h3 className="text-base font-semibold text-[var(--text)]">{label}</h3>
       </div>
+
+      <BreakdownCharts section={section} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <BreakdownTable title="Pre" columns={PERIOD_COLUMNS} data={section.pre} />

@@ -39,20 +39,23 @@ try:
 except ImportError:
     pass
 
+from shared.browser_settings import apply_browser_mode_to_env  # noqa: E402
+
+apply_browser_mode_to_env()
+
 from agents.deepdive.agent import run as run_deepdive  # noqa: E402
-from agents.marketingreco.agent import run as run_marketingreco  # noqa: E402
-from agents.campaign_review.agent import run as run_campaign_review  # noqa: E402
-from agents.campaign_review.agent import to_json_safe as campaign_review_to_json_safe  # noqa: E402
+from agents.health_check.campaign_review import run as run_campaign_review  # noqa: E402
+from agents.health_check.campaign_review import to_json_safe as campaign_review_to_json_safe  # noqa: E402
 from agents.data_run.agent import run as run_data_run  # noqa: E402
 from agents.strategist.agent import run as run_strategist  # noqa: E402
 from agents.health_check.agent import run_health_check  # noqa: E402
-from agents.campaign_killer.agent import run_async as run_campaign_killer_async  # noqa: E402
 from agents.campaign_analyser.agent import run as run_campaign_analyser  # noqa: E402
 from api.internal_apps import register_internal_apps  # noqa: E402
+from api.browser_settings import router as browser_settings_router  # noqa: E402
 from api.operator_profile_mapping import router as operator_profile_mapping_router  # noqa: E402
 from api.super_app_export import router as super_app_export_router  # noqa: E402
 from api.super_app_slack import router as super_app_slack_router  # noqa: E402
-from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows  # noqa: E402
+from shared.campaign_planning.ralph_ads_excel import ralph_ads_upload_rows  # noqa: E402
 from shared.config.settings import marketingreco_reporting_root  # noqa: E402
 from shared.reporting_browser_use_forks import (  # noqa: E402
     ALL_FORK_IDS,
@@ -78,10 +81,10 @@ DD_RUNS_BASE = ROOT / "data" / "runs" / "deepdive"
 DD_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 CA_RUNS_BASE = ROOT / "data" / "runs" / "campaign_analyser"
 CA_RUNS_BASE.mkdir(parents=True, exist_ok=True)
-MRK_RUNS_BASE = ROOT / "data" / "runs" / "marketingreco"
-MRK_RUNS_BASE.mkdir(parents=True, exist_ok=True)
-CR_RUNS_BASE = ROOT / "data" / "runs" / "campaign_review"
-CR_RUNS_BASE.mkdir(parents=True, exist_ok=True)
+STRATEGIST_RUNS_BASE = ROOT / "data" / "runs" / "strategist"
+STRATEGIST_RUNS_BASE.mkdir(parents=True, exist_ok=True)
+HC_CR_RUNS_BASE = ROOT / "data" / "runs" / "health_check" / "campaign_review"
+HC_CR_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 DATA_RUNS_BASE = ROOT / "data" / "runs" / "data_run"
 DATA_RUNS_BASE.mkdir(parents=True, exist_ok=True)
 
@@ -91,6 +94,7 @@ app.include_router(super_app_export_router, prefix="/api")
 app.include_router(super_app_slack_router)
 app.include_router(super_app_slack_router, prefix="/api")
 app.include_router(operator_profile_mapping_router, prefix="/api")
+app.include_router(browser_settings_router, prefix="/api")
 
 _ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 _origins = [o.strip() for o in _ALLOWED_ORIGINS.split(",") if o.strip()] if _ALLOWED_ORIGINS else [
@@ -116,7 +120,7 @@ def _validate_run_id(run_id: str) -> str:
     return run_id
 
 
-_ALL_RUN_BASES = [RUNS_BASE, DD_RUNS_BASE, MRK_RUNS_BASE, CR_RUNS_BASE, DATA_RUNS_BASE, CA_RUNS_BASE]
+_ALL_RUN_BASES = [RUNS_BASE, DD_RUNS_BASE, STRATEGIST_RUNS_BASE, HC_CR_RUNS_BASE, DATA_RUNS_BASE, CA_RUNS_BASE]
 
 
 def _find_run_dir(run_id: str) -> Path:
@@ -291,183 +295,6 @@ def _prepare_ads_rows_file(input_path: Path, work_dir: Path) -> Path:
     ads_df.to_csv(out_csv, index=False)
     return out_csv
 
-
-def _write_marketingreco_campaigns_excel(path: Path, result: dict) -> None:
-    import openpyxl
-    from openpyxl.styles import Font
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Offers"
-    # store_id = National when FINANCIAL_DETAILED mapping exists; doordash_store_id = Reporting / Day-Slot key.
-    headers = [
-        "Store ID",
-        "DoorDash Store ID",
-        "Store Name",
-        "Minimum Subtotal",
-        "Slot Tags",
-        "Campaign Name",
-        "Status",
-    ]
-    for idx, h in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=idx, value=h)
-        cell.font = Font(bold=True)
-    mappings = result.get("campaign_mappings") or []
-    for r, m in enumerate(mappings, start=2):
-        tags = m.get("slot_tags", [])
-        tags_str = ",".join(str(t) for t in tags) if isinstance(tags, list) else str(tags or "")
-        ws.cell(row=r, column=1, value=m.get("store_id", ""))
-        ws.cell(row=r, column=2, value=m.get("doordash_store_id", ""))
-        ws.cell(row=r, column=3, value=m.get("store_name", ""))
-        ws.cell(row=r, column=4, value=m.get("min_subtotal", 0))
-        ws.cell(row=r, column=5, value=tags_str)
-        ws.cell(row=r, column=6, value=m.get("campaign_name", ""))
-        ws.cell(row=r, column=7, value=m.get("status", "Pending"))
-
-    ads_plan = result.get("ads_plan") or {}
-    slot_table = ads_plan.get("slot_table") or []
-    if slot_table:
-        wss = wb.create_sheet("Ads slots")
-        sh = [
-            "Merchant store ID",
-            "Store name",
-            "Slot",
-            "Orders",
-            "Sales",
-            "Net total",
-            "Profitability %",
-            "Ad placement",
-            "Budget estimate",
-            "Weekly budget",
-        ]
-        for idx, h in enumerate(sh, start=1):
-            cell = wss.cell(row=1, column=idx, value=h)
-            cell.font = Font(bold=True)
-        for r, row in enumerate(slot_table, start=2):
-            wss.cell(row=r, column=1, value=row.get("store_id"))
-            wss.cell(row=r, column=2, value=row.get("store_name"))
-            wss.cell(row=r, column=3, value=row.get("slot"))
-            wss.cell(row=r, column=4, value=row.get("orders"))
-            wss.cell(row=r, column=5, value=row.get("sales"))
-            wss.cell(row=r, column=6, value=row.get("net_total"))
-            wss.cell(row=r, column=7, value=row.get("profitability_pct"))
-            wss.cell(row=r, column=8, value=row.get("ad_placement"))
-            wss.cell(row=r, column=9, value=row.get("budget_estimate"))
-            wss.cell(row=r, column=10, value=row.get("weekly_budget"))
-
-    ralph_ads = ralph_ads_upload_rows(ads_plan)
-    if ralph_ads:
-        wsr = wb.create_sheet("Ads")
-        rh = ["Merchant store ID", "Slots", "Bid strategy", "Budget", "Campaign Name"]
-        for idx, h in enumerate(rh, start=1):
-            cell = wsr.cell(row=1, column=idx, value=h)
-            cell.font = Font(bold=True)
-        for r, row in enumerate(ralph_ads, start=2):
-            wsr.cell(row=r, column=1, value=row["store_id"])
-            wsr.cell(row=r, column=2, value=row["slots"])
-            wsr.cell(row=r, column=3, value=row["bid_strategy"])
-            wsr.cell(row=r, column=4, value=row["budget"])
-            wsr.cell(row=r, column=5, value=row["campaign_name"])
-
-    slot_recs = result.get("slot_recommendations") or []
-    if slot_recs:
-        wsrg = wb.create_sheet("Register slots")
-        rgh = [
-            "Store ID",
-            "Day",
-            "Daypart",
-            "Orders",
-            "Sales",
-            "Payouts",
-            "AOV",
-            "Profitability %",
-            "Action",
-            "Min subtotal",
-            "Slot tag",
-            "Campaign name",
-            "Rationale",
-        ]
-        for idx, h in enumerate(rgh, start=1):
-            cell = wsrg.cell(row=1, column=idx, value=h)
-            cell.font = Font(bold=True)
-        for r, row in enumerate(slot_recs, start=2):
-            wsrg.cell(row=r, column=1, value=row.get("store_id"))
-            wsrg.cell(row=r, column=2, value=row.get("day"))
-            wsrg.cell(row=r, column=3, value=row.get("daypart"))
-            wsrg.cell(row=r, column=4, value=row.get("orders"))
-            wsrg.cell(row=r, column=5, value=row.get("sales"))
-            wsrg.cell(row=r, column=6, value=row.get("payouts"))
-            wsrg.cell(row=r, column=7, value=row.get("aov"))
-            wsrg.cell(row=r, column=8, value=row.get("profitability_pct"))
-            wsrg.cell(row=r, column=9, value=row.get("action"))
-            wsrg.cell(row=r, column=10, value=row.get("min_subtotal"))
-            wsrg.cell(row=r, column=11, value=row.get("slot_tag"))
-            wsrg.cell(row=r, column=12, value=row.get("campaign_name"))
-            wsrg.cell(row=r, column=13, value=row.get("rationale"))
-
-    campaigns = ads_plan.get("campaigns") or []
-    if campaigns:
-        wsa = wb.create_sheet("Ads planner")
-        ah = [
-            "store_id",
-            "store_name",
-            "day_of_week",
-            "daypart",
-            "tier",
-            "priority_rank",
-            "target_audience",
-            "start_date",
-            "end_date",
-            "bid_strategy",
-            "bid_amount",
-            "bid_display",
-            "budget_weight",
-            "allocation_pct",
-            "campaign_name",
-            "rationale",
-            "order_count",
-            "avg_aov",
-            "median_aov",
-            "mode_basket",
-            "avg_profitability",
-            "profitability_pct",
-            "ad_penetration",
-            "composite_score",
-        ]
-        for idx, h in enumerate(ah, start=1):
-            cell = wsa.cell(row=1, column=idx, value=h)
-            cell.font = Font(bold=True)
-        for r, c in enumerate(campaigns, start=2):
-            m = c.get("metrics") or {}
-            wsa.cell(row=r, column=1, value=c.get("store_id"))
-            wsa.cell(row=r, column=2, value=c.get("store_name"))
-            wsa.cell(row=r, column=3, value=c.get("day_of_week"))
-            wsa.cell(row=r, column=4, value=c.get("daypart"))
-            wsa.cell(row=r, column=5, value=c.get("tier"))
-            wsa.cell(row=r, column=6, value=c.get("priority_rank"))
-            wsa.cell(row=r, column=7, value=c.get("target_audience"))
-            wsa.cell(row=r, column=8, value=c.get("start_date"))
-            wsa.cell(row=r, column=9, value=c.get("end_date"))
-            wsa.cell(row=r, column=10, value=c.get("bid_strategy"))
-            wsa.cell(row=r, column=11, value=c.get("bid_amount"))
-            wsa.cell(row=r, column=12, value=c.get("bid_display"))
-            wsa.cell(row=r, column=13, value=c.get("budget_weight"))
-            wsa.cell(row=r, column=14, value=c.get("allocation_pct"))
-            wsa.cell(row=r, column=15, value=c.get("campaign_name"))
-            wsa.cell(row=r, column=16, value=c.get("rationale"))
-            wsa.cell(row=r, column=17, value=m.get("order_count"))
-            wsa.cell(row=r, column=18, value=m.get("avg_aov"))
-            wsa.cell(row=r, column=19, value=m.get("median_aov"))
-            wsa.cell(row=r, column=20, value=m.get("mode_basket"))
-            wsa.cell(row=r, column=21, value=m.get("avg_profitability"))
-            wsa.cell(row=r, column=22, value=m.get("profitability_pct"))
-            wsa.cell(row=r, column=23, value=m.get("ad_penetration"))
-            wsa.cell(row=r, column=24, value=m.get("composite_score"))
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(path)
-
-
 def _read_all_runs(limit: int = 200) -> list[dict]:
     if not INDEX_PATH.is_file():
         return []
@@ -487,12 +314,9 @@ def _read_all_runs(limit: int = 200) -> list[dict]:
 def _friendly_agent_name(agent: str) -> str:
     mapping = {
         "deepdive": "DeepDive",
-        "marketingreco": "MarketingReco",
-        "campaign_review": "Campaign Review",
         "data_run": "Data Run",
         "strategist": "Strategist",
         "health_check": "Health Check",
-        "campaign_killer": "Campaign Killer",
         "campaign_analyser": "Campaign Analyser",
         "monthly_reporter": "Monthly Reporter",
         "offers": "RalphAI Offers",
@@ -749,106 +573,6 @@ def post_campaign_analyser(
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/runs/marketingreco")
-def post_marketingreco(
-    operator_id: str = Form(...),
-    mode: str = Form("manual"),
-    register_file: Optional[UploadFile] = File(None),
-    financial_file: Optional[UploadFile] = File(None),
-    doordash_email: str = Form(""),
-    doordash_password: str = Form(""),
-):
-    run_id = str(uuid.uuid4())
-    t0 = datetime.now(timezone.utc)
-    work = Path(tempfile.mkdtemp(prefix=f"mrk_{run_id[:8]}_"))
-    try:
-        mode_norm = mode.strip().lower()
-        kwargs: dict = {}
-
-        if mode_norm == "manual":
-            reg_fn = (register_file.filename or "").lower() if register_file else ""
-            fin_fn = (financial_file.filename or "").lower() if financial_file else ""
-            if register_file and register_file.filename:
-                if not reg_fn.endswith((".xlsx", ".xls", ".csv")):
-                    raise HTTPException(400, "register_file must be .xlsx, .xls, or .csv")
-                raw = _read_upload_file(register_file.file)
-                if not raw:
-                    raise HTTPException(400, "register_file is empty.")
-                in_path = work / Path(register_file.filename).name
-                in_path.write_bytes(raw)
-                kwargs["register_report_path"] = str(in_path)
-                kwargs["reporting_root"] = str(marketingreco_reporting_root())
-            elif financial_file and financial_file.filename:
-                if not (fin_fn.endswith(".zip") or fin_fn.endswith(".csv")):
-                    raise HTTPException(400, "financial_file must be .zip or .csv")
-                raw = _read_upload_file(financial_file.file)
-                if not raw:
-                    raise HTTPException(400, "financial_file is empty.")
-                in_path = work / Path(financial_file.filename).name
-                in_path.write_bytes(raw)
-                kwargs["financial_report_path"] = str(in_path)
-                kwargs["reporting_root"] = str(marketingreco_reporting_root())
-            else:
-                raise HTTPException(
-                    400,
-                    "Manual mode requires a DD register file (.xlsx, .xls, .csv) or legacy FINANCIAL_DETAILED (.zip, .csv).",
-                )
-        elif mode_norm == "auto":
-            if not doordash_email.strip() or not doordash_password:
-                raise HTTPException(400, "Auto mode requires doordash_email and doordash_password.")
-            kwargs["doordash_email"] = doordash_email.strip()
-            kwargs["doordash_password"] = doordash_password
-            kwargs["reporting_root"] = str(marketingreco_reporting_root())
-        else:
-            raise HTTPException(400, "mode must be 'manual' or 'auto'")
-
-        result = run_marketingreco(operator_id=operator_id.strip(), mode=mode_norm, **kwargs)
-
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        out_dir = MRK_RUNS_BASE / run_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        meta = {
-            "run_id": run_id,
-            "agent": "marketingreco",
-            "operator_id": operator_id.strip(),
-            "mode": mode_norm,
-            "status": "success",
-            "started": t0.isoformat(),
-            "duration_s": round(duration_s, 2),
-            "recommended_campaigns": len(result.get("recommended_campaigns") or []),
-        }
-        (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-        campaigns_xlsx = out_dir / "marketingreco_campaigns.xlsx"
-        _write_marketingreco_campaigns_excel(campaigns_xlsx, result)
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "marketingreco",
-                "operator": operator_id.strip() or "—",
-                "status": "success",
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
-        )
-        ads_plan_payload = result.get("ads_plan") or {}
-        response = {
-            **result,
-            "run_id": run_id,
-            "ads_upload_rows": ralph_ads_upload_rows(ads_plan_payload),
-            "downloads": {
-                "campaigns_excel": f"/api/runs/marketingreco/{run_id}/download/campaigns",
-            },
-        }
-        return JSONResponse(response)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, str(e))
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-
-
 @app.get("/api/reporting-browser-use/forks")
 def get_reporting_browser_use_forks():
     """List all reporting_browser_use fork agents and whether each can run."""
@@ -967,33 +691,25 @@ def post_reporting_browser_use_fork(
 @app.post("/api/runs/offers")
 def post_offers(
     operator_id: str = Form(...),
-    mode: str = Form("manual"),
+    mode: str = Form("auto"),
     campaign_mappings_file: Optional[UploadFile] = File(None),
     doordash_email: str = Form(""),
     doordash_password: str = Form(""),
 ):
+    """Load latest Strategist Offers sheet for operator → browser-use promo campaigns."""
+    from agents.offers.agent import run as run_offers_agent
+
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
-    work = Path(tempfile.mkdtemp(prefix=f"offers_{run_id[:8]}_"))
+    _ = campaign_mappings_file, mode
     try:
-        mode_norm = mode.strip().lower()
-        reporting_root = marketingreco_reporting_root()
-        env = os.environ.copy()
         if not doordash_email.strip() or not doordash_password:
-            raise HTTPException(400, "Offers mode requires doordash_email and doordash_password.")
-        env["DOORDASH_EMAIL"] = doordash_email.strip()
-        env["DOORDASH_PASSWORD"] = doordash_password
-        if mode_norm not in ("manual", "auto", "full"):
-            raise HTTPException(400, "mode must be 'manual', 'auto', or 'full'")
+            raise HTTPException(400, "Offers requires doordash_email and doordash_password.")
 
-        # Product behavior: Offers mode always runs the complete Reporting app pipeline
-        # (download + analysis + campaign execution) with credentials provided via UI.
-        _ = campaign_mappings_file
-        subprocess.run(
-            [sys.executable, "main.py"],
-            cwd=str(reporting_root),
-            env=env,
-            check=True,
+        result = run_offers_agent(
+            operator_id.strip(),
+            doordash_email=doordash_email.strip(),
+            doordash_password=doordash_password,
         )
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
@@ -1002,57 +718,49 @@ def post_offers(
                 "id": run_id,
                 "agent": "offers",
                 "operator": operator_id.strip() or "—",
-                "status": "success",
+                "status": result.get("status", "success"),
                 "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
                 "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
             }
         )
-        return JSONResponse({"status": "success", "mode": "full", "operator_id": operator_id.strip()})
+        return JSONResponse({"run_id": run_id, **result})
     except HTTPException:
         raise
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, str(e))
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+        raise HTTPException(500, str(e)) from e
 
 
 @app.post("/api/runs/ads")
 def post_ads(
     operator_id: str = Form(...),
-    mode: str = Form("manual"),
+    mode: str = Form("auto"),
     ads_sheet_file: Optional[UploadFile] = File(None),
     doordash_email: str = Form(""),
     doordash_password: str = Form(""),
 ):
     """
-    Sponsored listing automation.
+    Sponsored listing automation from Strategist Ads sheet (auto) or uploaded sheet (manual).
 
-    Manual: CSV or any Excel file; for Excel, sheet "Ads" is read as input rows.
-    Expected Ads columns: Merchant store ID (or Store ID) | Slots | Bid strategy | Budget | Campaign name.
-    Auto: login → download financial + marketing reports → analysis + combined workbook (campaign
-    recommendations) → build Ads upload rows from FINANCIAL_DETAILED → sponsored listing automation
-    (same browser flow as Manual).
+    Auto: latest data/Strategist/<operator>/<timestamp>/campaigns.xlsx → Ads Campaigns sheet.
+    Manual: upload CSV/Excel with Ads sheet (Merchant store ID | Slots | Bid strategy | Budget | Campaign name).
     """
+    from agents.ads.agent import run as run_ads_agent
+
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
     work = Path(tempfile.mkdtemp(prefix=f"ads_{run_id[:8]}_"))
     try:
         mode_norm = mode.strip().lower()
-        reporting_root = marketingreco_reporting_root()
         if mode_norm not in ("manual", "auto"):
             raise HTTPException(400, "mode must be 'manual' or 'auto'")
         if not doordash_email.strip() or not doordash_password:
             raise HTTPException(400, "DoorDash email and password are required (browser login).")
 
-        env = os.environ.copy()
-        env["DOORDASH_EMAIL"] = doordash_email.strip()
-        env["DOORDASH_PASSWORD"] = doordash_password
-        # Subprocess ``python -c`` resolves ``agents`` from PYTHONPATH; prefer reporting tree over repo ``agents/``.
-        env_reporting = dict(env)
-        env_reporting["PYTHONPATH"] = str(reporting_root)
-
-        rows_file: str | None = None
-
+        sheet_path: Path | None = None
         if mode_norm == "manual":
             if not ads_sheet_file or not ads_sheet_file.filename:
                 raise HTTPException(400, "Manual mode requires an ads sheet (.csv or Excel).")
@@ -1073,163 +781,15 @@ def post_ads(
 
             sheet_path = work / Path(ads_sheet_file.filename).name
             sheet_path.write_bytes(raw)
-            rows_path = _prepare_ads_rows_file(sheet_path, work)
-            rows_file = rows_path.name
+            if sheet_path.suffix.lower() != ".csv":
+                sheet_path = _prepare_ads_rows_file(sheet_path, work)
 
-            env["ADS_DOWNLOAD_DIR"] = str(work)
-            env["ADS_SHEET_PATH"] = str(rows_path)
-
-            script = """
-import asyncio
-import os
-from pathlib import Path
-from agents.doordash_agent import run_ads_campaigns_from_sheet
-
-async def _main():
-    await run_ads_campaigns_from_sheet(
-        download_dir=Path(os.environ["ADS_DOWNLOAD_DIR"]),
-        email=os.environ["DOORDASH_EMAIL"],
-        password=os.environ["DOORDASH_PASSWORD"],
-        sheet_path=Path(os.environ["ADS_SHEET_PATH"]),
-    )
-
-asyncio.run(_main())
-"""
-            subprocess.run(
-                [sys.executable, "-c", script],
-                cwd=str(reporting_root),
-                env=env_reporting,
-                check=True,
-            )
-        elif mode_norm == "auto":
-            env["RALPH_AI_ROOT"] = str(ROOT)
-            env_reporting["RALPH_AI_ROOT"] = str(ROOT)
-            ads_auto_script = """
-import asyncio
-import os
-import sys
-from datetime import datetime, timedelta
-from pathlib import Path
-
-from agents.doordash_agent import run_ads_campaigns_from_sheet, run_reports_only
-from agents.marketing_agent import run as marketing_run
-from agents.analysis_agent import run as analysis_run
-from agents.combined_report_agent import run as combined_run, append_campaign_mappings_to_workbook
-from agents.campaign_params import get_campaign_mappings_for_combined
-import pandas as pd
-
-
-def _dates():
-    today = datetime.now().date()
-    first_this_month = today.replace(day=1)
-    last_prev_month = first_this_month - timedelta(days=1)
-    y, m = first_this_month.year, first_this_month.month - 3
-    if m <= 0:
-        m += 12
-        y -= 1
-    start = datetime(y, m, 1).date()
-    return start.strftime("%m/%d/%Y"), last_prev_month.strftime("%m/%d/%Y")
-
-
-def _run_dir(email: str) -> Path:
-    safe = (email or "run").strip()
-    for c in ("@", ".", " ", "/", chr(92)):
-        safe = safe.replace(c, "_")
-    safe = safe[:50] if len(safe) > 50 else safe
-    return Path("downloads") / f"{safe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-
-async def _main():
-    email = os.environ["DOORDASH_EMAIL"]
-    password = os.environ["DOORDASH_PASSWORD"]
-    ralph_root = Path(os.environ["RALPH_AI_ROOT"])
-    sys.path.insert(0, str(ralph_root))
-    from agents.marketingreco.ads_planner import build_ads_plan
-    from agents.marketingreco.ralph_ads_excel import ralph_ads_upload_rows
-
-    start_date, end_date = _dates()
-    run_dir = _run_dir(email)
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    marketing_path, financial_path = await run_reports_only(
-        download_dir=run_dir,
-        email=email,
-        password=password,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    if not financial_path:
-        raise SystemExit(
-            "Ads auto: financial report was not downloaded. Check Browser Use / portal access."
+        result = run_ads_agent(
+            operator_id.strip(),
+            doordash_email=doordash_email.strip(),
+            doordash_password=doordash_password,
+            ads_sheet_path=str(sheet_path) if sheet_path else None,
         )
-
-    marketing_sheets = (
-        marketing_run(
-            Path(marketing_path),
-            output_dir=run_dir,
-            post_start_date=start_date,
-            post_end_date=end_date,
-            write_file=False,
-        )
-        if marketing_path
-        else None
-    )
-    financial_sheets = analysis_run(
-        Path(financial_path),
-        output_dir=run_dir,
-        report_start_date=start_date,
-        report_end_date=end_date,
-        write_file=False,
-    )
-
-    combined = combined_run(
-        financial_sheets=financial_sheets,
-        marketing_sheets=marketing_sheets,
-        output_dir=run_dir,
-    )
-    if combined:
-        slots_csv = Path("slots.csv")
-        mappings = get_campaign_mappings_for_combined(Path(combined), slots_csv)
-        if mappings:
-            append_campaign_mappings_to_workbook(Path(combined), mappings)
-
-    fc = run_dir / "financial_detailed_report.csv"
-    if not fc.is_file():
-        for p in sorted(run_dir.glob("*FINANCIAL*.csv")):
-            fc = p
-            break
-    if not fc.is_file():
-        raise SystemExit(
-            "Ads auto: no FINANCIAL_DETAILED CSV after analysis; cannot build ads recommendations."
-        )
-
-    ads_plan = build_ads_plan(str(fc))
-    upload = ralph_ads_upload_rows(ads_plan)
-    if not upload:
-        raise SystemExit(
-            "Ads auto: no sponsored-listing rows (no slots with Ad placement Yes). "
-            "Try Manual with an Ads sheet or check financial data coverage."
-        )
-
-    ads_csv = run_dir / "ads_auto_upload.csv"
-    pd.DataFrame(upload).to_csv(ads_csv, index=False)
-
-    await run_ads_campaigns_from_sheet(
-        download_dir=run_dir,
-        email=email,
-        password=password,
-        sheet_path=ads_csv,
-    )
-
-
-asyncio.run(_main())
-"""
-            subprocess.run(
-                [sys.executable, "-c", ads_auto_script],
-                cwd=str(reporting_root),
-                env=env_reporting,
-                check=True,
-            )
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
         _append_index(
@@ -1237,37 +797,31 @@ asyncio.run(_main())
                 "id": run_id,
                 "agent": "ads",
                 "operator": operator_id.strip() or "—",
-                "status": "success",
+                "status": result.get("status", "success"),
                 "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
                 "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
             }
         )
-        body: dict = {
-            "status": "success",
-            "run_id": run_id,
-            "mode": mode_norm,
-            "operator_id": operator_id.strip(),
-        }
-        if rows_file:
-            body["rows_file"] = rows_file
-        return JSONResponse(body)
+        return JSONResponse({"run_id": run_id, "mode": mode_norm, **result})
     except HTTPException:
         raise
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(500, f"Ads browser run failed (exit {e.returncode}). Check API logs / Slack.")
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-@app.get("/api/runs/marketingreco/{run_id}/download/campaigns")
-def download_marketingreco_campaigns(run_id: str):
+@app.get("/api/runs/strategist/{run_id}/download/campaigns")
+def download_strategist_campaigns(run_id: str):
     _validate_run_id(run_id)
-    path = MRK_RUNS_BASE / run_id / "marketingreco_campaigns.xlsx"
+    path = STRATEGIST_RUNS_BASE / run_id / "marketing_plan.xlsx"
     if not path.is_file():
         raise HTTPException(404, "Campaign table not found")
-    _notify_export("MarketingReco — Campaigns Excel", run_id, path.name)
+    _notify_export("Strategist — Marketing Plan Excel", run_id, path.name)
     return FileResponse(
         path,
         filename=path.name,
@@ -1275,8 +829,8 @@ def download_marketingreco_campaigns(run_id: str):
     )
 
 
-@app.post("/api/runs/campaign-review")
-def post_campaign_review(
+@app.post("/api/runs/health-check/campaign-review")
+def post_health_check_campaign_review(
     operator_id: str = Form(...),
     mode: str = Form("auto"),
     marketing_files: Optional[List[UploadFile]] = File(None),
@@ -1319,11 +873,12 @@ def post_campaign_review(
         )
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        out_dir = CR_RUNS_BASE / run_id
+        out_dir = HC_CR_RUNS_BASE / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
         meta = {
             "run_id": run_id,
-            "agent": "campaign_review",
+            "agent": "health_check",
+            "sub_agent": "campaign_review",
             "operator_id": operator_id.strip(),
             "mode": mode_norm,
             "status": "success",
@@ -1340,7 +895,7 @@ def post_campaign_review(
         _append_index(
             {
                 "id": run_id,
-                "agent": "campaign_review",
+                "agent": "health_check",
                 "operator": operator_id.strip() or "—",
                 "status": "success",
                 "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
@@ -1354,6 +909,22 @@ def post_campaign_review(
         raise HTTPException(500, str(e))
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+@app.post("/api/runs/campaign-review")
+def post_campaign_review_legacy(
+    operator_id: str = Form(...),
+    mode: str = Form("auto"),
+    marketing_files: Optional[List[UploadFile]] = File(None),
+    data_dir: str = Form(""),
+):
+    """Deprecated — use POST /api/runs/health-check/campaign-review."""
+    return post_health_check_campaign_review(
+        operator_id=operator_id,
+        mode=mode,
+        marketing_files=marketing_files,
+        data_dir=data_dir,
+    )
 
 
 @app.get("/api/data-run/report-types")
@@ -1441,53 +1012,112 @@ def post_data_run(
 
 @app.post("/api/runs/strategist")
 def post_strategist(
-    operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
+    mode: str = Form("auto"),
+    operator_ids: str = Form("", description="JSON array or comma-separated operator IDs (auto mode)"),
+    operator_id: str = Form("", description="Single operator ID (manual mode)"),
+    register_file: Optional[UploadFile] = File(None),
 ):
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
+    work = Path(tempfile.mkdtemp(prefix=f"stg_{run_id[:8]}_"))
     try:
-        raw = (operator_ids or "").strip()
-        if not raw:
-            raise HTTPException(400, "Select at least one operator.")
-        parsed_ids: list[str]
-        if raw.startswith("["):
-            try:
-                as_json = json.loads(raw)
-                if not isinstance(as_json, list):
-                    raise ValueError
-                parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
-            except Exception as exc:
-                raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
-        else:
-            parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
-        if not parsed_ids:
-            raise HTTPException(400, "Select at least one operator.")
+        mode_norm = (mode or "auto").strip().lower()
+        if mode_norm == "manual":
+            oid = (operator_id or "").strip()
+            if not oid:
+                raise HTTPException(400, "Manual mode requires operator_id.")
+            if not register_file or not register_file.filename:
+                raise HTTPException(400, "Manual mode requires a DD register file (.xlsx, .xls, .csv).")
+            reg_fn = register_file.filename.lower()
+            if not reg_fn.endswith((".xlsx", ".xls", ".csv")):
+                raise HTTPException(400, "register_file must be .xlsx, .xls, or .csv")
+            raw_bytes = _read_upload_file(register_file.file)
+            if not raw_bytes:
+                raise HTTPException(400, "register_file is empty.")
+            in_path = work / Path(register_file.filename).name
+            in_path.write_bytes(raw_bytes)
 
-        result = run_strategist(operator_ids=parsed_ids)
+            business_name = oid
+            try:
+                for op in load_account_operators_airtable():
+                    if str(op.get("operator_id") or "").strip() == oid:
+                        business_name = str(op.get("business_name") or oid)
+                        break
+            except Exception:
+                pass
+
+            result = run_strategist(
+                mode="manual",
+                operator_id=oid,
+                register_report_path=str(in_path),
+                business_name=business_name,
+            )
+            operator_label = business_name
+            selected_count = 1
+        else:
+            raw = (operator_ids or "").strip()
+            if not raw:
+                raise HTTPException(400, "Auto mode: select at least one operator.")
+            parsed_ids: list[str]
+            if raw.startswith("["):
+                try:
+                    as_json = json.loads(raw)
+                    if not isinstance(as_json, list):
+                        raise ValueError
+                    parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
+                except Exception as exc:
+                    raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
+            else:
+                parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
+            if not parsed_ids:
+                raise HTTPException(400, "Auto mode: select at least one operator.")
+            result = run_strategist(mode="auto", operator_ids=parsed_ids)
+            operator_label = f"{len(parsed_ids)} selected"
+            selected_count = len(parsed_ids)
 
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
+        out_dir = STRATEGIST_RUNS_BASE / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+        response: dict = {
+            "status": "success",
+            "run_id": run_id,
+            "mode": mode_norm,
+            "selected_operator_count": selected_count,
+            **result,
+        }
+
+        if mode_norm == "manual":
+            first = (result.get("results") or [{}])[0]
+            ads_plan_payload = first.get("ads_plan") or {}
+            campaigns_src = Path(first.get("campaigns_xlsx") or "")
+            if campaigns_src.is_file():
+                dest = out_dir / "marketing_plan.xlsx"
+                shutil.copy2(campaigns_src, dest)
+                response["downloads"] = {
+                    "campaigns_excel": f"/api/runs/strategist/{run_id}/download/campaigns",
+                }
+            response["ads_upload_rows"] = ralph_ads_upload_rows(ads_plan_payload)
+            response.update({k: v for k, v in first.items() if k not in response})
+
         _append_index(
             {
                 "id": run_id,
                 "agent": "strategist",
-                "operator": f"{len(parsed_ids)} selected",
+                "operator": operator_label,
                 "status": "success",
                 "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
                 "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
             }
         )
-        return JSONResponse(
-            {
-                "status": "success",
-                "run_id": run_id,
-                "selected_operator_count": len(parsed_ids),
-                **result,
-            }
-        )
+        return JSONResponse(response)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(500, str(e))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def _parse_health_check_form(
@@ -1753,105 +1383,15 @@ def download_deepdive_json(run_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Campaign Killer
-# ---------------------------------------------------------------------------
-
-@app.post("/api/runs/campaign-killer")
-async def post_campaign_killer(
-    operator_ids: str = Form(..., description="JSON array or comma-separated operator IDs"),
-    headless: str = Form("false", description="Run browser headless (default false, same as Ads/Offers)"),
-    search_todc: str = Form(
-        "true",
-        description="Type TODC in the campaigns table search before Active filter (default true)",
-    ),
-):
-    run_id = str(uuid.uuid4())
-    t0 = datetime.now(timezone.utc)
-    try:
-        raw = (operator_ids or "").strip()
-        if not raw:
-            raise HTTPException(400, "Select at least one operator.")
-
-        parsed_ids: list[str]
-        if raw.startswith("["):
-            try:
-                as_json = json.loads(raw)
-                if not isinstance(as_json, list):
-                    raise ValueError
-                parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
-            except Exception as exc:
-                raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
-        else:
-            parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
-
-        if not parsed_ids:
-            raise HTTPException(400, "Select at least one operator.")
-
-        is_headless = headless.strip().lower() in ("1", "true", "yes")
-        do_search_todc = search_todc.strip().lower() not in ("0", "false", "no")
-        result = await run_campaign_killer_async(
-            operator_ids=parsed_ids, headless=is_headless, search_todc=do_search_todc
-        )
-
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "campaign_killer",
-                "operator": f"{len(parsed_ids)} operator(s)",
-                "status": result.get("status", "unknown"),
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
-        )
-
-        return JSONResponse({"run_id": run_id, **result})
-    except HTTPException:
-        raise
-    except Exception as e:
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "campaign_killer",
-                "operator": "—",
-                "status": "failed",
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s)}s",
-                "error": str(e),
-            }
-        )
-        raise HTTPException(500, str(e)) from e
-
-
-# ---------------------------------------------------------------------------
 # Agent registry (variable contracts)
 # ---------------------------------------------------------------------------
 
 AGENT_REGISTRY: list[dict] = [
     {
-        "id": "marketingreco",
-        "name": "MarketingReco",
-        "category": "analysis",
-        "description": "Campaign recommendations from DD register (manual) or financial download (auto/legacy)",
-        "inputs": [
-            {"name": "operator_id", "type": "string", "required": True},
-            {"name": "mode", "type": "select", "required": True, "options": ["manual", "auto"]},
-            {"name": "register_file", "type": "file", "required": False, "description": "DD register Excel/CSV (manual mode, preferred)"},
-            {"name": "financial_file", "type": "file", "required": False, "description": "Legacy FINANCIAL_DETAILED CSV/zip (manual mode)"},
-            {"name": "doordash_email", "type": "string", "required": False, "description": "DoorDash login (auto mode)"},
-            {"name": "doordash_password", "type": "password", "required": False, "description": "DoorDash password (auto mode)"},
-        ],
-        "outputs": [
-            {"name": "campaigns_excel", "type": "file", "description": "Campaign mappings Excel"},
-            {"name": "recommended_campaigns", "type": "json", "description": "Campaign recommendations"},
-        ],
-    },
-    {
         "id": "offers",
         "name": "RalphAI Offers",
         "category": "execution",
-        "description": "Complete Reporting pipeline: download + analysis + campaign execution",
+        "description": "Strategist Offers sheet → browser-use promo campaigns (Slack progress)",
         "inputs": [
             {"name": "operator_id", "type": "string", "required": True},
             {"name": "doordash_email", "type": "string", "required": True},
@@ -1859,13 +1399,14 @@ AGENT_REGISTRY: list[dict] = [
         ],
         "outputs": [
             {"name": "status", "type": "string"},
+            {"name": "campaigns_source", "type": "string"},
         ],
     },
     {
         "id": "ads",
         "name": "RalphAI Ads",
         "category": "execution",
-        "description": "Sponsored listing automation (manual sheet or auto-generate from financial data)",
+        "description": "Strategist Ads sheet → sponsored listing browser automation (optional manual upload)",
         "inputs": [
             {"name": "operator_id", "type": "string", "required": True},
             {"name": "mode", "type": "select", "required": True, "options": ["manual", "auto"]},
@@ -1873,22 +1414,7 @@ AGENT_REGISTRY: list[dict] = [
             {"name": "doordash_password", "type": "password", "required": True},
             {"name": "ads_sheet_file", "type": "file", "required": False, "description": "Ads sheet (manual mode)"},
         ],
-        "outputs": [{"name": "status", "type": "string"}],
-    },
-    {
-        "id": "campaign_review",
-        "name": "Campaign Review",
-        "category": "analysis",
-        "description": "Post-campaign performance review comparing pre/post metrics",
-        "inputs": [
-            {"name": "operator_id", "type": "string", "required": True},
-            {"name": "mode", "type": "select", "required": True, "options": ["auto", "manual"]},
-            {"name": "marketing_files", "type": "file[]", "required": False, "description": "Marketing CSVs (manual)"},
-            {"name": "data_dir", "type": "string", "required": False, "description": "Existing data dir (auto)"},
-        ],
-        "outputs": [
-            {"name": "campaign_reviews", "type": "json"},
-        ],
+        "outputs": [{"name": "status", "type": "string"}, {"name": "campaigns_source", "type": "string"}],
     },
     {
         "id": "data_run",
@@ -1907,36 +1433,40 @@ AGENT_REGISTRY: list[dict] = [
         "id": "strategist",
         "name": "Strategist",
         "category": "analysis",
-        "description": "90-day report generation + full combined analysis for selected operators",
+        "description": "Auto: 90-day portal download + campaign Excel. Manual: DD register upload → marketing plan.",
         "inputs": [
-            {"name": "operator_ids", "type": "string[]", "required": True},
+            {"name": "mode", "type": "select", "required": True, "options": ["auto", "manual"]},
+            {"name": "operator_ids", "type": "string[]", "required": False, "description": "Auto mode — multi-select operators"},
+            {"name": "operator_id", "type": "string", "required": False, "description": "Manual mode — single operator"},
+            {"name": "register_file", "type": "file", "required": False, "description": "Manual mode — DD register Excel/CSV"},
         ],
-        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
+        "outputs": [
+            {"name": "status", "type": "string"},
+            {"name": "results", "type": "json"},
+            {"name": "marketing_plan", "type": "json", "description": "Manual mode — recommended_campaigns"},
+            {"name": "campaigns_excel", "type": "file", "description": "Manual mode — Offers + Ads workbook"},
+        ],
     },
     {
         "id": "health_check",
         "name": "Health Check",
         "category": "data",
-        "description": "Weekly data pull with WoW analysis across operators",
+        "description": "Weekly data pull with WoW analysis and campaign review (pre/post metrics)",
         "inputs": [
             {"name": "weeks", "type": "number", "required": False, "description": "Weeks of data (default 2)"},
             {"name": "operator", "type": "string", "required": False, "description": "Filter by operator"},
             {"name": "skip_download", "type": "boolean", "required": False},
             {"name": "reference_date", "type": "date", "required": False},
+            {"name": "operator_id", "type": "string", "required": False, "description": "Campaign review only"},
+            {"name": "mode", "type": "select", "required": False, "options": ["auto", "manual"]},
+            {"name": "marketing_files", "type": "file[]", "required": False, "description": "Marketing CSVs (manual review)"},
+            {"name": "data_dir", "type": "string", "required": False, "description": "TriArch data dir (auto review)"},
         ],
-        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
-    },
-    {
-        "id": "campaign_killer",
-        "name": "Campaign Killer",
-        "category": "execution",
-        "description": "End active TODC-* campaigns (Active filter, row menu, confirm, feedback modal)",
-        "inputs": [
-            {"name": "operator_ids", "type": "string[]", "required": True},
-            {"name": "headless", "type": "boolean", "required": False},
-            {"name": "search_todc", "type": "boolean", "required": False, "description": "Table search TODC before filter (default true)"},
+        "outputs": [
+            {"name": "status", "type": "string"},
+            {"name": "results", "type": "json"},
+            {"name": "campaign_reviews", "type": "json"},
         ],
-        "outputs": [{"name": "status", "type": "string"}, {"name": "results", "type": "json"}],
     },
     {
         "id": "campaign_analyser",
@@ -1968,14 +1498,6 @@ AGENT_REGISTRY: list[dict] = [
         "name": "App2.0 (Legacy)",
         "category": "analysis",
         "description": "Legacy Streamlit P&L — use The Super App Breakdown for financial summary.",
-        "inputs": [],
-        "outputs": [],
-    },
-    {
-        "id": "app3_0",
-        "name": "App3.0 (Legacy)",
-        "category": "analysis",
-        "description": "Cloud-ready Streamlit app with comparison engine.",
         "inputs": [],
         "outputs": [],
     },

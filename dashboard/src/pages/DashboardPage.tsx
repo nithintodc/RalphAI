@@ -57,13 +57,11 @@ function timeAgo(raw?: string): string {
 function displayAgentName(agent: string): string {
   const map: Record<string, string> = {
     deepdive: "DeepDive (Legacy)",
-    marketingreco: "MarketingReco",
     monthly_reporter: "Monthly Reporter (legacy)",
-    campaign_review: "Campaign Review",
+    campaign_review: "Health Check (campaign review)",
     data_run: "Data Run",
     strategist: "Strategist",
     health_check: "Health Check",
-    campaign_killer: "Campaign Killer",
     offers: "RalphAI Offers",
     ads: "RalphAI Ads",
   };
@@ -290,27 +288,21 @@ export function DashboardPage() {
           <ul className="mt-4 space-y-2">
             {[
               {
-                label: "Health Check — WoW analysis",
+                label: "Health Check — WoW + campaign review",
                 onClick: () => {
                   navigate("/agents/health-check");
                 },
               },
               {
-                label: "MarketingReco — plan generation",
+                label: "Strategist — marketing plan",
                 onClick: () => {
-                  navigate("/agents/marketingreco");
+                  navigate("/agents/strategist");
                 },
               },
               {
-                label: "Review — 7-day performance",
+                label: "The Super App — analytics",
                 onClick: () => {
-                  navigate("/agents/campaign-review");
-                },
-              },
-              {
-                label: "Breakdown — financial summary",
-                onClick: () => {
-                  navigate("/agents/the-super-app?tab=breakdown");
+                  navigate("/agents/the-super-app");
                 },
               },
             ].map((t) => (

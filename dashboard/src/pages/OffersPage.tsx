@@ -58,12 +58,13 @@ export function OffersPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI - Offers</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          Offers mode runs the complete browser-use reporting workflow (<code>agents/reporting_browser_use</code>)
-          end-to-end using the
-          DoorDash login credentials entered here in the UI.
+          Select an operator, then Ralph loads the latest Strategist <strong>Offers Campaigns</strong> sheet from{" "}
+          <code>data/Strategist/</code> and creates discount promotions in the Merchant Portal via browser-use (
+          <code>agents/reporting_browser_use</code>). Progress posts to Slack.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">
-          Flow: login → report download → analysis/combined workbook → campaign execution in DoorDash.
+          Run Strategist first so <code>campaigns.xlsx</code> exists for this operator. Skips rows already marked
+          Successful.
         </p>
       </div>
 
@@ -89,7 +90,7 @@ export function OffersPage() {
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-ink-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-ink-700 disabled:opacity-50 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {loading ? "Running full Offers flow..." : "Run RalphAI - Offers"}
+            {loading ? "Creating Offers campaigns..." : "Run RalphAI - Offers"}
           </button>
         </div>
       </form>

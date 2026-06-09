@@ -12,17 +12,24 @@ class TestHealthCheckMultiloginFlow:
     def setup_method(self):
         mlx_mod._profile_index = None
 
-    def test_csv_lookup_matches_csv_row(self, monkeypatch):
-        monkeypatch.setenv("USE_MULTILOGIN", "true")
+    def test_csv_lookup_matches_csv_row(self, monkeypatch, tmp_path):
+        path = tmp_path / "browser_settings.json"
+        path.write_text('{"mode": "multilogin"}\n', encoding="utf-8")
+        monkeypatch.setattr("shared.browser_settings.browser_settings_path", lambda: path)
         pid = profile_id_for_email(_SAMPLE_EMAIL)
         assert pid == _SAMPLE_PROFILE_ID
         assert _resolve_multilogin_profile_id(_SAMPLE_EMAIL) == pid
 
-    def test_csv_lookup_case_insensitive(self, monkeypatch):
-        monkeypatch.setenv("USE_MULTILOGIN", "true")
+    def test_csv_lookup_case_insensitive(self, monkeypatch, tmp_path):
+        path = tmp_path / "browser_settings.json"
+        path.write_text('{"mode": "multilogin"}\n', encoding="utf-8")
+        monkeypatch.setattr("shared.browser_settings.browser_settings_path", lambda: path)
         assert profile_id_for_email(_SAMPLE_EMAIL.upper()) == _SAMPLE_PROFILE_ID
 
-    def test_multilogin_disabled_returns_none(self, monkeypatch):
-        monkeypatch.delenv("USE_MULTILOGIN", raising=False)
+    def test_multilogin_disabled_returns_none(self, monkeypatch, tmp_path):
         monkeypatch.delenv("MULTILOGIN_CDP_URL", raising=False)
+        monkeypatch.setattr(
+            "shared.browser_settings.browser_settings_path",
+            lambda: tmp_path / "missing.json",
+        )
         assert _resolve_multilogin_profile_id(_SAMPLE_EMAIL) is None

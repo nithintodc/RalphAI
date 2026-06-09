@@ -374,7 +374,7 @@ const APP_THEME = {
   posBg: 'rgba(5,150,105,0.08)',
   negBg: 'rgba(220,38,38,0.08)',
   rowAlt: 'rgba(0,0,0,0.02)',
-  font: "'Inter', system-ui, -apple-system, sans-serif",
+  font: "'Google Sans', system-ui, -apple-system, sans-serif",
 };
 
 /* ── CSS (Super App light theme — screen + print) ─────────────────────────── */
@@ -395,7 +395,7 @@ function reportCss() {
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html{font-size:14px;}
-  body{background:var(--bg);color:var(--text);font-family:var(--body);font-weight:400;line-height:1.5;-webkit-font-smoothing:antialiased;}
+  body{background:var(--bg);color:var(--text);font-family:var(--body);font-weight:400;line-height:1.5;-webkit-font-smoothing:antialiased;font-optical-sizing:auto;font-variation-settings:"GRAD" 0;}
   @media print{body{background:#fff;}.page-break{page-break-before:always;}.no-print{display:none;}}
   .report{max-width:1100px;margin:0 auto;padding:72px 24px 60px;}
   @media print{.report{padding-top:24px;}}
@@ -751,7 +751,7 @@ function chartScript(chart) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
   var DATA = ${JSON.stringify(chart)};
-  var FONT = { family: "'Inter', system-ui, sans-serif", size: 11 };
+  var FONT = { family: "'Google Sans', system-ui, sans-serif", size: 11 };
   var GRID = 'rgba(0,0,0,0.06)';
   var PRE_BAR = 'rgba(214,211,209,0.9)';
   var POST_BAR = 'rgba(5,150,105,0.85)';
@@ -799,17 +799,17 @@ function chartScript(chart) {
             ctx.save();
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.font = "600 10px Inter, system-ui, sans-serif";
+            ctx.font = "600 10px \"Google Sans\", system-ui, sans-serif";
             ctx.fillStyle = '#44403C';
             if (showDelta && di === 1) {
               var deltaText = fmtDelta(preData[i], val);
               if (deltaText) {
-                ctx.font = "600 9px Inter, system-ui, sans-serif";
+                ctx.font = "600 9px \"Google Sans\", system-ui, sans-serif";
                 ctx.fillStyle = deltaColor(preData[i], val);
                 ctx.fillText(deltaText, x, baseY - 12);
               }
             }
-            ctx.font = "600 10px Inter, system-ui, sans-serif";
+            ctx.font = "600 10px \"Google Sans\", system-ui, sans-serif";
             ctx.fillStyle = '#44403C';
             ctx.fillText(valueText, x, baseY);
             ctx.restore();
@@ -1247,7 +1247,7 @@ ${sections}
  */
 export function buildReportHtml(data, config, { variant = 'screen', logos = null } = {}) {
   if (variant === 'word') return buildWordReportHtml(data, config, logos);
-  const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
+  const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet">';
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TODC Partnership Performance Report</title>

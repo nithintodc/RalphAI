@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from agents.campaign_review.agent import run as review_run
+from agents.health_check.campaign_review import run as review_run
 from agents.campaign_setup.ads_flow import run_ads
-from agents.marketingreco.plan_generator import generate_plan_from_sources
+from agents.strategist.plan_builder import build_marketing_plan as generate_plan_from_sources
 from shared.campaign_history import (
     apply_history_to_ads_campaigns,
     build_campaign_history_from_review,

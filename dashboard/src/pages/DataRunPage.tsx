@@ -141,7 +141,7 @@ export function DataRunPage() {
           DoorDash data download via Multilogin: each operator opens its mapped profile, goes straight to Reports if
           already signed in, otherwise logs in with credentials from operator_multilogin_mapping.json. Zip files are
           saved under{" "}
-          <code className="rounded bg-brand-50 px-1.5 py-0.5 text-xs">data/DataRun_&#123;timestamp&#125;_&#123;operator&#125;/</code>{" "}
+          <code className="rounded bg-brand-50 px-1.5 py-0.5 text-xs">data/DataRun/&#123;timestamp&#125;/&#123;operator&#125;/</code>{" "}
           (zips only — never extracted).
         </p>
       </div>

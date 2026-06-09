@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-from pathlib import Path
-
 from shared.data_run_reports import (
     data_run_operator_dir,
     normalize_report_type_ids,
@@ -44,5 +42,4 @@ def test_zip_filename_matches_date_range():
 
 def test_data_run_operator_dir_pattern(tmp_path: Path):
     path = data_run_operator_dir(tmp_path, "ACM and CM LP", timestamp="20260605_120000")
-    assert path.name == "DataRun_20260605_120000_ACM_and_CM_LP"
-    assert path.parent == tmp_path
+    assert path == tmp_path / "DataRun" / "20260605_120000" / "ACM and CM LP"

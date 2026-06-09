@@ -26,7 +26,7 @@ const ENV_LABELS: Record<string, string> = {
   USE_MULTILOGIN: "Multilogin enabled",
   MULTILOGIN_USERNAME: "Multilogin username",
   MULTILOGIN_PASSWORD: "Multilogin password",
-  OPERATOR_PROFILE_MAPPING: "Operator ↔ Multilogin mapping (repo root JSON)",
+  OPERATOR_PROFILE_MAPPING: "Operator ↔ Multilogin mapping (multilogin/ JSON)",
   MULTILOGIN_PROFILES_CSV: "Legacy Multilogin profiles CSV (fallback)",
   LOCAL_BROWSER_CDP_URL: "Chrome CDP URL",
   FORCE_FULL_RUN: "Force full run (skip resume)",

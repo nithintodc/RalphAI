@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --paper:#F6F2EA; --paper2:#FBF8F2; --panel:#FFFFFF; --ink:#1C1814; --muted:#6E655A;
@@ -23,7 +23,7 @@
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
-    margin:0; font-family:"Public Sans",-apple-system,system-ui,sans-serif;
+    margin:0; font-family:"Google Sans",-apple-system,system-ui,sans-serif;
     color:var(--ink); background:var(--paper);
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   }
@@ -43,13 +43,13 @@
     position:relative;
   }
   .brand .glyph svg{width:21px;height:21px;display:block}
-  .brand .title{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:19px;letter-spacing:-.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(420px,100%)}
+  .brand .title{font-family:"Google Sans",sans-serif;font-weight:800;font-size:19px;letter-spacing:-.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(420px,100%)}
   .brand .sub{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#A79C8C;margin-top:4px;font-weight:600}
   .top .spacer{flex:1}
   .counter{display:flex;align-items:baseline;gap:9px;font-family:"JetBrains Mono",monospace;white-space:nowrap}
   .counter .num{font-size:23px;font-weight:700;color:#fff;letter-spacing:-.01em}
   .counter .den{font-size:13px;color:#9b9080}
-  .counter .lbl{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#8a8070;font-family:"Public Sans",sans-serif;font-weight:700;margin-left:2px}
+  .counter .lbl{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#8a8070;font-family:"Google Sans",sans-serif;font-weight:700;margin-left:2px}
   .btn{
     font:inherit;font-weight:600;font-size:13px;cursor:pointer;border:none;border-radius:9px;
     padding:9px 14px;display:inline-flex;align-items:center;gap:7px;transition:.16s;white-space:nowrap;
@@ -125,7 +125,7 @@
   /* ---- Map ---- */
   .map-wrap{position:relative;flex:1;min-width:0;background:var(--map-bg)}
   #map{position:absolute;inset:0;background:var(--map-bg)}
-  .leaflet-container{font-family:"Public Sans",sans-serif;background:var(--map-bg)}
+  .leaflet-container{font-family:"Google Sans",sans-serif;background:var(--map-bg)}
   .map-wrap::after{
     content:'';position:absolute;inset:0;pointer-events:none;z-index:450;
     background:radial-gradient(ellipse 85% 75% at 50% 45%,transparent 55%,rgba(20,50,40,.07) 100%);
@@ -153,7 +153,7 @@
   .pop-head{padding:14px 16px 12px;background:linear-gradient(180deg,#211C17,#191512);color:#fff;position:relative}
   .pop-brand{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px 3px 7px;border-radius:20px;color:#fff;margin-bottom:9px}
   .pop-brand .bd{width:8px;height:8px;border-radius:50%;background:#fff}
-  .pop-name{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1.2;color:#fff}
+  .pop-name{font-family:"Google Sans",sans-serif;font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1.2;color:#fff}
   .pop-body{padding:13px 16px 15px}
   .pop-row{display:flex;gap:10px;padding:5px 0;font-size:12.5px;align-items:flex-start}
   .pop-row .k{color:var(--faint);min-width:74px;font-weight:600;letter-spacing:.02em;flex:none}
@@ -198,7 +198,7 @@
     padding:22px 26px;text-align:center;max-width:300px;display:none;
   }
   .empty-note.show{display:block}
-  .empty-note h3{font-family:"Bricolage Grotesque",sans-serif;margin:0 0 6px;font-size:17px}
+  .empty-note h3{font-family:"Google Sans",sans-serif;margin:0 0 6px;font-size:17px}
   .empty-note p{margin:0;color:var(--muted);font-size:13px}
 
   .leaflet-bar a, .leaflet-control-zoom a{border-radius:0 !important}
@@ -250,7 +250,7 @@
     padding:11px 13px;max-width:210px;font-size:12px}
   .legend.collapsed .legend-body{display:none}
   .legend-head{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;
-    font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:12px}
+    font-family:"Google Sans",sans-serif;font-weight:800;font-size:12px}
   .legend.collapsed .lchev{transform:rotate(-90deg)}
   .lchev{transition:.2s}
   .legend-body{margin-top:9px;display:grid;gap:6px;max-height:230px;overflow:auto}
