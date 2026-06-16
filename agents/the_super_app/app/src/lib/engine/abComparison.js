@@ -5,6 +5,8 @@ export const AB_METRICS = [
   { key: 'payouts', label: 'Payouts', kind: 'usd', precision: 0 },
   { key: 'orders', label: 'Orders', kind: 'int', precision: 0 },
   { key: 'mktSpend', label: 'Marketing Spend', kind: 'usd', precision: 0 },
+  { key: 'adsSpend', label: 'Ads Spend', kind: 'usd', precision: 0 },
+  { key: 'promoSpend', label: 'Promo Spend', kind: 'usd', precision: 0 },
   { key: 'aov', label: 'AOV', kind: 'usd2', precision: 2 },
   { key: 'avg_payout', label: 'Avg Payout / Order', kind: 'usd2', precision: 2 },
   { key: 'profitability', label: 'Profitability %', kind: 'pct', precision: 2 },
@@ -16,6 +18,8 @@ export const STORE_GROWTH_SPECS = [
   { key: 'payouts', label: 'Payouts', pvp: 'payouts_growth_pct', lyPvp: 'payouts_ly_growth_pct', yoy: 'payouts_yoy_pct' },
   { key: 'orders', label: 'Orders', pvp: 'orders_growth_pct', lyPvp: 'orders_ly_growth_pct', yoy: 'orders_yoy_pct' },
   { key: 'aov', label: 'AOV', pvp: 'aov_growth_pct', lyPvp: 'aov_ly_growth_pct', yoy: 'aov_yoy_pct', postKey: 'post_aov', postLyKey: 'postLY_aov' },
+  { key: 'adsSpend', label: 'Ads Spend', pvp: 'adsSpend_growth_pct', lyPvp: 'adsSpend_ly_growth_pct', yoy: 'adsSpend_yoy_pct' },
+  { key: 'promoSpend', label: 'Promo Spend', pvp: 'promoSpend_growth_pct', lyPvp: 'promoSpend_ly_growth_pct', yoy: 'promoSpend_yoy_pct' },
   { key: 'avg_payout', label: 'Avg Payout / Order', pvp: 'avg_payout_growth_pct', lyPvp: 'avg_payout_ly_growth_pct', yoy: 'avg_payout_yoy_pct', postKey: 'post_avg_payout', postLyKey: 'postLY_avg_payout' },
   { key: 'profitability', label: 'Profitability %', pvp: 'prof_growth_pct', lyPvp: 'prof_ly_growth_pct', yoy: 'prof_yoy_pct', postKey: 'post_profitability', postLyKey: 'postLY_profitability' },
 ];
@@ -43,6 +47,8 @@ export function aggregateTaggedGroup(rows) {
     pre_payouts: 0, post_payouts: 0, preLY_payouts: 0, postLY_payouts: 0,
     pre_orders: 0, post_orders: 0, preLY_orders: 0, postLY_orders: 0,
     pre_mktSpend: 0, post_mktSpend: 0, preLY_mktSpend: 0, postLY_mktSpend: 0,
+    pre_adsSpend: 0, post_adsSpend: 0, preLY_adsSpend: 0, postLY_adsSpend: 0,
+    pre_promoSpend: 0, post_promoSpend: 0, preLY_promoSpend: 0, postLY_promoSpend: 0,
   };
   for (const r of rows) {
     totals.pre_sales += r.pre_sales || 0;
@@ -61,6 +67,14 @@ export function aggregateTaggedGroup(rows) {
     totals.post_mktSpend += r.post_mktSpend || 0;
     totals.preLY_mktSpend += r.preLY_mktSpend || 0;
     totals.postLY_mktSpend += r.postLY_mktSpend || 0;
+    totals.pre_adsSpend += r.pre_adsSpend || 0;
+    totals.post_adsSpend += r.post_adsSpend || 0;
+    totals.preLY_adsSpend += r.preLY_adsSpend || 0;
+    totals.postLY_adsSpend += r.postLY_adsSpend || 0;
+    totals.pre_promoSpend += r.pre_promoSpend || 0;
+    totals.post_promoSpend += r.post_promoSpend || 0;
+    totals.preLY_promoSpend += r.preLY_promoSpend || 0;
+    totals.postLY_promoSpend += r.postLY_promoSpend || 0;
   }
   const preOrders = totals.pre_orders || 0;
   const postOrders = totals.post_orders || 0;
@@ -79,6 +93,8 @@ export function aggregateTaggedGroup(rows) {
     payouts: { pre: totals.pre_payouts, post: totals.post_payouts, preLY: totals.preLY_payouts, postLY: totals.postLY_payouts },
     orders: { pre: totals.pre_orders, post: totals.post_orders, preLY: totals.preLY_orders, postLY: totals.postLY_orders },
     mktSpend: { pre: totals.pre_mktSpend, post: totals.post_mktSpend, preLY: totals.preLY_mktSpend, postLY: totals.postLY_mktSpend },
+    adsSpend: { pre: totals.pre_adsSpend, post: totals.post_adsSpend, preLY: totals.preLY_adsSpend, postLY: totals.postLY_adsSpend },
+    promoSpend: { pre: totals.pre_promoSpend, post: totals.post_promoSpend, preLY: totals.preLY_promoSpend, postLY: totals.postLY_promoSpend },
     aov: {
       pre: preOrders ? preSales / preOrders : 0,
       post: postOrders ? postSales / postOrders : 0,

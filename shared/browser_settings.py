@@ -73,12 +73,21 @@ def native_mode_active() -> bool:
 
 def browser_mode_summary() -> dict[str, Any]:
     mode = get_browser_mode()
-    return {
+    summary: dict[str, Any] = {
         "mode": mode,
         "multilogin": mode == BROWSER_MODE_MULTILOGIN,
         "native": mode == BROWSER_MODE_NATIVE,
         "path": str(browser_settings_path()),
     }
+    if mode == BROWSER_MODE_NATIVE:
+        try:
+            from shared.local_chrome_cdp import chrome_profile_status
+
+            summary["chrome"] = chrome_profile_status()
+        except Exception as exc:
+            logger.warning("Could not load Chrome profile status: %s", exc)
+            summary["chrome"] = {"warning": str(exc)}
+    return summary
 
 
 def apply_browser_mode_to_env(env: dict[str, str] | None = None) -> dict[str, str]:

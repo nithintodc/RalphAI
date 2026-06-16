@@ -69,6 +69,7 @@ export function normalizeDdSponsored(parsed) {
     'Marketing fees',
     'Sum of Marketing fees | (including any applicable taxes)',
   ]);
+  const newCustCol = findCol(columns, ['New customers acquired', 'New Customers Acquired', 'new customers acquired']);
 
   return data
     .map(row => {
@@ -87,7 +88,7 @@ export function normalizeDdSponsored(parsed) {
         sales: salesCol ? toNum(row[salesCol]) : 0,
         marketingFees,
         spend: marketingFees,
-        newCustomers: 0,
+        newCustomers: newCustCol ? toNum(row[newCustCol]) : 0,
         source: 'sponsored',
       };
     })

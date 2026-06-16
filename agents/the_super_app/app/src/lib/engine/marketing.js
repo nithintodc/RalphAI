@@ -1,5 +1,9 @@
-import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
+import { filterByDateRange, filterExcludedDates, filterExcludedStores, groupBy } from './aggregator';
 import { safeDivide, growthPct, round } from '../utils/safeMath';
+import { classifyMarketingRow } from '../utils/marketingStoreMatch';
+import { resolveCanonStoreId } from '../utils/abStoreFilter';
+
+const MARKETING_GROUP_KEYS = ['corp', 'todc', 'unmapped', 'total'];
 
 /** Metrics shown in Corp vs TODC summary (order matches UI / export). */
 export const MARKETING_SUMMARY_METRICS = [
@@ -27,23 +31,32 @@ export function sliceMarketingPct(n, pct = 0.10) {
   return Math.max(1, Math.ceil(n * pct));
 }
 
-/** Corp / TODC / Total rows for one period (`pre` or `post`). */
+/** Corp / TODC / Unmapped / Total rows for one period (`pre` or `post`). */
 export function buildCorpTodcImpactRows(sourceData, period = 'post') {
   if (!sourceData?.corp) return [];
   const suffix = period === 'pre' ? 'Pre' : 'Post';
-  return ['corp', 'todc', 'total'].map((key) => {
-    const r = sourceData[key];
-    return {
-      group: r.label,
-      sales: r[`sales${suffix}`],
-      orders: r[`orders${suffix}`],
-      spend: r[`spend${suffix}`],
-      roas: r[`roas${suffix}`],
-      cpo: r[`cpo${suffix}`],
-      checkAfterPromo: r[`checkAfterPromo${suffix}`],
-      _total: key === 'total',
-    };
-  });
+  return MARKETING_GROUP_KEYS
+    .filter((key) => {
+      if (key === 'unmapped') {
+        const r = sourceData.unmapped;
+        if (!r) return false;
+        return MARKETING_IMPACT_METRICS.some((m) => (r[`${m.key}${suffix}`] || 0) !== 0);
+      }
+      return true;
+    })
+    .map((key) => {
+      const r = sourceData[key];
+      return {
+        group: r.label,
+        sales: r[`sales${suffix}`],
+        orders: r[`orders${suffix}`],
+        spend: r[`spend${suffix}`],
+        roas: r[`roas${suffix}`],
+        cpo: r[`cpo${suffix}`],
+        checkAfterPromo: r[`checkAfterPromo${suffix}`],
+        _total: key === 'total',
+      };
+    });
 }
 
 export function filterCampaignsBySource(campaigns, source) {
@@ -90,16 +103,59 @@ function calcGroup(rows) {
   };
 }
 
-function filterPeriod(promotionData, sponsoredData, start, end, excludedDates) {
+function emptyGroup(label) {
+  return {
+    label,
+    orders: 0,
+    sales: 0,
+    spend: 0,
+    roas: 0,
+    cpo: 0,
+    promoAov: 0,
+    checkAfterPromo: 0,
+  };
+}
+
+function isMarketingRowIncluded(row, scope, resolveMarketingStoreId) {
+  if (!scope || !resolveMarketingStoreId) return true;
+  return classifyMarketingRow(row, scope, resolveMarketingStoreId) !== 'excluded';
+}
+
+/** Corp vs TODC split uses DD `Is self serve campaign` (false=Corporate, true=TODC). Scope only filters stores. */
+function filterPeriod(promotionData, sponsoredData, start, end, excludedDates, scope, resolveMarketingStoreId) {
+  if (!start || !end) {
+    return {
+      corp: emptyGroup('Corporate'),
+      todc: emptyGroup('TODC'),
+      unmapped: emptyGroup('Unmapped'),
+      total: emptyGroup('Total'),
+    };
+  }
+
   let promo = filterByDateRange(promotionData || [], 'date', start, end);
   promo = filterExcludedDates(promo, 'date', excludedDates);
   let sponsored = filterByDateRange(sponsoredData || [], 'date', start, end);
   sponsored = filterExcludedDates(sponsored, 'date', excludedDates);
   const allData = [...promo, ...sponsored];
-  const corp = calcGroup(allData.filter(r => !r.isSelfServe));
-  const todc = calcGroup(allData.filter(r => r.isSelfServe));
-  const total = calcGroup(allData);
-  return { corp: { label: 'Corporate', ...corp }, todc: { label: 'TODC', ...todc }, total: { label: 'Total', ...total } };
+  const included = allData.filter((row) => isMarketingRowIncluded(row, scope, resolveMarketingStoreId));
+
+  const bucket = (key) => included.filter((row) => {
+    if (key === 'corp') return !row.isSelfServe;
+    if (key === 'todc') return !!row.isSelfServe;
+    return false;
+  });
+
+  const corp = calcGroup(bucket('corp'));
+  const todc = calcGroup(bucket('todc'));
+  const unmapped = emptyGroup('Unmapped');
+  const total = calcGroup(included);
+
+  return {
+    corp: { label: 'Corporate', ...corp },
+    todc: { label: 'TODC', ...todc },
+    unmapped: { label: 'Unmapped', ...unmapped },
+    total: { label: 'Total', ...total },
+  };
 }
 
 function addDeltas(pre, post) {
@@ -116,11 +172,11 @@ function addDeltas(pre, post) {
       cpo_delta: round(postG.cpo - preG.cpo, 2),
     };
   };
-  return { corp: delta('corp'), todc: delta('todc'), total: delta('total') };
+  return { corp: delta('corp'), todc: delta('todc'), unmapped: delta('unmapped'), total: delta('total') };
 }
 
-export function buildCorpVsTodcTable(promotionData, sponsoredData, postStart, postEnd, excludedDates = []) {
-  return filterPeriod(promotionData, sponsoredData, postStart, postEnd, excludedDates);
+export function buildCorpVsTodcTable(promotionData, sponsoredData, postStart, postEnd, excludedDates = [], scope, resolveMarketingStoreId) {
+  return filterPeriod(promotionData, sponsoredData, postStart, postEnd, excludedDates, scope, resolveMarketingStoreId);
 }
 
 function getGroupField(table, groupKey, field) {
@@ -170,24 +226,29 @@ function mergeMultiPeriod(preTable, postTable, lyPreTable, lyPostTable) {
   return {
     corp: buildExtendedGroupRow(preTable, postTable, lyPreTable, lyPostTable, 'corp'),
     todc: buildExtendedGroupRow(preTable, postTable, lyPreTable, lyPostTable, 'todc'),
+    unmapped: buildExtendedGroupRow(preTable, postTable, lyPreTable, lyPostTable, 'unmapped'),
     total: buildExtendedGroupRow(preTable, postTable, lyPreTable, lyPostTable, 'total'),
   };
 }
 
-function buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig) {
+function buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig, scope, resolveMarketingStoreId) {
   const {
     preStart, preEnd, postStart, postEnd, excludedDates = [],
   } = dateConfig;
 
   const hasPre = !!(preStart && preEnd);
-  const postTable = filterPeriod(promotionData, sponsoredData, postStart, postEnd, excludedDates);
-  const preTable = hasPre ? filterPeriod(promotionData, sponsoredData, preStart, preEnd, excludedDates) : null;
+  const scopeArgs = [scope, resolveMarketingStoreId];
+  const postTable = filterPeriod(promotionData, sponsoredData, postStart, postEnd, excludedDates, ...scopeArgs);
+  const preTable = hasPre
+    ? filterPeriod(promotionData, sponsoredData, preStart, preEnd, excludedDates, ...scopeArgs)
+    : null;
   const lyPostTable = filterPeriod(
     promotionData,
     sponsoredData,
     shiftYear(postStart),
     shiftYear(postEnd),
     excludedDates,
+    ...scopeArgs,
   );
   const lyPreTable = hasPre
     ? filterPeriod(
@@ -196,6 +257,7 @@ function buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig) {
       shiftYear(preStart),
       shiftYear(preEnd),
       excludedDates,
+      ...scopeArgs,
     )
     : null;
 
@@ -205,20 +267,112 @@ function buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig) {
 
 /**
  * @param {object} dateConfig — { preStart, preEnd, postStart, postEnd, excludedDates }
- *   Pre window optional; if missing, Pre / LY Pre / ΔPvP columns are zeroed (set Pre period for PvP).
+ * @param {object} scope — from buildAnalysisScope(config)
+ * @param {function} resolveMarketingStoreId — from buildMarketingStoreResolver(ddFinancial)
  */
-export function buildCorpVsTodcBySource(promotionData, sponsoredData, dateConfig) {
+export function buildCorpVsTodcBySource(promotionData, sponsoredData, dateConfig, scope = null, resolveMarketingStoreId = null) {
   return {
-    promotion: buildMultiPeriodForSource(promotionData, [], dateConfig),
-    sponsored: buildMultiPeriodForSource([], sponsoredData, dateConfig),
-    combined: buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig),
+    promotion: buildMultiPeriodForSource(promotionData, [], dateConfig, scope, resolveMarketingStoreId),
+    sponsored: buildMultiPeriodForSource([], sponsoredData, dateConfig, scope, resolveMarketingStoreId),
+    combined: buildMultiPeriodForSource(promotionData, sponsoredData, dateConfig, scope, resolveMarketingStoreId),
   };
 }
 
-export function buildCorpVsTodcPrePost(promotionData, sponsoredData, preStart, preEnd, postStart, postEnd, excludedDates = []) {
+/** UE financial marketing totals (no Corporate vs TODC on Uber Eats). */
+function isUeMarketingRowIncluded(row, scope) {
+  if (!scope?.includedIds?.size) return true;
+  const canon = resolveCanonStoreId(row?.storeId, 'ue', scope?.ddToUeStoreMap);
+  if (!canon) return true;
+  return scope.includedIds.has(canon);
+}
+
+function ueMarketingSpend(row, kind = 'combined') {
+  const promo = Math.abs(row.offers || 0) + Math.abs(row.deliveryOffers || 0);
+  const ads = Number(row.adSpend) || 0;
+  if (kind === 'promotion') return promo;
+  if (kind === 'sponsored') return ads;
+  return promo + ads;
+}
+
+function prepareUeMarketingRows(ueFinancial, start, end, excludedDates, excludedStores, scope, kind) {
+  if (!start || !end || !ueFinancial?.length) return [];
+  let rows = filterByDateRange(ueFinancial, 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  rows = filterExcludedStores(rows, 'storeId', excludedStores);
+  return rows.filter((row) => {
+    if (!isUeMarketingRowIncluded(row, scope)) return false;
+    return ueMarketingSpend(row, kind) > 0;
+  });
+}
+
+function calcUeMarketingTotals(rows, kind) {
+  const orderIds = new Set();
+  let sales = 0;
+  let spend = 0;
+  for (const row of rows) {
+    const rowSpend = ueMarketingSpend(row, kind);
+    if (rowSpend <= 0) continue;
+    spend += rowSpend;
+    sales += Number(row.sales) || 0;
+    if (row.orderId) orderIds.add(String(row.orderId));
+  }
+  const orders = orderIds.size;
+  const promoAov = round(safeDivide(sales, orders), 2);
+  const cpo = round(safeDivide(spend, orders), 2);
+  return {
+    sales: round(sales),
+    spend: round(spend),
+    roas: round(safeDivide(sales, spend), 2),
+    cpo,
+    checkAfterPromo: round(promoAov - cpo, 2),
+  };
+}
+
+function ueMarketingTotalsForWindow(ueFinancial, start, end, excludedDates, excludedStores, scope, kind) {
+  if (!start || !end) return null;
+  const rows = prepareUeMarketingRows(ueFinancial, start, end, excludedDates, excludedStores, scope, kind);
+  if (!rows.length) return null;
+  return calcUeMarketingTotals(rows, kind);
+}
+
+/** Uber Eats marketing from financial orders — aggregate promo + ads (no Corp/TODC split). */
+export function buildUeMarketingSummary(ueFinancial, dateConfig, scope = null) {
+  if (!ueFinancial?.length) return null;
+  const {
+    preStart, preEnd, postStart, postEnd, excludedDates = [], excludedStores = [],
+  } = dateConfig;
+  const hasPre = !!(preStart && preEnd);
+
+  return {
+    meta: { hasPre },
+    combined: {
+      post: ueMarketingTotalsForWindow(
+        ueFinancial, postStart, postEnd, excludedDates, excludedStores, scope, 'combined',
+      ),
+      pre: hasPre
+        ? ueMarketingTotalsForWindow(
+          ueFinancial, preStart, preEnd, excludedDates, excludedStores, scope, 'combined',
+        )
+        : null,
+    },
+    promotion: {
+      post: ueMarketingTotalsForWindow(
+        ueFinancial, postStart, postEnd, excludedDates, excludedStores, scope, 'promotion',
+      ),
+    },
+    sponsored: {
+      post: ueMarketingTotalsForWindow(
+        ueFinancial, postStart, postEnd, excludedDates, excludedStores, scope, 'sponsored',
+      ),
+    },
+  };
+}
+
+export function buildCorpVsTodcPrePost(promotionData, sponsoredData, preStart, preEnd, postStart, postEnd, excludedDates = [], scope = null, resolveMarketingStoreId = null) {
   const buildForSource = (promo, spons) => {
-    const pre = filterPeriod(promo, spons, preStart, preEnd, excludedDates);
-    const post = filterPeriod(promo, spons, postStart, postEnd, excludedDates);
+    const scopeArgs = [scope, resolveMarketingStoreId];
+    const pre = filterPeriod(promo, spons, preStart, preEnd, excludedDates, ...scopeArgs);
+    const post = filterPeriod(promo, spons, postStart, postEnd, excludedDates, ...scopeArgs);
     return { pre, post, compare: addDeltas(pre, post) };
   };
   return {
@@ -228,10 +382,14 @@ export function buildCorpVsTodcPrePost(promotionData, sponsoredData, preStart, p
   };
 }
 
-export function buildCampaignTable(promotionData, sponsoredData, postStart, postEnd) {
+export function buildCampaignTable(promotionData, sponsoredData, postStart, postEnd, scope = null, resolveMarketingStoreId = null) {
   const promo = filterByDateRange(promotionData || [], 'date', postStart, postEnd);
   const sponsored = filterByDateRange(sponsoredData || [], 'date', postStart, postEnd);
-  const all = [...promo, ...sponsored];
+  let all = [...promo, ...sponsored];
+
+  if (scope && resolveMarketingStoreId) {
+    all = all.filter((row) => classifyMarketingRow(row, scope, resolveMarketingStoreId) !== 'excluded');
+  }
 
   const groups = groupBy(all, 'campaignId');
   const campaigns = [];

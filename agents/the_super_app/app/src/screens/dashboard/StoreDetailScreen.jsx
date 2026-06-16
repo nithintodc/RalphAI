@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -5,15 +6,24 @@ import KpiCard from '../../components/ui/KpiCard';
 import { fmt, formatByKind } from '../../lib/utils/formatters';
 import GroupedBarChart from '../../components/charts/GroupedBarChart';
 import { SERIES } from '../../components/charts/chartTheme';
+import {
+  buildDdStoreIdToMerchantMapFromFinancial,
+  displayStoreId,
+} from '../../lib/utils/storeDisplay';
 
 export default function StoreDetailScreen() {
-  const { storeTables } = useDataStore();
+  const { storeTables, ddFinancial } = useDataStore();
   const { selectedStore, selectedStorePlatform, setActiveTab } = useUiStore();
 
   const platformKey = selectedStorePlatform || 'combined';
   const platformLabel = platformKey === 'dd' ? 'DoorDash' : platformKey === 'ue' ? 'UberEats' : 'Combined';
   const stores = storeTables?.[platformKey] || [];
   const store = stores.find(s => s.storeId === selectedStore);
+  const ddStoreIdToMerchant = useMemo(
+    () => buildDdStoreIdToMerchantMapFromFinancial(ddFinancial),
+    [ddFinancial],
+  );
+  const storeDisplayId = store ? displayStoreId(store, platformKey, ddStoreIdToMerchant) : selectedStore;
 
   if (!store) {
     return (
@@ -56,7 +66,7 @@ export default function StoreDetailScreen() {
         Back to Stores
       </button>
 
-      <h2 className="text-lg font-bold text-[var(--text)]">{platformLabel} Store: {store.storeId}</h2>
+      <h2 className="text-lg font-bold text-[var(--text)]">{platformLabel} Store: {storeDisplayId}</h2>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpis.map(k => <KpiCard key={k.label} {...k} compact />)}

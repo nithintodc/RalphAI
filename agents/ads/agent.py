@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from shared.config.settings import marketingreco_reporting_root
-from shared.strategist_campaign_sheets import load_ads_rows, load_ads_rows_from_path
+from shared.reporting_imports import import_reporting_agents_module
+from shared.strategist_campaign_sheets import (
+    load_ads_rows,
+    load_ads_rows_from_path,
+    resolve_slot_info_csv,
+)
 from shared.subprocess_env import reporting_subprocess_env
 
 logger = logging.getLogger(__name__)
@@ -33,6 +37,7 @@ def run(
     doordash_email: str,
     doordash_password: str,
     ads_sheet_path: str | Path | None = None,
+    api_run_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """
     Load latest Strategist Ads sheet (or optional upload), then run browser-use ads campaigns.
@@ -48,25 +53,25 @@ def run(
     if ads_sheet_path:
         rows = load_ads_rows_from_path(Path(ads_sheet_path))
         workbook = Path(ads_sheet_path)
-        strategist_run_dir = None
+        strategist_run_dir = workbook.parent
     else:
         rows, workbook, strategist_run_dir = load_ads_rows(oid)
 
-    run_dir = _run_dir(oid, email)
+    slot_info_csv = resolve_slot_info_csv(workbook)
+
+    if api_run_dir:
+        run_dir = Path(api_run_dir)
+    else:
+        run_dir = _run_dir(oid, email)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     reporting_root = marketingreco_reporting_root()
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
-    if str(reporting_root) not in sys.path:
-        sys.path.insert(0, str(reporting_root))
-
     reporting_subprocess_env(reporting_root)
 
-    from agents.slack_log_notifier import install_slack_log_notifier
-    from agents.doordash_agent import run_ads_campaigns_from_rows
-
-    install_slack_log_notifier()
+    slack_log_notifier = import_reporting_agents_module("slack_log_notifier", reporting_root)
+    doordash_agent = import_reporting_agents_module("doordash_agent", reporting_root)
+    slack_log_notifier.install_slack_log_notifier(doordash_email=email)
+    run_ads_campaigns_from_rows = doordash_agent.run_ads_campaigns_from_rows
 
     logger.info(
         "Ads: %d campaigns from %s%s",
@@ -81,6 +86,8 @@ def run(
             email=email,
             password=password,
             rows=rows,
+            campaigns_workbook=workbook,
+            slot_info_csv=slot_info_csv,
         )
     )
 

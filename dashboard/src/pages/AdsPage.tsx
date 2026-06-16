@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
 import { OperatorAccountPicker } from "../components/OperatorAccountPicker";
+import { AgentRunLogPanel } from "../components/AgentRunLogPanel";
+import { appendAgentLogLines, pollAgentRun } from "../lib/agentRunPolling";
 
 type AdsMode = "manual" | "auto";
 
@@ -14,11 +16,19 @@ export function AdsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setRunId(null);
+    setRunStatus(null);
+    setQueuePosition(null);
+    setLogLines([]);
 
     if (!operatorId.trim()) {
       setError("Enter an Operator ID.");
@@ -49,7 +59,27 @@ export function AdsPage() {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      setResult((await res.json()) as Record<string, unknown>);
+      const started = (await res.json()) as Record<string, unknown>;
+      const id = String(started.run_id || "");
+      if (!id) throw new Error("No run_id returned from API.");
+      setRunId(id);
+      setRunStatus(String(started.status || "queued"));
+      if (typeof started.queue_position === "number") {
+        setQueuePosition(started.queue_position);
+      }
+
+      const final = await pollAgentRun("ads", id, {
+        onStatus: (status, payload) => {
+          setRunStatus(status);
+          if (typeof payload.queue_position === "number") {
+            setQueuePosition(payload.queue_position);
+          }
+        },
+        onLogLines: (lines) => {
+          setLogLines((prev) => appendAgentLogLines(prev, lines));
+        },
+      });
+      setResult(final);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -74,7 +104,7 @@ export function AdsPage() {
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">
           <strong>Manual</strong>: upload CSV/Excel (sheet <strong>Ads</strong>). Columns: Merchant store ID, Slots
-          (tags 1–42), Bid strategy, Budget, Campaign name. Portal flow: Marketing → Run a campaign →{" "}
+          (tags 1–42), Bid strategy, Campaign name. Portal flow: Marketing → Run a campaign →{" "}
           <strong>Advertise to all customers</strong>, audience <strong>Existing customers</strong>, custom schedule.
         </p>
       </div>
@@ -134,6 +164,16 @@ export function AdsPage() {
         </div>
       </form>
 
+      {runId ? (
+        <AgentRunLogPanel
+          agent="ads"
+          runId={runId}
+          status={runStatus}
+          queuePosition={queuePosition}
+          lines={logLines}
+        />
+      ) : null}
+
       {result ? (
         <div className="brand-card rounded-[24px] p-5">
           <h3 className="font-display text-lg font-semibold text-ink-900">Run result</h3>
@@ -144,6 +184,9 @@ export function AdsPage() {
           ) : null}
           {result.rows_file ? (
             <p className="mt-1 text-sm text-ink-600">Sheet: {String(result.rows_file)}</p>
+          ) : null}
+          {result.campaigns_source ? (
+            <p className="mt-1 text-sm text-ink-600">Sheet: {String(result.campaigns_source)}</p>
           ) : null}
         </div>
       ) : null}

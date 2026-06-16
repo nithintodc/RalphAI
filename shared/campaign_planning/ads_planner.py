@@ -302,10 +302,6 @@ def _build_ads_slices_for_store(
         n = int(r["order_count"])
         prof = float(r["profitability_pct"])
         placement = "Yes" if prof > PROFITABILITY_PLACEMENT_FLOOR else "No"
-        headroom = max(0.0, net - PROFITABILITY_PLACEMENT_FLOOR * sales)
-        min_bid_ceiling = float(n * MIN_BID)
-        budget = round(min(headroom, min_bid_ceiling), 2) if placement == "Yes" else 0.0
-        weekly_budget = round(budget / 12.0, 2) if placement == "Yes" else 0.0
         return {
             "store_id": store_id,
             "store_name": store_name,
@@ -318,8 +314,6 @@ def _build_ads_slices_for_store(
             "profitability": round(prof, 5),
             "profitability_pct": round(prof * 100, 2),
             "ad_placement": placement,
-            "budget_estimate": budget,
-            "weekly_budget": weekly_budget,
         }
 
     slot_table_rows: list[dict[str, object]] = [_slot_table_row(r) for _, r in slot_metrics.iterrows()]
@@ -497,7 +491,6 @@ def build_ads_plan(csv_path: str) -> dict:
         "store_count": len(stores_meta),
         "stores": [{"store_id": s["store_id"], "store_name": s["store_name"]} for s in stores_meta],
         "date_range": f"{today} → {end_date}",
-        "budget_model": "unconstrained — relative allocation % from data (no dollar cap)",
         "total_campaigns": len(all_campaigns),
         "tier_summary": {
             "DEFEND": len([c for c in all_campaigns if c["tier"] == "DEFEND"]),
@@ -509,12 +502,6 @@ def build_ads_plan(csv_path: str) -> dict:
         "slot_table_help": {
             "profitability_definition": "Net total ÷ Sales (subtotal) per day-of-week × daypart slot.",
             "placement_rule": f"Ad placement = Yes when profitability > {PROFITABILITY_PLACEMENT_FLOOR * 100:.0f}%.",
-            "budget_rule": (
-                "Budget estimate = min(net total − 80% × sales, orders × $3): maximum ad spend that still "
-                "keeps net÷sales ≥ 80%, capped by assuming a $3 minimum bid per order on every order in the slot."
-            ),
-            "weekly_budget_rule": "Weekly budget = Budget estimate ÷ 12.",
-            "min_bid_per_order_usd": MIN_BID,
             "margin_floor": PROFITABILITY_PLACEMENT_FLOOR,
         },
     }

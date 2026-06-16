@@ -52,12 +52,16 @@ def _analyze_financial(ds: dict[str, pd.DataFrame]) -> dict[str, Any]:
 
         result["total_orders"] = len(orders)
         result["total_subtotal"] = _safe_sum(orders, "Subtotal")
-        result["total_net_revenue"] = _safe_sum(orders, "Net total")
+        order_net = _safe_sum(orders, "Net total")
+        all_txn_net = _safe_sum(df, "Net total")
+        result["total_net_revenue_from_orders"] = order_net
+        result["total_net_revenue_from_detailed"] = all_txn_net
+        result["total_net_revenue"] = all_txn_net
         result["total_commission"] = _safe_sum(orders, "Commission")
         result["total_marketing_fees"] = _safe_sum(orders, "Marketing fees | (including any applicable taxes)")
         result["total_customer_discounts_funded_by_you"] = _safe_sum(orders, "Customer discounts from marketing | (funded by you)")
         result["avg_order_value"] = round(result["total_subtotal"] / max(result["total_orders"], 1), 2)
-        result["avg_net_per_order"] = round(result["total_net_revenue"] / max(result["total_orders"], 1), 2)
+        result["avg_net_per_order"] = round(order_net / max(result["total_orders"], 1), 2)
         result["payout_ratio"] = round(result["total_net_revenue"] / max(result["total_subtotal"], 0.01) * 100, 1)
 
         # Daily revenue trend
@@ -113,15 +117,21 @@ def _analyze_financial(ds: dict[str, pd.DataFrame]) -> dict[str, Any]:
             ).reset_index().sort_values("error_charges", ascending=True)
             result["errors_by_store"] = err_by_store.to_dict("records")
 
-    # Payout summary
+    # Payout summary — portal source of truth for headline net payout
     df_pay = ds.get("financial_payouts")
     if df_pay is not None and not df_pay.empty:
+        payout_net = _safe_sum(df_pay, "Net total")
         result["payout_summary"] = {
-            "total_net_payout": _safe_sum(df_pay, "Net total"),
+            "total_net_payout": payout_net,
             "total_commission": _safe_sum(df_pay, "Commission"),
             "total_marketing_fees": _safe_sum(df_pay, "Marketing fees | (including any applicable taxes)"),
             "payout_count": len(df_pay),
         }
+        result["total_net_revenue"] = payout_net
+        if result.get("total_subtotal"):
+            result["payout_ratio"] = round(
+                payout_net / max(result["total_subtotal"], 0.01) * 100, 1
+            )
 
     return result
 
@@ -138,12 +148,27 @@ def _analyze_sales(ds: dict[str, pd.DataFrame]) -> dict[str, Any]:
     if df is not None and not df.empty:
         df = df.copy()
         result["total_orders"] = len(df)
-        result["cancelled_orders"] = int(df["Was Cancelled"].astype(str).str.lower().eq("true").sum()) if "Was Cancelled" in df.columns else 0
-        result["pickup_orders"] = int(df["Was Pickup"].astype(str).str.lower().eq("true").sum()) if "Was Pickup" in df.columns else 0
-        result["dashpass_orders"] = int(df["Was Dashpass"].astype(str).str.lower().eq("true").sum()) if "Was Dashpass" in df.columns else 0
+        result["cancelled_orders"] = _bool_true_count(df, [
+            "Was Cancelled", "Is cancelled", "Is Cancelled", "Was cancelled",
+        ])
+        result["pickup_orders"] = _bool_true_count(df, [
+            "Was Pickup", "Was pickup", "Is Pickup", "Is pickup",
+        ])
+        if not result["pickup_orders"]:
+            fulfillment_col = _find_column(df, ["Fulfillment type", "Fulfillment Type"])
+            if fulfillment_col:
+                result["pickup_orders"] = int(
+                    df[fulfillment_col].astype(str).str.strip().str.lower().eq("pickup").sum()
+                )
+        result["dashpass_orders"] = _bool_true_count(df, [
+            "Was Dashpass", "Was DashPass", "Is Dashpass", "Is DashPass", "DashPass",
+        ])
         result["total_subtotal"] = _safe_sum(df, "Subtotal")
         result["avg_order_value"] = round(result["total_subtotal"] / max(len(df), 1), 2)
-        result["missing_or_incorrect_count"] = int(df["Is Missing or Incorrect?"].astype(str).str.lower().eq("true").sum()) if "Is Missing or Incorrect?" in df.columns else 0
+        result["missing_or_incorrect_count"] = _bool_true_count(df, [
+            "Is Missing or Incorrect?", "Is missing or incorrect",
+            "Is Missing or Incorrect", "Was Missing or Incorrect",
+        ])
         result["cancellation_rate"] = round(result["cancelled_orders"] / max(len(df), 1) * 100, 2)
         result["dashpass_rate"] = round(result["dashpass_orders"] / max(len(df), 1) * 100, 2)
         result["error_rate"] = round(result["missing_or_incorrect_count"] / max(len(df), 1) * 100, 2)
@@ -520,6 +545,25 @@ def _build_executive_summary(sections: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _find_column(df: pd.DataFrame, variations: list[str]) -> str | None:
+    for name in variations:
+        if name in df.columns:
+            return name
+    lower_map = {c.strip().lower(): c for c in df.columns}
+    for name in variations:
+        hit = lower_map.get(name.strip().lower())
+        if hit:
+            return hit
+    return None
+
+
+def _bool_true_count(df: pd.DataFrame, variations: list[str]) -> int:
+    col = _find_column(df, variations)
+    if not col:
+        return 0
+    return int(df[col].astype(str).str.strip().str.lower().eq("true").sum())
+
 
 def _safe_sum(df: pd.DataFrame, col: str) -> float:
     if col not in df.columns:

@@ -53,7 +53,6 @@ def test_generate_plan_from_ads_plan_includes_slot_ads():
                 "store_id": "99",
                 "day_of_week": "Monday",
                 "daypart": "Lunch",
-                "weekly_budget": 24.0,
                 "ad_placement": "Yes",
             }
         ],
@@ -80,7 +79,7 @@ def test_generate_plan_from_ads_plan_includes_slot_ads():
     assert ads[0].day_of_week == "Monday"
     assert ads[0].daypart == "Lunch"
     assert ads[0].tier == "GROW"
-    assert ads[0].budget == 24.0
+    assert ads[0].budget == 0.0
     assert len(ads[0].slot_tags) == 1
 
 

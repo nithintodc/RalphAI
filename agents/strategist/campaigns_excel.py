@@ -52,8 +52,6 @@ def write_campaigns_excel(path: Path, result: dict[str, Any]) -> None:
             "Net total",
             "Profitability %",
             "Ad placement",
-            "Budget estimate",
-            "Weekly budget",
         ]
         for idx, h in enumerate(sh, start=1):
             cell = wss.cell(row=1, column=idx, value=h)
@@ -67,13 +65,11 @@ def write_campaigns_excel(path: Path, result: dict[str, Any]) -> None:
             wss.cell(row=r, column=6, value=row.get("net_total"))
             wss.cell(row=r, column=7, value=row.get("profitability_pct"))
             wss.cell(row=r, column=8, value=row.get("ad_placement"))
-            wss.cell(row=r, column=9, value=row.get("budget_estimate"))
-            wss.cell(row=r, column=10, value=row.get("weekly_budget"))
 
     ralph_ads = ralph_ads_upload_rows(ads_plan)
     if ralph_ads:
         wsr = wb.create_sheet("Ads")
-        rh = ["Merchant store ID", "Slots", "Bid strategy", "Budget", "Campaign Name"]
+        rh = ["Merchant store ID", "Slots", "Bid strategy", "Campaign Name"]
         for idx, h in enumerate(rh, start=1):
             cell = wsr.cell(row=1, column=idx, value=h)
             cell.font = Font(bold=True)
@@ -81,8 +77,7 @@ def write_campaigns_excel(path: Path, result: dict[str, Any]) -> None:
             wsr.cell(row=r, column=1, value=row["store_id"])
             wsr.cell(row=r, column=2, value=row["slots"])
             wsr.cell(row=r, column=3, value=row["bid_strategy"])
-            wsr.cell(row=r, column=4, value=row["budget"])
-            wsr.cell(row=r, column=5, value=row["campaign_name"])
+            wsr.cell(row=r, column=4, value=row["campaign_name"])
 
     slot_recs = result.get("slot_recommendations") or []
     if slot_recs:

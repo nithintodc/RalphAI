@@ -1,5 +1,17 @@
 import { subYears, parse, format, getDay, differenceInCalendarDays } from 'date-fns';
 
+/** Excel 1900 date system serial -> local calendar date (e.g. 45748 -> 2025-04-01). */
+export function parseExcelSerialDate(serial) {
+  const n = typeof serial === 'number' ? serial : Number(String(serial).trim());
+  if (!Number.isFinite(n)) return null;
+  const days = Math.floor(n);
+  // ~1950–2060 in Excel serial space; avoids mistaking small IDs as dates.
+  if (days < 18000 || days > 65000) return null;
+  const epoch = new Date(1899, 11, 30);
+  const d = new Date(epoch.getTime() + days * 86400000);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function parseDate(str) {
   if (!str) return null;
   if (str instanceof Date) return isNaN(str) ? null : str;
@@ -10,6 +22,8 @@ export function parseDate(str) {
   if (!isNaN(d)) return d;
   d = parse(trimmed, 'M/d/yyyy', new Date());
   if (!isNaN(d)) return d;
+  d = parseExcelSerialDate(trimmed);
+  if (d) return d;
   d = new Date(trimmed);
   return isNaN(d) ? null : d;
 }

@@ -692,6 +692,64 @@ export function pivotRowColDuration(rows, rowKey, colKey, downtimeCols, { maxCol
   };
 }
 
+/** Sum a numeric column per (rowKey × colKey) — for aggregated count exports. */
+export function pivotRowColSum(rows, rowKey, colKey, valueCol, { maxCols = 22, colMode = 'volume' } = {}) {
+  if (!rows?.length || !rowKey || !colKey || !valueCol) {
+    return { rowDim: rowKey, colDim: colKey, valueCol, rowKeys: [], colKeys: [], matrix: [] };
+  }
+
+  const pairTotals = new Map();
+  const colTotals = new Map();
+  const rowSet = new Set();
+
+  for (const row of rows) {
+    const rk = String(row[rowKey] || '').trim() || '—';
+    const ck = String(row[colKey] || '').trim() || '—';
+    const v = Number(String(row[valueCol]).replace(/[$,%\s,]/g, '')) || 0;
+    rowSet.add(rk);
+    const k = rk + KEY_SEP + ck;
+    pairTotals.set(k, (pairTotals.get(k) || 0) + v);
+    colTotals.set(ck, (colTotals.get(ck) || 0) + v);
+  }
+
+  let colKeys;
+  if (colMode === 'chrono') {
+    const ordered = chronoSortKeys([...colTotals.keys()]);
+    colKeys = ordered.slice(-maxCols);
+  } else {
+    colKeys = [...colTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxCols)
+      .map(([c]) => c);
+  }
+  const colSet = new Set(colKeys);
+  const rowKeys = [...rowSet].sort((a, b) => a.localeCompare(b));
+
+  const matrix = rowKeys.map((rk) => {
+    const cells = colKeys.map((ck) => pairTotals.get(rk + KEY_SEP + ck) || 0);
+    let other = 0;
+    for (const [k, val] of pairTotals) {
+      const i = k.indexOf(KEY_SEP);
+      const r = k.slice(0, i);
+      const c = k.slice(i + KEY_SEP.length);
+      if (r !== rk) continue;
+      if (!colSet.has(c)) other += val;
+    }
+    return colMode === 'volume' ? [...cells, other] : cells;
+  });
+
+  const outColKeys = colMode === 'volume' ? [...colKeys, 'Other'] : colKeys;
+
+  return {
+    rowDim: rowKey,
+    colDim: colKey,
+    valueCol,
+    rowKeys,
+    colKeys: outColKeys,
+    matrix,
+  };
+}
+
 /** Count rows per (rowKey × colKey) — for cancellation-style pivots. */
 export function pivotRowColCount(rows, rowKey, colKey, { maxCols = 22, colMode = 'volume' } = {}) {
   if (!rows?.length || !rowKey || !colKey) {
@@ -947,6 +1005,15 @@ export function pivotStoreReasonMatrix(rows, columns, { maxReasonCols = 12, valu
       colMode: 'volume',
     });
     return { ...m, storeCol, reasonCol, valueKind: 'duration', downtimeCols };
+  }
+
+  const sumCol = pickCountSumColumn(rows, columns, storeCol);
+  if (sumCol) {
+    const m = pivotRowColSum(rows, storeCol, reasonCol, sumCol, {
+      maxCols: maxReasonCols,
+      colMode: 'volume',
+    });
+    return { ...m, storeCol, reasonCol, valueKind: 'count', sumCol };
   }
 
   const m = pivotRowColCount(rows, storeCol, reasonCol, { maxCols: maxReasonCols, colMode: 'volume' });

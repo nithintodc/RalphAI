@@ -1,0 +1,57 @@
+# Environment and secrets
+.env
+.env.local
+.env.*
+*.env
+
+# General Keys and Secrets (never commit)
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+*secret*
+*.rsa
+*.pub
+
+# Google Cloud / GCP credentials (never commit)
+todc-marketing-*.json
+*credentials*.json
+*service-account*.json
+*-credentials.json
+**/todc-marketing-*.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Downloads (generated)
+downloads/
+
+# Logs (generated per run)
+logs/
+
+# Cursor / debug
+.cursor/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+run_*.log

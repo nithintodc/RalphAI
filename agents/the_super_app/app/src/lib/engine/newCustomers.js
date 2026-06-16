@@ -1,23 +1,62 @@
 import { filterByDateRange, filterExcludedDates } from './aggregator';
 import { getLastYearDates } from '../utils/dateUtils';
 import { round, cleanInfinity, safeDivide } from '../utils/safeMath';
+import { buildAnalysisScope } from '../utils/abStoreFilter';
+import { classifyMarketingRow, buildMarketingStoreResolver } from '../utils/marketingStoreMatch';
 
-function windowTotal(rows, start, end, excludedDates) {
+function passesIncludedScope(canon, scope) {
+  if (!canon) return false;
+  if (scope.includedIds?.size > 0 && !scope.includedIds.has(canon)) return false;
+  return true;
+}
+
+function windowTotalMarketing(rows, start, end, excludedDates, scope, resolveMarketingStoreId) {
   if (!rows?.length || !start || !end) return 0;
   let filtered = filterByDateRange(rows, 'date', start, end);
   filtered = filterExcludedDates(filtered, 'date', excludedDates || []);
-  return filtered.reduce((s, r) => s + (Number(r.newCustomers) || 0), 0);
+
+  return filtered.reduce((sum, row) => {
+    const bucket = classifyMarketingRow(row, scope, resolveMarketingStoreId);
+    if (bucket === 'excluded') return sum;
+    return sum + (Number(row.newCustomers) || 0);
+  }, 0);
 }
 
-function buildWindowTotals(rows, cfg) {
+function windowTotalUeFinancial(rows, start, end, excludedDates, scope, resolveStoreId) {
+  if (!rows?.length || !start || !end) return 0;
+  let filtered = filterByDateRange(rows, 'date', start, end);
+  filtered = filterExcludedDates(filtered, 'date', excludedDates || []);
+
+  return filtered.reduce((sum, row) => {
+    const canon = resolveStoreId(row.storeId);
+    if (!passesIncludedScope(canon, scope)) return sum;
+    return sum + (Number(row.newCustomers) || 0);
+  }, 0);
+}
+
+function buildMarketingWindowTotals(rows, cfg, scope, resolveMarketingStoreId) {
   const { preStart, preEnd, postStart, postEnd, excludedDates = [] } = cfg;
   const lyPre = getLastYearDates(preStart, preEnd);
   const lyPost = getLastYearDates(postStart, postEnd);
+  const count = (s, e) => windowTotalMarketing(rows, s, e, excludedDates, scope, resolveMarketingStoreId);
   return {
-    pre: windowTotal(rows, preStart, preEnd, excludedDates),
-    post: windowTotal(rows, postStart, postEnd, excludedDates),
-    preLY: windowTotal(rows, lyPre.start, lyPre.end, excludedDates),
-    postLY: windowTotal(rows, lyPost.start, lyPost.end, excludedDates),
+    pre: preStart && preEnd ? count(preStart, preEnd) : 0,
+    post: count(postStart, postEnd),
+    preLY: preStart && preEnd ? count(lyPre.start, lyPre.end) : 0,
+    postLY: count(lyPost.start, lyPost.end),
+  };
+}
+
+function buildUeWindowTotals(rows, cfg, scope, resolveStoreId) {
+  const { preStart, preEnd, postStart, postEnd, excludedDates = [] } = cfg;
+  const lyPre = getLastYearDates(preStart, preEnd);
+  const lyPost = getLastYearDates(postStart, postEnd);
+  const count = (s, e) => windowTotalUeFinancial(rows, s, e, excludedDates, scope, resolveStoreId);
+  return {
+    pre: preStart && preEnd ? count(preStart, preEnd) : 0,
+    post: count(postStart, postEnd),
+    preLY: preStart && preEnd ? count(lyPre.start, lyPre.end) : 0,
+    postLY: count(lyPost.start, lyPost.end),
   };
 }
 
@@ -44,9 +83,12 @@ function totalsToSummaryRow(totals) {
 
 /**
  * Combined DD (marketing promotion) + UE (financial "New customers" column) totals per window.
- * DD uses all promotion rows in range (not filtered by financial store selection).
+ * DD promotion rows are mapped to store tags via the store map (A=TODC, B=Non-TODC).
  */
 export function buildNewCustomersSummary(data, config) {
+  const scope = buildAnalysisScope(config);
+  const resolveMarketingStoreId = buildMarketingStoreResolver(data?.ddFinancial);
+
   const ddCfg = {
     preStart: config.ddPreStart,
     preEnd: config.ddPreEnd,
@@ -63,13 +105,13 @@ export function buildNewCustomersSummary(data, config) {
   };
 
   const promo = data?.ddMarketing?.promotion;
-  const ddRow = promo?.length && ddCfg.preStart
-    ? totalsToSummaryRow(buildWindowTotals(promo, ddCfg))
+  const ddRow = promo?.length && ddCfg.postStart
+    ? totalsToSummaryRow(buildMarketingWindowTotals(promo, ddCfg, scope, resolveMarketingStoreId))
     : null;
 
   const ueFin = data?.ueFinancial;
-  const ueRow = ueFin?.length && ueCfg.preStart
-    ? totalsToSummaryRow(buildWindowTotals(ueFin, ueCfg))
+  const ueRow = ueFin?.length && ueCfg.postStart
+    ? totalsToSummaryRow(buildUeWindowTotals(ueFin, ueCfg, scope, resolveMarketingStoreId))
     : null;
 
   if (!ddRow && !ueRow) return null;

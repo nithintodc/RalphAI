@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
+import { buildAnalysisScope } from '../../lib/utils/abStoreFilter';
+import { buildMarketingStoreResolver } from '../../lib/utils/marketingStoreMatch';
 import SplitDataTable from '../../components/ui/SplitDataTable';
 import {
   buildCorpVsTodcBySource,
@@ -45,7 +47,7 @@ function MarketingCharts({ label, campaigns }) {
   }));
   const topSpend = eligible.map((c) => ({ label: c.campaignName, value: Math.abs(c.spend || 0) }));
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div className="flex flex-col gap-4 w-full">
       <ChartCard
         title={`${label} — Spend vs ROAS`}
         subtitle="Each bubble is a campaign; size = sales. Higher & left-er = more efficient spend."
@@ -81,7 +83,7 @@ function buildImpactColumns(includeCampaign = false) {
       labelCol: true,
       sortable: true,
       render: (v) => (
-        <span className="block max-w-[min(48vw,22rem)] truncate font-medium" title={String(v ?? '')}>
+        <span className="block font-medium break-words text-left" title={String(v ?? '')}>
           {v}
         </span>
       ),
@@ -140,7 +142,7 @@ function CampaignHighlights({ label, campaigns }) {
   ];
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div className="flex flex-col gap-6 w-full">
       {blocks.map((b) => (
         <Section key={`${label}-${b.title}`} title={`${label} — ${b.title}`} subtitle={b.subtitle}>
           <SplitDataTable
@@ -149,6 +151,7 @@ function CampaignHighlights({ label, campaigns }) {
             maxHeight="min(42vh, 360px)"
             dense
             split={false}
+            layout="full"
           />
         </Section>
       ))}
@@ -157,7 +160,7 @@ function CampaignHighlights({ label, campaigns }) {
 }
 
 export default function MarketingScreen() {
-  const { ddMarketing, marketingTables, setMarketingTables } = useDataStore();
+  const { ddFinancial, ddMarketing, marketingTables, setMarketingTables } = useDataStore();
   const config = useConfigStore();
 
   useEffect(() => {
@@ -169,22 +172,36 @@ export default function MarketingScreen() {
     const postEnd = config.ddPostEnd;
     if (!postStart || !postEnd) return;
 
+    const scope = buildAnalysisScope(config);
+    const resolveMarketingStoreId = buildMarketingStoreResolver(ddFinancial);
+
     const bySource = buildCorpVsTodcBySource(promo, sponsored, {
       preStart: config.ddPreStart,
       preEnd: config.ddPreEnd,
       postStart,
       postEnd,
       excludedDates: config.ddExcludedDates || [],
-    });
-    const campaigns = buildCampaignTable(promo, sponsored, postStart, postEnd);
-    setMarketingTables({ _spendMappingVersion: 2, bySource, campaigns });
+    }, scope, resolveMarketingStoreId);
+    const campaigns = buildCampaignTable(
+      promo,
+      sponsored,
+      postStart,
+      postEnd,
+      scope,
+      resolveMarketingStoreId,
+    );
+    setMarketingTables({ _spendMappingVersion: 5, bySource, campaigns });
   }, [
+    ddFinancial,
     ddMarketing,
     config.ddPreStart,
     config.ddPreEnd,
     config.ddPostStart,
     config.ddPostEnd,
     config.ddExcludedDates,
+    config.storeTagMap,
+    config.includedStoreIds,
+    config.ddToUeStoreMap,
     setMarketingTables,
   ]);
 
@@ -227,12 +244,14 @@ export default function MarketingScreen() {
   return (
     <div className="space-y-8 max-w-full min-w-0 overflow-x-hidden">
       <p className="text-xs text-[var(--text-subtle)] leading-relaxed max-w-3xl">
-        DoorDash marketing only. Check after Promo = (Sales ÷ Orders) − (Spend ÷ Orders). Campaign tables use the post period.
+        DoorDash marketing only. Corporate vs TODC uses the DD <strong>Is self serve campaign</strong> column:
+        false = Corporate, true = TODC. Store map only limits which stores are included.
+        Total = Corporate + TODC.
       </p>
 
       {postCorpRows.length > 0 && (
         <Section title="Corp vs TODC — Post period" subtitle="Promotions + Sponsored Listings combined">
-          <SplitDataTable columns={impactColumns} data={postCorpRows} sortable={false} dense split={false} />
+          <SplitDataTable columns={impactColumns} data={postCorpRows} sortable={false} dense split={false} layout="full" />
         </Section>
       )}
 
@@ -246,7 +265,7 @@ export default function MarketingScreen() {
               Pre period is not configured — values below are zero. Set Pre dates for a real comparison.
             </p>
           )}
-          <SplitDataTable columns={impactColumns} data={preCorpRows} sortable={false} dense split={false} />
+          <SplitDataTable columns={impactColumns} data={preCorpRows} sortable={false} dense split={false} layout="full" />
         </Section>
       )}
 
@@ -263,6 +282,7 @@ export default function MarketingScreen() {
             maxHeight="min(50vh, 440px)"
             dense
             split={false}
+            layout="full"
           />
         </Section>
       )}
@@ -282,6 +302,7 @@ export default function MarketingScreen() {
             maxHeight="min(50vh, 440px)"
             dense
             split={false}
+            layout="full"
           />
         </Section>
       )}

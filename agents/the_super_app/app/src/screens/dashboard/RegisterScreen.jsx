@@ -12,7 +12,11 @@ import {
   DD_REGISTER_COLUMNS,
   UE_REGISTER_COLUMNS,
 } from '../../lib/engine/register';
-import { coerceDdSalesByOrderParsed } from '../../lib/parsers/ddSalesByOrder';
+import { buildPeriodExcludedStores, mergeExcludedStores } from '../../lib/utils/storePeriodAlignment';
+import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
+import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';
+import { ddMerchantStoreIdFromKey } from '../../lib/utils/storeDisplay';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import GroupedBarChart from '../../components/charts/GroupedBarChart';
 import { SLOT_NAMES } from '../../lib/engine/slots';
 import { fmt } from '../../lib/utils/formatters';
@@ -64,7 +68,7 @@ function renderCell(kind, v) {
   return formatByKind(kind, v);
 }
 
-function buildTableColumns(specs) {
+function buildTableColumns(specs, platform, ddFinancial) {
   return specs.map((c) => ({
     key: c.key,
     label: c.label,
@@ -73,6 +77,9 @@ function buildTableColumns(specs) {
     labelCol: c.kind === 'text',
     shrink: c.kind !== 'text',
     render: (v) => {
+      if (c.key === 'storeId' && platform === 'dd') {
+        return <span className="font-medium">{ddMerchantStoreIdFromKey(v, ddFinancial) || v}</span>;
+      }
       if (c.key === 'storeId' || c.key === 'dayOfWeek' || c.key === 'slot' || c.key === 'slotTime') {
         return <span className="font-medium">{renderCell(c.kind, v)}</span>;
       }
@@ -81,8 +88,11 @@ function buildTableColumns(specs) {
   }));
 }
 
-function RegisterPanel({ platform, label, rows, columnSpecs, onExport, isExporting }) {
-  const columns = useMemo(() => buildTableColumns(columnSpecs), [columnSpecs]);
+function RegisterPanel({ platform, label, rows, columnSpecs, onExport, isExporting, ddFinancial }) {
+  const columns = useMemo(
+    () => buildTableColumns(columnSpecs, platform, ddFinancial),
+    [columnSpecs, platform, ddFinancial],
+  );
 
   if (!rows.length) {
     return (
@@ -138,8 +148,25 @@ export default function RegisterScreen() {
   const [tab, setTab] = useState('dd');
   const [exporting, setExporting] = useState(null);
 
-  const ddRegister = useMemo(() => buildDdRegister(data, config), [data, config]);
-  const ueRegister = useMemo(() => buildUeRegister(data, config), [data, config]);
+  const registerConfig = useMemo(() => {
+    if (isSinglePeriodMode(config.dateAnalysisMode)) return config;
+    const ddStores = data.ddFinancial ? getDdStores(data.ddFinancial) : [];
+    const ueStores = data.ueFinancial ? getUeStores(data.ueFinancial) : [];
+    return {
+      ...config,
+      ddExcludedStores: mergeExcludedStores(
+        config.ddExcludedStores,
+        buildPeriodExcludedStores(ddStores, data.storePeriodAlignment?.dd),
+      ),
+      ueExcludedStores: mergeExcludedStores(
+        config.ueExcludedStores,
+        buildPeriodExcludedStores(ueStores, data.storePeriodAlignment?.ue),
+      ),
+    };
+  }, [config, data.ddFinancial, data.ueFinancial, data.storePeriodAlignment]);
+
+  const ddRegister = useMemo(() => buildDdRegister(data, registerConfig), [data, registerConfig]);
+  const ueRegister = useMemo(() => buildUeRegister(data, registerConfig), [data, registerConfig]);
 
   const handleExport = async (platform) => {
     if (exporting) return;
@@ -185,7 +212,7 @@ export default function RegisterScreen() {
         {tab === 'ue' && (
           <p className="text-xs text-[var(--text-subtle)] mt-2">
             Uber Eats: <strong>Marketplace Fee</strong> is platform commission (not ads).
-            Promo orders = offers &gt; 0; organic = no offers. No UE ad spend in this export.
+            Promo = offers + delivery offers; Ads = ad spend from Other payments (per UE financial export).
           </p>
         )}
       </div>
@@ -219,6 +246,7 @@ export default function RegisterScreen() {
           columnSpecs={DD_REGISTER_COLUMNS}
           onExport={() => handleExport('dd')}
           isExporting={exporting === 'dd'}
+          ddFinancial={data.ddFinancial}
         />
       ) : (
         <RegisterPanel

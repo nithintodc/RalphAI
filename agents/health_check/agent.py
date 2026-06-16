@@ -1,5 +1,5 @@
 """
-Health Check agent: downloads DoorDash financial + marketing data for selected operators,
+Health Check agent: downloads DoorDash-only financial + marketing data for selected operators,
 builds two completed weekly CSVs (Mon–Sun) from one combined pull, then WoW analysis.
 
 Default behavior (dashboard): reference date = today; pull the **last two completed
@@ -347,6 +347,12 @@ def download_reports_for_operator(
                 bool(parsed.get("financial_path")),
                 bool(parsed.get("marketing_path")),
             )
+            if stderr:
+                logger.warning(
+                    "Browser subprocess stderr for %s (last 2000 chars):\n%s",
+                    operator["email"],
+                    stderr[-2000:],
+                )
         out: dict[str, Any] = {
             "status": status,
             "financial_path": parsed.get("financial_path") or None,
@@ -567,6 +573,7 @@ def run_health_check(
     reference_date: date | None = None,
     skip_download: bool = False,
     run_id: str | None = None,
+    growth_threshold_pct: float | None = None,
 ) -> dict[str, Any]:
     """
     Main entry point for the health check agent.
@@ -587,6 +594,8 @@ def run_health_check(
         skip_download: If True, skip browser-use download and use existing per-week CSVs under
             ``data/healthcheck/<operator>/operatorlevel/`` (legacy layout). New runs write under
             ``data/healthcheck/run-<timestamp>/<operator>/``.
+        growth_threshold_pct: Minimum WoW % growth for sales, payouts, orders, AOV, and new
+            customers (default from ``HEALTH_CHECK_GROWTH_THRESHOLD_PCT`` or 2).
     """
     from shared.health_check_job_progress import clear_health_check_progress, set_health_check_progress
 
@@ -724,7 +733,7 @@ def run_health_check(
         set_health_check_progress(
             run_id,
             "downloading",
-            f"{op_name}: DoorDash reports (Multilogin + browser-use)",
+            f"{op_name}: DoorDash reports (browser-use)",
         )
         download_result = download_reports_for_operator(
             operator=operator,
@@ -897,7 +906,29 @@ def run_health_check(
                 operator_result["slot_action_counts"] = slot_review.get("action_counts")
                 operator_result["campaign_wow_files"] = wow_files
 
-            set_health_check_progress(run_id, "reports", f"{op_name}: HTML/PDF + Slack")
+            set_health_check_progress(run_id, "reports", f"{op_name}: growth gate + HTML/PDF")
+            from agents.health_check.growth_drilldown import run_growth_drilldown, write_growth_report
+
+            marketing_csvs = sorted(
+                p for p in op_raw_dir.glob("*.csv") if "MARKETING" in p.name.upper()
+            )
+            growth_report = run_growth_drilldown(
+                week1_dd_csv=previous_csv,
+                week2_dd_csv=current_csv,
+                week1_start=week_older[0],
+                week1_end=week_older[1],
+                week2_start=week_newer[0],
+                week2_end=week_newer[1],
+                week1_label=format_week_label(*week_older),
+                week2_label=format_week_label(*week_newer),
+                marketing_csvs=marketing_csvs,
+                growth_threshold_pct=growth_threshold_pct,
+                operator_name=op_name,
+            )
+            growth_paths = write_growth_report(growth_report, op_wow_dir)
+            operator_result["growth_health"] = growth_report
+            operator_result.update(growth_paths)
+
             bundle = build_operator_register_bundle(
                 week1_weekly_csv=previous_csv,
                 week2_weekly_csv=current_csv,
@@ -906,6 +937,7 @@ def run_health_check(
                 week2_label=format_week_label(*week_newer),
                 operator_name=op_name,
                 campaign_wow_files=wow_files,
+                growth_report=growth_report,
             )
             operator_result.update(bundle)
             operator_result["wow_viz_html"] = bundle.get("wow_viz_html")
@@ -942,6 +974,8 @@ def run_health_check(
                 "pdf_export_ok": r.get("pdf_export_ok"),
                 "wow_viz_html": r.get("wow_viz_html"),
                 "campaign_review": r.get("campaign_review"),
+                "growth_health": r.get("growth_health"),
+                "growth_drilldown_md": r.get("growth_drilldown_md"),
             }
         )
 
@@ -977,6 +1011,12 @@ def main():
     parser.add_argument("--operator", type=str, default=None, help="Filter to specific operator (business name or email)")
     parser.add_argument("--skip-download", action="store_true", help="Skip download, use existing data")
     parser.add_argument("--date", type=str, default=None, help="Reference date (YYYY-MM-DD), default: today")
+    parser.add_argument(
+        "--growth-threshold",
+        type=float,
+        default=None,
+        help="Minimum WoW %% growth for gate metrics (default: 2 or HEALTH_CHECK_GROWTH_THRESHOLD_PCT)",
+    )
     args = parser.parse_args()
 
     ref_date = None
@@ -988,6 +1028,7 @@ def main():
         operator_filter=args.operator,
         reference_date=ref_date,
         skip_download=args.skip_download,
+        growth_threshold_pct=args.growth_threshold,
     )
 
     print(json.dumps(result, indent=2))

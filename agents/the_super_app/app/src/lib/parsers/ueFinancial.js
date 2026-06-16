@@ -121,6 +121,19 @@ function findTimeCol(columns) {
   ]);
 }
 
+function _isUeAdSpendDescription(desc) {
+  const d = String(desc ?? '').trim().toLowerCase();
+  return d === 'ad spend' || d.includes('ad spend');
+}
+
+/** UE ads spend: Other payments where description is Ad Spend (absolute $). */
+function _ueAdSpendFromRow(row, otherPaymentsCol, otherPaymentsDescCol) {
+  if (!otherPaymentsCol || !otherPaymentsDescCol) return 0;
+  const desc = String(row[otherPaymentsDescCol] ?? '').trim();
+  if (!_isUeAdSpendDescription(desc)) return 0;
+  return Math.abs(toNum(row[otherPaymentsCol]));
+}
+
 export function normalizeUeFinancial(parsed) {
   const { data, columns } = parsed;
 
@@ -154,10 +167,24 @@ export function normalizeUeFinancial(parsed) {
     'Marketplace fee charged to merchant',
   ]);
   const offersCol = findCol(columns, [
-    'Offers on items',
     'Offers on items (incl. tax)',
+    'Offers on items',
     'Offers',
     'Merchant promotions applied to the order',
+  ]);
+  const deliveryOffersCol = findCol(columns, [
+    'Delivery Offer Redemptions (incl. tax)',
+    'Delivery Offer Redemptions',
+    'Delivery offer redemptions (incl. tax)',
+  ]);
+  const otherPaymentsCol = findCol(columns, [
+    'Other payments',
+    'All miscellaneous payments',
+  ]);
+  const otherPaymentsDescCol = findCol(columns, [
+    'Other payments description',
+    'Description of adhoc one-time payments or charges from Uber',
+    'Description of adhoc one-time payments or charges from Uber Eats',
   ]);
   const marketingAdjCol = findCol(columns, [
     'Marketing Adjustment',
@@ -189,6 +216,8 @@ export function normalizeUeFinancial(parsed) {
         totalPayout: payoutCol ? toNum(row[payoutCol]) : 0,
         marketplaceFee: marketplaceCol ? toNum(row[marketplaceCol]) : 0,
         offers: offersCol ? toNum(row[offersCol]) : 0,
+        deliveryOffers: deliveryOffersCol ? toNum(row[deliveryOffersCol]) : 0,
+        adSpend: _ueAdSpendFromRow(row, otherPaymentsCol, otherPaymentsDescCol),
         marketingAdjustment: marketingAdjCol ? toNum(row[marketingAdjCol]) : 0,
         orderErrorAdjustments: errorAdjCol ? Math.abs(toNum(row[errorAdjCol])) : 0,
         newCustomers: newCustCol ? toNum(row[newCustCol]) : 0,
@@ -204,4 +233,16 @@ export function getUniqueStores(data) {
 
 export function getDateRange(data) {
   return minMaxDates(data.map((r) => r.date).filter(Boolean));
+}
+
+/** Row counts by calendar year — used to verify LY coverage after upload. */
+export function summarizeUeFinancialYears(data) {
+  const years = {};
+  for (const r of data || []) {
+    if (!r?.date) continue;
+    const y = r.date.getFullYear();
+    years[y] = (years[y] || 0) + 1;
+  }
+  const sorted = Object.keys(years).map(Number).sort((a, b) => a - b);
+  return { years, sortedYears: sorted };
 }

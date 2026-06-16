@@ -175,7 +175,7 @@ export default function BucketsScreen() {
               <p className="text-[10px] text-[var(--text-subtle)] mb-4">
                 Share of orders by origin. Δ is the change in share (percentage points) from Pre to Post.
                 {key === 'ue' && (
-                  <> Uber Eats: <strong>Promo</strong> = non-zero Offers on items; <strong>Ads</strong> = Marketing Adjustment (not Marketplace Fee, which is commission on most orders).</>
+                  <> Uber Eats: <strong>Promo</strong> = Offers on items (incl. tax) and/or Delivery Offer Redemptions (incl. tax); <strong>Ads</strong> = Other payments where description is Ad Spend (Marketplace Fee is commission, not ads).</>
                 )}
                 {key === 'dd' && (
                   <> DoorDash: <strong>Promo</strong> = customer discounts; <strong>Ads</strong> = marketing fees on the order.</>

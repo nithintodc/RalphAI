@@ -14,6 +14,8 @@ const FINANCIAL_METRICS = [
   'UE Sales',
   'UE Error Charges',
   'UE Promo',
+  'UE Delivery Spend',
+  'UE Ads Spend',
   'UE Commissions',
   'UE Payouts',
   'UE Profitability%',
@@ -33,7 +35,9 @@ export const DD_BREAKDOWN_LINES = [
 export const UE_BREAKDOWN_LINES = [
   { key: 'UE Sales', label: 'Sales', isSales: true },
   { key: 'UE Error Charges', label: 'Error charges' },
-  { key: 'UE Promo', label: 'Promo' },
+  { key: 'UE Promo', label: 'Promo spend' },
+  { key: 'UE Delivery Spend', label: 'Delivery promo spend' },
+  { key: 'UE Ads Spend', label: 'Ads spend' },
   { key: 'UE Commissions', label: 'Commissions' },
   { key: 'UE Payouts', label: 'Payouts' },
   { key: 'UE Profitability%', label: 'Profitability %', isProfitability: true },
@@ -107,13 +111,17 @@ function computeUeWindowMetrics(ueRows) {
   let ueSales = 0;
   let ueErr = 0;
   let uePromo = 0;
+  let ueDelivery = 0;
+  let ueAds = 0;
   let ueComm = 0;
   let uePay = 0;
 
   for (const r of ueRows || []) {
     ueSales += Number(r.sales) || 0;
     ueErr += Number(r.orderErrorAdjustments) || 0;
-    uePromo += Number(r.offers) || 0;
+    uePromo += Math.abs(Number(r.offers) || 0);
+    ueDelivery += Math.abs(Number(r.deliveryOffers) || 0);
+    ueAds += Number(r.adSpend) || 0;
     ueComm += Math.abs(Number(r.marketplaceFee) || 0);
     uePay += Number(r.totalPayout) || 0;
   }
@@ -124,6 +132,8 @@ function computeUeWindowMetrics(ueRows) {
     'UE Sales': ueSales,
     'UE Error Charges': ueErr,
     'UE Promo': uePromo,
+    'UE Delivery Spend': ueDelivery,
+    'UE Ads Spend': ueAds,
     'UE Commissions': ueComm,
     'UE Payouts': uePay,
     'UE Profitability%': ueProf,
@@ -162,7 +172,7 @@ function buildSummaryRows(preM, postM, lyPreM, lyPostM) {
       'Last Year Pre': round2(lyPre),
       'Last Year Post': round2(lyPost),
       'LY Pre vs Post': round2(lyPvp),
-      'LY Linear %': round1(lyLinear),
+      'LY Growth%': round1(lyLinear),
       YoY: round2(yoy),
       'YoY%': round1(yoyG),
     };

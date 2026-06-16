@@ -9,11 +9,13 @@ export function buildStoreMetaLookup(rawData) {
   for (const row of rawData || []) {
     const id = String(row.storeId ?? '').trim();
     if (!id) continue;
-    const cur = byStoreId.get(id) || { storeName: '', ddStoreId: '' };
+    const cur = byStoreId.get(id) || { storeName: '', ddStoreId: '', merchantStoreId: '' };
     const name = String(row.storeName ?? '').trim();
     const ddId = String(row.ddStoreId ?? '').trim();
+    const merchant = String(row.merchantStoreId ?? '').trim();
     if (name && (!cur.storeName || name.length > cur.storeName.length)) cur.storeName = name;
     if (ddId) cur.ddStoreId = ddId;
+    if (merchant) cur.merchantStoreId = merchant;
     byStoreId.set(id, cur);
   }
   return byStoreId;

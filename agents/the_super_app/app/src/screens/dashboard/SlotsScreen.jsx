@@ -1,8 +1,10 @@
 import GroupedBarChart from '../../components/charts/GroupedBarChart';
 import SplitDataTable from '../../components/ui/SplitDataTable';
-import { SLOT_CORE_METRICS } from '../../lib/engine/slots';
+import { SLOT_CORE_METRICS, lyBlankDueToExclusions, hasDdFinancialForSlots } from '../../lib/engine/slots';
 import { buildSlotPvpColumns, buildSlotYoyColumns } from '../../lib/slots/slotTableColumns';
 import { useSlotFinancialAnalyses } from '../../hooks/useSlotFinancialAnalyses';
+import { useDataStore } from '../../stores/dataStore';
+import { useConfigStore } from '../../stores/configStore';
 import { DATA_PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
 import { formatByKind } from '../../lib/utils/formatters';
@@ -91,14 +93,44 @@ function SlotTicketBucketCharts({ bySlotCharts }) {
 }
 
 export default function SlotsScreen() {
+  const ddFinancial = useDataStore((s) => s.ddFinancial);
+  const ueFinancial = useDataStore((s) => s.ueFinancial);
+  const config = useConfigStore();
   const analyses = useSlotFinancialAnalyses();
 
+  const ueLyBlockedByExclusions = lyBlankDueToExclusions(
+    ueFinancial,
+    config.uePreStart,
+    config.uePreEnd,
+    config.uePostStart,
+    config.uePostEnd,
+    config.ueExcludedDates,
+  );
+  const ddLyBlockedByExclusions = lyBlankDueToExclusions(
+    ddFinancial,
+    config.ddPreStart,
+    config.ddPreEnd,
+    config.ddPostStart,
+    config.ddPostEnd,
+    config.ddExcludedDates,
+  );
+
   const hasAny = DATA_PLATFORM_SECTIONS.some(({ key }) => analyses[key]);
+  const ddFinancialMissingTimes = !!ddFinancial?.length && !hasDdFinancialForSlots(ddFinancial);
 
   if (!hasAny) {
     return (
-      <div className="card text-center py-12">
-        <p className="text-[var(--text-muted)]">Upload financial data and set Pre + Post dates to see slot growth tables.</p>
+      <div className="card text-center py-12 space-y-2">
+        <p className="text-[var(--text-muted)]">
+          Slots are built from <strong>financial data</strong> (DD: order received time · UE: order accept time).
+          Upload a financial export and set Pre + Post dates.
+        </p>
+        {ddFinancialMissingTimes && (
+          <p className="text-xs text-[var(--text-subtle)]">
+            Your DoorDash financial file has no usable order-received times. Upload the original portal zip —
+            CSVs opened and re-saved in Excel lose the time-of-day component.
+          </p>
+        )}
       </div>
     );
   }
@@ -106,9 +138,52 @@ export default function SlotsScreen() {
   return (
     <div className="space-y-10">
       <p className="text-xs text-[var(--text-subtle)] leading-relaxed max-w-3xl">
-        Six day-part slots (Overnight → Late Night). Sales and Payouts are <strong>daily averages</strong>.
-        AOV and Orders are period totals per slot. Ticket-size charts show mix shift Pre vs Post.
+        Six day-part slots (Overnight → Late Night). DoorDash slots use <strong>order received time</strong> from the
+        financial export; Uber Eats uses order accept time. Sales, orders, payouts, and AOV are period totals per slot.
+        Ticket-size charts show mix shift Pre vs Post.
       </p>
+
+      {ddFinancialMissingTimes && (
+        <div className="card border-l-[3px] border-l-amber-500/80 bg-amber-500/5 text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          <strong className="text-[var(--text)]">DoorDash slot tables unavailable.</strong>{' '}
+          The uploaded financial file has no usable order-received times (this happens when the CSV was opened and
+          re-saved in Excel/WPS, which strips the hour). Re-upload the original zip from the DoorDash portal.
+        </div>
+      )}
+
+      {ddLyBlockedByExclusions && (
+        <div className="card border-l-[3px] border-l-amber-500/80 bg-amber-500/5 text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          <strong className="text-[var(--text)]">DoorDash last-year columns are hidden by excluded dates.</strong>{' '}
+          Your excluded-date list is removing all rows from the prior-year Pre/Post windows. Clear excluded dates on
+          the Config screen, or turn off &quot;Sync date exclusions&quot; if Uber Eats should keep last year.
+        </div>
+      )}
+
+      {analyses.dd && analyses.dd.lyCoverage && !analyses.dd.lyCoverage.hasAny && !ddLyBlockedByExclusions && (
+        <div className="card border-l-[3px] border-l-amber-500/80 bg-amber-500/5 text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          <strong className="text-[var(--text)]">DoorDash last-year columns are empty.</strong>{' '}
+          LY Pre vs Post and YoY need financial rows from the same calendar months one year earlier
+          (e.g. Apr–May 2025 when comparing Apr–May 2026). Re-export financials with a longer date range if needed.
+        </div>
+      )}
+
+      {ueLyBlockedByExclusions && (
+        <div className="card border-l-[3px] border-l-amber-500/80 bg-amber-500/5 text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          <strong className="text-[var(--text)]">Uber Eats last-year columns are hidden by excluded dates.</strong>{' '}
+          {config.ueExcludedDates.length} excluded date{config.ueExcludedDates.length === 1 ? '' : 's'} remove all
+          rows from Apr/May 2025 (the prior-year windows for your current periods). Clear UE excluded dates on the
+          Config screen, or disable &quot;Sync date exclusions&quot; if those exclusions should apply to DoorDash only.
+        </div>
+      )}
+
+      {analyses.ue && analyses.ue.lyCoverage && !analyses.ue.lyCoverage.hasAny && !ueLyBlockedByExclusions && (
+        <div className="card border-l-[3px] border-l-amber-500/80 bg-amber-500/5 text-xs text-[var(--text-muted)] leading-relaxed max-w-3xl">
+          <strong className="text-[var(--text)]">Uber Eats last-year columns are empty.</strong>{' '}
+          UE slots need financial rows from the same calendar months one year earlier in your uploaded CSV
+          (e.g. Apr–May 2025 when comparing Apr–May 2026). Re-upload the combined export and confirm the Upload
+          screen shows both years (this file should show ~65,972 rows with 2025 and 2026 counts).
+        </div>
+      )}
 
       {DATA_PLATFORM_SECTIONS.map(({ key, label }) => {
         const sa = analyses[key];

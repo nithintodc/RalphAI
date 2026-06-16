@@ -7,16 +7,14 @@ import logging
 import os
 
 from agents.slack_agent import push_to_slack
+from shared import ralph_slack_messages as slack_msg
 
 # Signals we look for in log messages (substring match) -> Slack message to send.
 # Each pattern is only triggered once per process (deduplicated).
 _SIGNALS = [
-    # (pattern in log message, lambda email -> message or static message)
-    ("Login was successful", lambda email: f"I logged into {email}"),
-    # New campaign system: mappings pushed to combined analysis
-    ("campaign mapping(s) to sheet", lambda _: "Campaign mappings pushed to combined analysis sheet."),
-    # Phase 2 started (campaigns from combined_analysis or slots)
-    ("Phase 2 —", lambda _: "Phase 2: campaign creation started."),
+    ("Login was successful", lambda _: slack_msg.portal_logged_in()),
+    ("campaign mapping(s) to sheet", lambda _: "📋 Campaign mappings saved to analysis sheet"),
+    ("Phase 2 —", lambda _: "▶️ Campaign creation started"),
 ]
 
 _sent_signals: set[str] = set()

@@ -1106,7 +1106,7 @@ DONE: Use done action. Say: "{campaign_name}" created for store {store_id}.
 
 
 def _get_llm():
-    """Use Google Gemini API (GEMINI_API_KEY) with gemini-2.0-flash."""
+    """Use Google Gemini API (GEMINI_API_KEY) with gemini-3-flash-preview."""
     try:
         from browser_use import ChatGoogle
     except ImportError:
@@ -1117,7 +1117,7 @@ def _get_llm():
         raise ValueError(
             "GEMINI_API_KEY is not set. Add it to your .env file."
         )
-    return ChatGoogle(model="gemini-2.5-flash", api_key=api_key)
+    return ChatGoogle(model="gemini-3-flash-preview", api_key=api_key)
 
 
 def _get_browser(

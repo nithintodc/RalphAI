@@ -80,6 +80,14 @@ type CampaignReviewSummary = {
   error?: string;
 };
 
+type GrowthHealthSummary = {
+  status?: string;
+  summary?: string;
+  threshold_pct?: number;
+  unhealthy_metrics?: string[];
+  healthy_metrics?: string[];
+};
+
 type OperatorReport = {
   operator?: string;
   email?: string;
@@ -93,6 +101,8 @@ type OperatorReport = {
   pdf_export_ok?: boolean;
   wow_viz_html?: string;
   campaign_review?: CampaignReviewSummary;
+  growth_health?: GrowthHealthSummary;
+  growth_drilldown_md?: string;
 };
 
 let inFlightHealthCheck: InFlightHealthCheck | null = null;
@@ -124,6 +134,7 @@ export function HealthCheckPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [result, setResult] = useState<RunPayload | null>(null);
+  const [growthThresholdPct, setGrowthThresholdPct] = useState("2");
 
   useEffect(() => {
     let cancelled = false;
@@ -319,6 +330,28 @@ export function HealthCheckPage() {
     | { previous_completed?: string; current_completed?: string }
     | undefined;
 
+  const growthHealthByOperator = useMemo(() => {
+    if (!result) return [];
+    const wantEmails = new Set(selectedEmails.map((e) => e.toLowerCase()));
+    const rows = Array.isArray(result.operator_results)
+      ? (result.operator_results as OperatorReport[])
+      : Array.isArray(result.operator_reports)
+        ? (result.operator_reports as OperatorReport[])
+        : [];
+    return rows
+      .filter((r) => {
+        if (r.status !== "success" || !r.growth_health) return false;
+        if (!wantEmails.size) return true;
+        const em = (r.email || "").trim().toLowerCase();
+        return em && wantEmails.has(em);
+      })
+      .map((r) => ({
+        operator: String(r.operator || r.email || "Operator"),
+        growth: r.growth_health as GrowthHealthSummary,
+        mdPath: r.growth_drilldown_md,
+      }));
+  }, [result, selectedEmails]);
+
   const campaignReviewByOperator = useMemo(() => {
     if (!result) return [];
     const rows = Array.isArray(result.operator_results)
@@ -372,6 +405,10 @@ export function HealthCheckPage() {
 
     const formData = new FormData();
     formData.append("operator_emails", JSON.stringify(emails));
+    const threshold = Number(growthThresholdPct);
+    if (Number.isFinite(threshold) && threshold > 0) {
+      formData.append("growth_threshold_pct", String(threshold));
+    }
 
     const startedAtIso = new Date().toISOString().replace("T", " ").slice(0, 19);
     localStorage.setItem(HEALTHCHECK_RUNNING_KEY, startedAtIso);
@@ -426,9 +463,10 @@ export function HealthCheckPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">Health Check</h2>
         <p className="mt-1 max-w-3xl text-ink-600">
-          Pick operators and run weekly WoW analysis. Campaign review (pre/post metrics, /update /delete /keep /new
-          recommendations) runs automatically as part of each health check when marketing data is downloaded. Use{" "}
-          <strong>View in browser</strong> for the full styled report. Open PDF (Drive) is what Slack links to.
+          Pick operators and run weekly WoW analysis. A configurable growth gate checks sales, payouts,
+          orders, AOV, and new customers — if any metric is below your WoW threshold, the agent deep-dives
+          platform → store → day → slot for that metric only. Campaign review runs automatically when
+          marketing data is downloaded. Use <strong>View in browser</strong> for the full styled report.
         </p>
       </div>
 
@@ -473,6 +511,24 @@ export function HealthCheckPage() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:max-w-xs">
+          <label htmlFor="growth-threshold" className="text-sm font-medium text-ink-700">
+            WoW growth threshold (%)
+          </label>
+          <input
+            id="growth-threshold"
+            type="number"
+            min={0}
+            step={0.5}
+            value={growthThresholdPct}
+            onChange={(e) => setGrowthThresholdPct(e.target.value)}
+            className="rounded-xl border border-brand-200 px-3 py-2 text-sm text-ink-800"
+          />
+          <p className="text-xs text-ink-500">
+            Each gate metric must grow at least this much week-over-week (default 2). Try 5 or 10 for stricter checks.
+          </p>
         </div>
 
         {error && (
@@ -587,6 +643,39 @@ export function HealthCheckPage() {
               Chromium: <code className="rounded bg-brand-50 px-1">python -m playwright install chromium</code>
             </p>
           )}
+
+          {growthHealthByOperator.length > 0 ? (
+            <div className="mt-8 border-t border-brand-100 pt-6">
+              <h4 className="font-display text-base font-semibold text-ink-900">Growth health gate</h4>
+              <p className="mt-1 text-sm text-ink-600">
+                Combined WoW check on sales, payouts, orders, AOV, and new customers. Deep dive only when a
+                metric misses the threshold.
+              </p>
+              <ul className="mt-4 flex flex-col gap-4">
+                {growthHealthByOperator.map(({ operator, growth }) => {
+                  const healthy = growth.status === "healthy";
+                  return (
+                    <li
+                      key={operator}
+                      className={`rounded-xl border px-4 py-3 text-sm ${
+                        healthy
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                          : "border-amber-200 bg-amber-50 text-amber-950"
+                      }`}
+                    >
+                      <p className="font-medium">{operator}</p>
+                      <p className="mt-1">{growth.summary}</p>
+                      {!healthy && growth.unhealthy_metrics?.length ? (
+                        <p className="mt-1 text-xs opacity-90">
+                          Deep dive: {growth.unhealthy_metrics.join(", ")} · threshold {growth.threshold_pct}%
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
 
           {campaignReviewByOperator.length > 0 ? (
             <div className="mt-8 border-t border-brand-100 pt-6">

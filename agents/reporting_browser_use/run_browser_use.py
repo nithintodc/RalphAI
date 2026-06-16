@@ -42,7 +42,7 @@ DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _get_llm():
-    """Use Google Gemini API (GEMINI_API_KEY) with gemini-2.0-flash."""
+    """Use Google Gemini API (GEMINI_API_KEY) with gemini-3-flash-preview."""
     try:
         from browser_use import ChatGoogle
     except ImportError:
@@ -51,7 +51,7 @@ def _get_llm():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or not api_key.strip():
         raise SystemExit("Set GEMINI_API_KEY in .env.")
-    return ChatGoogle(model="gemini-2.5-flash", api_key=api_key)
+    return ChatGoogle(model="gemini-3-flash-preview", api_key=api_key)
 
 
 def _get_browser():

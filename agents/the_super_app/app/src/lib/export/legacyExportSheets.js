@@ -6,19 +6,23 @@
 import { PLATFORM_SECTIONS } from '../platforms';
 import { buildFinancialSummaryTable } from '../engine/financialBreakdown';
 import { buildNewCustomersSummary } from '../engine/newCustomers';
-import { buildSlotAnalysis, getSlotTimeRange, LEGACY_SLOT_EXPORT_HEADERS_PVP, LEGACY_SLOT_EXPORT_HEADERS_YOY } from '../engine/slots';
-import { buildCorpTodcImpactRows, buildCorpVsTodcBySource } from '../engine/marketing';
+import { buildSlotAnalysis, getSlotTimeRange, LEGACY_SLOT_EXPORT_HEADERS_PVP, LEGACY_SLOT_EXPORT_HEADERS_YOY, SLOT_METRIC_TABLES } from '../engine/slots';
+import { buildCorpTodcImpactRows, buildUeMarketingSummary } from '../engine/marketing';
+import { resolveMarketingTables } from './marketingExport';
+import { buildAnalysisScope } from '../utils/abStoreFilter';
 import { formatCompactDateRange } from '../utils/dateUtils';
 import {
   buildAlignedExportStoreTables,
-  combinedExportStoreId,
   combinedExportStoreName,
   EXPORT_NA,
-  legacyStoreIdCell,
-  LEGACY_STORE_HEADERS_PVP,
-  LEGACY_STORE_HEADERS_YOY,
+  exportStoreIdCells,
+  exportStoreIdRowCells,
+  legacyStoreHeadersPvp,
+  legacyStoreHeadersYoy,
   buildStoreMappingExportBlock,
 } from './storeExportLayout';
+import { buildDdStoreIdToMerchantMap } from '../utils/storeCatalog';
+import { ddMerchantStoreIdFromKey } from '../utils/storeDisplay';
 
 const LEGACY_SUMMARY_METRICS = [
   { key: 'sales', label: 'Sales' },
@@ -103,6 +107,7 @@ function legacySummaryTable1Rows(summaryRows) {
       fmtVal(row.prevspost),
       fmtVal(row.lyPrevspost),
       fmtPct1(row.growthPct),
+      fmtPct1(row.lyGrowthPct),
     ];
   }).filter((r) => r.some((c, i) => i > 0 && c !== ''));
 }
@@ -130,42 +135,39 @@ function legacySummaryTable2Rows(summaryRows) {
   }).filter((r) => r.some((c, i) => i > 0 && c !== ''));
 }
 
-function legacyStoreTable1Rows(stores, platform, dominantPlatform) {
+function legacyStoreTable1Rows(stores, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant) {
   return (stores || []).map((row) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(row, dominantPlatform)
-      : legacyStoreIdCell(row, platform);
+    const idCells = exportStoreIdRowCells(row, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant);
     const storeName = platform === 'combined'
       ? combinedExportStoreName(row, dominantPlatform)
       : (row._isNa ? EXPORT_NA : (String(row.storeName ?? '').trim() || EXPORT_NA));
     if (row._isNa) {
-      return [storeId, storeName, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA];
+      return [...idCells, storeName, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA];
     }
     return [
-      storeId,
+      ...idCells,
       storeName,
       fmtUsd1(row.pre_sales),
       fmtUsd1(row.post_sales),
       fmtUsd1(row.sales_prevspost),
       fmtUsd1(row.sales_ly_prevspost),
       fmtPct1(row.sales_growth_pct),
+      fmtPct1(row.sales_ly_growth_pct),
     ];
   });
 }
 
-function legacyStoreTable2Rows(stores, platform, dominantPlatform) {
+function legacyStoreTable2Rows(stores, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant) {
   return (stores || []).map((row) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(row, dominantPlatform)
-      : legacyStoreIdCell(row, platform);
+    const idCells = exportStoreIdRowCells(row, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant);
     const storeName = platform === 'combined'
       ? combinedExportStoreName(row, dominantPlatform)
       : (row._isNa ? EXPORT_NA : (String(row.storeName ?? '').trim() || EXPORT_NA));
     if (row._isNa) {
-      return [storeId, storeName, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA];
+      return [...idCells, storeName, EXPORT_NA, EXPORT_NA, EXPORT_NA, EXPORT_NA];
     }
     return [
-      storeId,
+      ...idCells,
       storeName,
       fmtUsd1(row.postLY_sales),
       fmtUsd1(row.post_sales),
@@ -206,9 +208,8 @@ function buildSummaryMetricsBlock(data, config, summaryTables) {
 
   const ddStores = (data.storeTables?.dd || []).length;
   const ueStores = (data.storeTables?.ue || []).length;
-  const storeCount = Math.max(ddStores, ueStores, (data.storeTables?.combined || []).length);
 
-  const payoutLift = storeCount > 0 ? (payouts.prevspost || 0) / storeCount : 0;
+  const payoutPerStore = ddStores > 0 ? (payouts?.prevspost || 0) / ddStores : 0;
 
   const left = [
     ['Summary Metrics'],
@@ -220,7 +221,7 @@ function buildSummaryMetricsBlock(data, config, summaryTables) {
     ['Sales Growth (YoY)', fmtPct1(sales.yoyPct)],
     ['Order Growth', fmtPct1(orders.growthPct)],
     ['New Customer Growth', nc ? fmtPct1(nc.growthPct) : ''],
-    ['Payout Lift per Store', fmtUsd1(payoutLift)],
+    ['Payout Δ/Store', fmtUsd1(payoutPerStore)],
     ['Average Markup', ''],
     ['Pre TODC Growth YoY', ''],
   ];
@@ -243,7 +244,7 @@ function buildSummaryTablesSheet(data, config) {
       appendLegacyTable(
         rows,
         `${LEGACY_PLATFORM_LABELS[key]} Table 1: Current Year Pre vs Post Analysis`,
-        ['Metric', 'Pre', 'Post', 'PrevsPost', 'LastYear Pre vs Post', 'Growth%'],
+        ['Metric', 'Pre', 'Post', 'PrevsPost', 'LastYear Pre vs Post', 'Growth%', 'LY Growth%'],
         t1,
       );
     }
@@ -262,6 +263,7 @@ function buildSummaryTablesSheet(data, config) {
 function buildStoreLevelTablesSheet(data, config) {
   const rows = [];
   const aligned = buildAlignedExportStoreTables(data.storeTables, config?.ddToUeStoreMap || {});
+  const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(data?.ddFinancial);
   const tableMap = {
     combined: aligned.combined,
     dd: aligned.dd,
@@ -270,13 +272,13 @@ function buildStoreLevelTablesSheet(data, config) {
 
   for (const { key, label } of PLATFORM_SECTIONS) {
     const stores = tableMap[key] || [];
-    const t1 = legacyStoreTable1Rows(stores, key, aligned.dominantPlatform);
-    const t2 = legacyStoreTable2Rows(stores, key, aligned.dominantPlatform);
+    const t1 = legacyStoreTable1Rows(stores, key, aligned.dominantPlatform, config?.ddToUeStoreMap || {}, ddStoreIdToMerchant);
+    const t2 = legacyStoreTable2Rows(stores, key, aligned.dominantPlatform, config?.ddToUeStoreMap || {}, ddStoreIdToMerchant);
     if (t1.length) {
       appendLegacyTable(
         rows,
         `${LEGACY_PLATFORM_LABELS[key]} Table 1: Current Year Pre vs Post Analysis (Store-Level)`,
-        LEGACY_STORE_HEADERS_PVP,
+        legacyStoreHeadersPvp(key),
         t1,
       );
     }
@@ -284,7 +286,7 @@ function buildStoreLevelTablesSheet(data, config) {
       appendLegacyTable(
         rows,
         `${LEGACY_PLATFORM_LABELS[key]} Table 2: Year-over-Year Analysis (Store-Level)`,
-        LEGACY_STORE_HEADERS_YOY,
+        legacyStoreHeadersYoy(key),
         t2,
       );
     }
@@ -294,55 +296,112 @@ function buildStoreLevelTablesSheet(data, config) {
 
 function legacyCorpCampaignRows(sourceData, period = 'post') {
   return buildCorpTodcImpactRows(sourceData, period)
-    .filter((r) => r.group === 'TODC' || r.group === 'Corporate')
+    .filter((r) => r.group === 'Corporate' || r.group === 'TODC' || r.group === 'Total')
     .map((r) => [
-      r.group === 'TODC' ? 'TODC' : 'Corporate',
-      fmtInt(r.orders),
+      r.group,
       fmtUsd2(r.sales),
+      fmtInt(r.orders),
       fmtUsd2(r.spend),
       fmtRoas(r.roas),
       fmtUsd2(r.cpo),
+      fmtUsd2(r.checkAfterPromo),
     ]);
+}
+
+const UE_MARKETING_HEADERS = ['Sales', 'Spend', 'ROAS', 'Cost Per Order', 'Check after Promo'];
+
+function legacyUeMarketingRow(metrics) {
+  if (!metrics) return null;
+  return [[
+    fmtUsd2(metrics.sales),
+    fmtUsd2(metrics.spend),
+    fmtRoas(metrics.roas),
+    fmtUsd2(metrics.cpo),
+    fmtUsd2(metrics.checkAfterPromo),
+  ]];
+}
+
+function appendUeMarketingSections(rows, summary) {
+  if (!summary) return;
+  const postCombined = legacyUeMarketingRow(summary.combined?.post);
+  if (postCombined) {
+    appendLegacyTable(rows, 'Uber Eats marketing — Post period (combined)', UE_MARKETING_HEADERS, postCombined);
+  }
+  const preCombined = legacyUeMarketingRow(summary.combined?.pre);
+  if (preCombined) {
+    appendLegacyTable(rows, 'Uber Eats marketing — Pre period (combined)', UE_MARKETING_HEADERS, preCombined);
+  }
+  const promo = legacyUeMarketingRow(summary.promotion?.post);
+  if (promo) {
+    appendLegacyTable(rows, 'Uber Eats marketing — Promo (post)', UE_MARKETING_HEADERS, promo);
+  }
+  const ads = legacyUeMarketingRow(summary.sponsored?.post);
+  if (ads) {
+    appendLegacyTable(rows, 'Uber Eats marketing — Ads (post)', UE_MARKETING_HEADERS, ads);
+  }
+}
+
+function appendCorpTodcPlatformSections(rows, tables, headers, platformLabel) {
+  if (!tables?.combined?.corp) return;
+  const combinedPost = legacyCorpCampaignRows(tables.combined, 'post');
+  if (combinedPost.length) {
+    appendLegacyTable(rows, `Corp vs TODC — ${platformLabel} — Post period (combined)`, headers, combinedPost);
+  }
+  const combinedPre = legacyCorpCampaignRows(tables.combined, 'pre');
+  if (combinedPre.length) {
+    appendLegacyTable(rows, `Corp vs TODC — ${platformLabel} — Pre period (combined)`, headers, combinedPre);
+  }
+  const promoRows = legacyCorpCampaignRows(tables.promotion, 'post');
+  if (promoRows.length) {
+    appendLegacyTable(rows, `Promotion: Corporate vs TODC — ${platformLabel} (post)`, headers, promoRows);
+  }
+  const adsRows = legacyCorpCampaignRows(tables.sponsored, 'post');
+  if (adsRows.length) {
+    appendLegacyTable(rows, `Sponsored Listing: Corporate vs TODC — ${platformLabel} (post)`, headers, adsRows);
+  }
 }
 
 function buildCorporateVsTodcSheet(data, config) {
   const rows = [];
-  const promotion = data.ddMarketing?.promotion;
-  const sponsored = data.ddMarketing?.sponsored;
-  if (!promotion && !sponsored) return rows;
+  const headers = ['Group', 'Sales', 'Orders', 'Spend', 'ROAS', 'Cost Per Order', 'Check after Promo'];
+  const scope = buildAnalysisScope(config);
 
-  const tables = buildCorpVsTodcBySource(promotion, sponsored, {
-    preStart: config.ddPreStart,
-    preEnd: config.ddPreEnd,
-    postStart: config.ddPostStart,
-    postEnd: config.ddPostEnd,
-    excludedDates: config.ddExcludedDates || [],
-  });
+  const marketingTables = resolveMarketingTables(data, config);
+  if (marketingTables?.bySource?.combined?.corp) {
+    appendCorpTodcPlatformSections(rows, marketingTables.bySource, headers, 'DoorDash');
+  }
 
-  const headers = ['Campaign', 'Orders', 'Sales', 'Spend', 'ROAS', 'Cost per Order'];
-  const combinedRows = legacyCorpCampaignRows(tables?.combined, 'post');
-  if (combinedRows.length) {
-    appendLegacyTable(rows, 'Combined: Corporate vs TODC', headers, combinedRows);
+  if (data.ueFinancial?.length && config.uePostStart && config.uePostEnd) {
+    const ueSummary = buildUeMarketingSummary(data.ueFinancial, {
+      preStart: config.uePreStart,
+      preEnd: config.uePreEnd,
+      postStart: config.uePostStart,
+      postEnd: config.uePostEnd,
+      excludedDates: config.ueExcludedDates || [],
+      excludedStores: config.ueExcludedStores || [],
+    }, scope);
+    appendUeMarketingSections(rows, ueSummary);
   }
-  const promoRows = legacyCorpCampaignRows(tables?.promotion, 'post');
-  if (promoRows.length) {
-    appendLegacyTable(rows, 'Promotion: Corporate vs TODC', headers, promoRows);
-  }
-  const adsRows = legacyCorpCampaignRows(tables?.sponsored, 'post');
-  if (adsRows.length) {
-    appendLegacyTable(rows, 'Sponsored Listing: Corporate vs TODC', headers, adsRows);
-  }
+
   return rows;
 }
 
-function legacySlotTable1Rows(slotRows) {
+function legacySlotTable1Rows(slotRows, valueKind = 'usd') {
+  const fmtVal = (v) => {
+    if (valueKind === 'pct') return fmtPct1(v);
+    if (valueKind === 'int') return fmtInt(v);
+    if (valueKind === 'usd2') return fmtUsd2(v);
+    return fmtUsd1(v);
+  };
   return (slotRows || []).map((r) => [
     r.slot,
     getSlotTimeRange(r.slot),
-    fmtUsd1(r.pre),
-    fmtUsd1(r.post),
-    fmtUsd1(r.prevspost),
+    fmtVal(r.pre),
+    fmtVal(r.post),
+    fmtVal(r.prevspost),
     fmtPct1(r.growthPct),
+    fmtVal(r.lyPrevspost),
+    fmtPct1(r.lyGrowthPct),
   ]);
 }
 
@@ -360,7 +419,7 @@ function legacySlotTable2Rows(slotRows) {
 function buildPlatformSlotWiseSheet(data, config, platform) {
   const rawData = platform === 'ue' ? data.ueFinancial : data.ddFinancial;
   const prefix = platform === 'ue' ? 'ue' : 'dd';
-  if (!rawData) return [];
+  if (!rawData?.length) return [];
 
   const analysis = buildSlotAnalysis(rawData, {
     preStart: config[`${prefix}PreStart`],
@@ -368,20 +427,25 @@ function buildPlatformSlotWiseSheet(data, config, platform) {
     postStart: config[`${prefix}PostStart`],
     postEnd: config[`${prefix}PostEnd`],
     excludedDates: config[`${prefix}ExcludedDates`] || [],
+    excludedStores: config[`${prefix}ExcludedStores`] || [],
     platform,
   });
   if (!analysis) return [];
 
   const rows = [];
-  const salesPvP = legacySlotTable1Rows(analysis.salesPrePost);
-  const salesYoY = legacySlotTable2Rows(analysis.salesYoY);
-  const payPvP = legacySlotTable1Rows(analysis.payoutsPrePost);
-  const payYoY = legacySlotTable2Rows(analysis.payoutsYoY);
-
-  if (salesPvP.length) appendLegacyTable(rows, 'Table 1: Sales - Pre vs Post', LEGACY_SLOT_EXPORT_HEADERS_PVP, salesPvP);
-  if (salesYoY.length) appendLegacyTable(rows, 'Table 2: Sales - Year over Year', LEGACY_SLOT_EXPORT_HEADERS_YOY, salesYoY);
-  if (payPvP.length) appendLegacyTable(rows, 'Table 3: Payouts - Pre vs Post', LEGACY_SLOT_EXPORT_HEADERS_PVP, payPvP);
-  if (payYoY.length) appendLegacyTable(rows, 'Table 4: Payouts - Year over Year', LEGACY_SLOT_EXPORT_HEADERS_YOY, payYoY);
+  let tableNum = 1;
+  for (const { key, title, valueKind } of SLOT_METRIC_TABLES) {
+    const pvp = legacySlotTable1Rows(analysis[`${key}PrePost`], valueKind);
+    const yoy = legacySlotTable2Rows(analysis[`${key}YoY`]);
+    if (pvp.length) {
+      appendLegacyTable(rows, `Table ${tableNum}: ${title} - Pre vs Post`, LEGACY_SLOT_EXPORT_HEADERS_PVP, pvp);
+      tableNum += 1;
+    }
+    if (yoy.length) {
+      appendLegacyTable(rows, `Table ${tableNum}: ${title} - Year over Year`, LEGACY_SLOT_EXPORT_HEADERS_YOY, yoy);
+      tableNum += 1;
+    }
+  }
   return rows;
 }
 
@@ -397,7 +461,7 @@ function legacyFinancialRow(row) {
     fmtVal(row['Last Year Pre']),
     fmtVal(row['Last Year Post']),
     fmtVal(row['LY Pre vs Post']),
-    fmtPct1(row['LY Linear %']),
+    fmtPct1(row['LY Growth%']),
     fmtVal(row.YoY),
     fmtPct1(row['YoY%']),
   ];
@@ -408,7 +472,7 @@ function buildFinancialAggregateSheet(data, config) {
   if (!table.length) return [];
   return [
     ['Financial Summary (Aggregate)'],
-    ['Metric', 'Pre', 'Post', 'Pre vs Post', 'Linear Growth%', 'Last Year Pre', 'Last Year Post', 'LY Pre vs Post', 'LY Linear %', 'YoY', 'YoY%'],
+    ['Metric', 'Pre', 'Post', 'Pre vs Post', 'Linear Growth%', 'Last Year Pre', 'Last Year Post', 'LY Pre vs Post', 'LY Growth%', 'YoY', 'YoY%'],
     ...table.map(legacyFinancialRow),
   ];
 }
@@ -419,10 +483,11 @@ function buildFinancialBreakdownSheet(data, config) {
   for (const storeId of storeIds) {
     const table = buildFinancialSummaryTable(data.ddFinancial, data.ueFinancial, config, storeId);
     if (!table.length) continue;
+    const merchantLabel = ddMerchantStoreIdFromKey(storeId, data.ddFinancial);
     appendLegacyTable(
       rows,
-      `Store ${storeId}`,
-      ['Metric', 'Pre', 'Post', 'Pre vs Post', 'Linear Growth%', 'Last Year Pre', 'Last Year Post', 'LY Pre vs Post', 'LY Linear %', 'YoY', 'YoY%'],
+      `Store ${merchantLabel}`,
+      ['Metric', 'Pre', 'Post', 'Pre vs Post', 'Linear Growth%', 'Last Year Pre', 'Last Year Post', 'LY Pre vs Post', 'LY Growth%', 'YoY', 'YoY%'],
       table.map(legacyFinancialRow),
     );
   }
@@ -460,21 +525,30 @@ function buildInsightsSheet(data, config) {
   ]));
 
   const stores = data.storeTables?.combined || [];
+  const ddToUe = config?.ddToUeStoreMap || {};
+  const aligned = buildAlignedExportStoreTables(data.storeTables, ddToUe);
+  const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(data?.ddFinancial);
   const storeInsights = stores.map((s) => {
     const change = (s.post_sales || 0) - (s.pre_sales || 0);
     const pct = s.pre_sales ? (change / s.pre_sales) * 100 : 0;
-    return ['Combined', s.storeId, Number((s.pre_sales || 0).toFixed(1)), Number((s.post_sales || 0).toFixed(1)), Number(change.toFixed(1)), fmtPct1(pct), insightDirection(change)];
-  }).sort((a, b) => Math.abs(b[4]) - Math.abs(a[4]));
-  appendLegacyTable(rows, 'Stores – Major Loss/Gain (Sales Pre vs Post)', ['Source', 'Store', 'Pre', 'Post', 'Change', 'Change %', 'Direction'], storeInsights);
+    const [ddMerchantStoreId, ueStoreId] = exportStoreIdCells(
+      s, 'combined', aligned.dominantPlatform, ddToUe, ddStoreIdToMerchant,
+    );
+    return ['Combined', ddMerchantStoreId, ueStoreId, Number((s.pre_sales || 0).toFixed(1)), Number((s.post_sales || 0).toFixed(1)), Number(change.toFixed(1)), fmtPct1(pct), insightDirection(change)];
+  }).sort((a, b) => Math.abs(b[5]) - Math.abs(a[5]));
+  appendLegacyTable(rows, 'Stores – Major Loss/Gain (Sales Pre vs Post)', ['Source', 'Merchant Store ID', 'Store ID (UE)', 'Pre', 'Post', 'Change', 'Change %', 'Direction'], storeInsights);
 
-  const slotAnalysis = buildSlotAnalysis(data.ddFinancial, {
-    preStart: config.ddPreStart,
-    preEnd: config.ddPreEnd,
-    postStart: config.ddPostStart,
-    postEnd: config.ddPostEnd,
-    excludedDates: config.ddExcludedDates || [],
-    platform: 'dd',
-  });
+  const slotAnalysis = data.ddFinancial?.length
+    ? buildSlotAnalysis(data.ddFinancial, {
+      preStart: config.ddPreStart,
+      preEnd: config.ddPreEnd,
+      postStart: config.ddPostStart,
+      postEnd: config.ddPostEnd,
+      excludedDates: config.ddExcludedDates || [],
+      excludedStores: config.ddExcludedStores || [],
+      platform: 'dd',
+    })
+    : null;
   const slotInsights = (slotAnalysis?.salesPrePost || []).map((r) => {
     const change = (r.post || 0) - (r.pre || 0);
     const pct = r.pre ? (change / r.pre) * 100 : 0;

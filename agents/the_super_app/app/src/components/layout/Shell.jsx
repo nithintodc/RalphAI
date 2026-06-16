@@ -21,6 +21,7 @@ const SCREEN_META = {
   operations: { title: 'Operations', crumb: 'Quality metrics' },
   productMix: { title: 'Product Mix', crumb: 'Item performance' },
   register: { title: 'Register', crumb: 'Layer 1 · store × day × slot · weekday avg' },
+  wow: { title: 'WoW', crumb: 'Weekly sales by year · 52-week view' },
 };
 
 export default function Shell({ active, setActive, periodLabel, onExport, isExporting, children }) {

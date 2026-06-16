@@ -52,6 +52,7 @@ export function mergeFourWindows(windows, storeField, metricFields, storeMetaLoo
       storeId: store,
       storeName: meta?.storeName || '',
       ddStoreId: meta?.ddStoreId || '',
+      merchantStoreId: meta?.merchantStoreId || '',
     };
     for (const metric of metricFields) {
       for (const win of ['pre', 'post', 'preLY', 'postLY']) {
@@ -109,7 +110,7 @@ export function buildUePlatformData(ueFinancial, config) {
     ...config,
     dateField: 'date',
     storeField: 'storeId',
-    sumFields: ['sales', 'totalPayout', 'marketplaceFee', 'offers', 'orderErrorAdjustments'],
+    sumFields: ['sales', 'totalPayout', 'marketplaceFee', 'offers', 'deliveryOffers', 'adSpend', 'orderErrorAdjustments'],
     uniqueFields: ['orderId'],
   });
 
@@ -119,6 +120,9 @@ export function buildUePlatformData(ueFinancial, config) {
     orderId: 'orders',
     marketplaceFee: 'marketplaceFee',
     offers: 'offers',
+    deliveryOffers: 'deliveryOffers',
+    adSpend: 'adSpend',
+    orderErrorAdjustments: 'orderErrorAdjustments',
   };
 
   const renamed = {};

@@ -1,3 +1,13 @@
+import { endOfDay, startOfDay } from 'date-fns';
+import { dateToKey } from '../utils/dateUtils';
+
+function asCalendarDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function groupBy(data, keyField) {
   const map = new Map();
   for (const row of data) {
@@ -28,20 +38,29 @@ export function aggregate(data, keyField, sumFields, uniqueCountFields = []) {
 
 export function filterByDateRange(data, dateField, start, end) {
   if (!start || !end) return data;
-  return data.filter(r => {
-    const d = r[dateField];
-    return d && d >= start && d <= end;
+  const rangeStart = startOfDay(asCalendarDate(start));
+  const rangeEnd = endOfDay(asCalendarDate(end));
+  if (!rangeStart || !rangeEnd) return data;
+  return data.filter((r) => {
+    const d = asCalendarDate(r[dateField]);
+    return d && d >= rangeStart && d <= rangeEnd;
   });
 }
 
 export function filterExcludedDates(data, dateField, excludedDates) {
-  if (!excludedDates || !excludedDates.length) return data;
-  const excluded = new Set(excludedDates.map(d => d.toISOString().slice(0, 10)));
-  return data.filter(r => {
-    const d = r[dateField];
+  if (!excludedDates?.length) return data;
+  const excluded = new Set(
+    excludedDates
+      .map((d) => {
+        const parsed = asCalendarDate(d);
+        return parsed ? dateToKey(parsed) : null;
+      })
+      .filter(Boolean),
+  );
+  return data.filter((r) => {
+    const d = asCalendarDate(r[dateField]);
     if (!d) return false;
-    const key = d.toISOString().slice(0, 10);
-    return !excluded.has(key);
+    return !excluded.has(dateToKey(d));
   });
 }
 

@@ -64,6 +64,7 @@ downloads/
 
 # Local operator exports / analysis (often 100MB+ — keep out of git)
 melt-new/
+sample_data/
 
 data/TriArch/*.zip
 data/TriArch/*/

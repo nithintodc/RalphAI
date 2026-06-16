@@ -57,12 +57,12 @@ export default function DataTable({
     : (dense ? 'px-2 py-0.5' : 'px-3 py-2');
 
   const colClass = (col, isHeader, colIndex) => {
+    const isLabelCol = col.labelCol ?? (colIndex === 0 && col.align !== 'right');
     const parts = [
       isHeader ? headPad : cellPad,
       'border-b border-[var(--border)]',
-      'text-center',
+      isLabelCol && layout === 'full' ? 'text-left' : col.align === 'right' ? 'text-right' : 'text-center',
     ];
-    const isLabelCol = col.labelCol ?? (colIndex === 0 && col.align !== 'right');
 
     if (allowHorizontalScroll) {
       parts.push('w-[1%]');
@@ -76,11 +76,11 @@ export default function DataTable({
       parts.push('min-w-0 overflow-hidden');
       if (isHeader) {
         parts.push('align-middle whitespace-normal');
-        if (isLabelCol) parts.push('w-[22%]');
-        else if (col.shrink || col.align === 'right') parts.push('w-[12%]');
+        if (isLabelCol) parts.push('w-[32%]');
+        else if (col.shrink || col.align === 'right') parts.push('w-[11%]');
       } else if (col.wrap || isLabelCol) {
         parts.push('align-middle whitespace-normal break-words [overflow-wrap:anywhere]');
-        if (isLabelCol) parts.push('w-[22%]');
+        if (isLabelCol) parts.push('w-[32%]');
       } else if (col.shrink || col.align === 'right') {
         parts.push('whitespace-nowrap text-ellipsis');
       } else {
@@ -115,7 +115,9 @@ export default function DataTable({
   return (
     <div className={`${shell} ${allowHorizontalScroll ? 'data-table--scrollable' : ''}`}>
       <div
-        className={`max-w-full ${scrollX} ${allowHorizontalScroll ? '' : 'flex justify-center'} ${maxHeight ? 'overflow-y-auto' : ''}`}
+        className={`w-full max-w-full ${scrollX} ${
+          allowHorizontalScroll || layout === 'full' ? '' : 'flex justify-center'
+        } ${maxHeight ? 'overflow-y-auto' : ''}`}
         style={maxHeight ? { maxHeight } : {}}
       >
         <table className={tableClass}>

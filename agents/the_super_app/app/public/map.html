@@ -274,6 +274,12 @@
   }
   html.embed header.top{padding:11px 14px;gap:10px}
   html.embed .statchips{display:none}
+  html.capture header.top,
+  html.capture aside.sidebar,
+  html.capture .scrim{display:none!important}
+  html.capture .body{height:100%;min-height:100%}
+  html.capture .map-wrap{height:100%!important;min-height:100%!important}
+  html.capture .app{height:100vh;height:100dvh}
 </style>
 </head>
 <body>
@@ -504,8 +510,12 @@ function dotIcon(color){
 const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const API_PARAMS = new URLSearchParams(location.search);
+const CAPTURE_MODE = API_PARAMS.get('capture') === '1';
 if (API_PARAMS.get('embed') === '1' || window.self !== window.top) {
   document.documentElement.classList.add('embed');
+}
+if (CAPTURE_MODE) {
+  document.documentElement.classList.add('capture');
 }
 const API_PORT = API_PARAMS.get('apiPort') || '8765';
 const API_BASE = API_PARAMS.get('api') || `${location.protocol}//${location.hostname}:${API_PORT}`;
@@ -790,6 +800,8 @@ window.addEventListener('keydown',e=>{
 
 // ---- live data (Airtable via Ralph API or legacy export API) ----
 
+let liveDataSettled = false;
+
 function rebuild(){
   state.q=""; if(si){ si.value=""; if(sc) sc.style.display='none'; }
   FILTER_DEFS.forEach(d=>state.sel[d.key].clear());
@@ -828,6 +840,9 @@ async function loadLive(force){
   }catch(err){
     if(pill){ pill.textContent='unavailable'; pill.className='src-pill off';
       pill.title='Live fetch failed ('+err.message+')'; }
+  }finally{
+    liveDataSettled = true;
+    window.dispatchEvent(new Event('superapp-map-ready'));
   }
 }
 
@@ -844,6 +859,64 @@ window.addEventListener('resize', () => map.invalidateSize());
 const refreshBtn = document.getElementById('refreshBtn');
 if(refreshBtn) refreshBtn.addEventListener('click',()=>loadLive(true));
 loadLive(false);
+
+async function captureMapScreenshot(){
+  const target = document.querySelector('.map-wrap') || document.getElementById('map');
+  if(!target) return null;
+  await new Promise(r=>{
+    if(map && typeof map.whenReady === 'function') map.whenReady(r);
+    else r();
+  });
+  map.invalidateSize();
+  await new Promise(r=>setTimeout(r, 900));
+  await new Promise(r=>{
+    let pending = 0;
+    let done = false;
+    const finish = ()=>{ if(!done){ done=true; r(); } };
+    map.eachLayer(layer=>{
+      if(layer.on){
+        pending++;
+        layer.once('load', ()=>{ pending--; if(pending<=0) finish(); });
+      }
+    });
+    setTimeout(finish, 2200);
+    if(pending===0) finish();
+  });
+  if(typeof html2canvas !== 'function'){
+    await new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  const canvas = await html2canvas(target, {
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#C8E0D6',
+    scale: Math.min(2, window.devicePixelRatio || 1),
+    logging: false,
+  });
+  return canvas.toDataURL('image/png');
+}
+
+if(CAPTURE_MODE){
+  window.addEventListener('message', async (event)=>{
+    if(!event.data || event.data.type !== 'superapp-map-capture') return;
+    if(!liveDataSettled){
+      await new Promise(r=>window.addEventListener('superapp-map-ready', r, { once:true }));
+    }
+    await new Promise(r=>setTimeout(r, 500));
+    let dataUrl = null;
+    try{
+      dataUrl = await captureMapScreenshot();
+    }catch(err){
+      console.warn('Map capture failed', err);
+    }
+    event.source?.postMessage({ type:'superapp-map-capture-result', dataUrl }, event.origin || '*');
+  });
+}
 </script>
 </body>
 </html>

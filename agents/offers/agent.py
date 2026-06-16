@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from shared.config.settings import marketingreco_reporting_root
-from shared.strategist_campaign_sheets import load_offers_combos
+from shared.reporting_imports import import_reporting_agents_module
+from shared.strategist_campaign_sheets import (
+    load_offers_combos,
+    load_offers_combos_from_path,
+    resolve_slot_info_csv,
+)
 from shared.subprocess_env import reporting_subprocess_env
 
 logger = logging.getLogger(__name__)
@@ -32,9 +36,11 @@ def run(
     *,
     doordash_email: str,
     doordash_password: str,
+    offers_sheet_path: str | Path | None = None,
+    api_run_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """
-    Load latest Strategist Offers sheet for operator, then run browser-use campaigns.
+    Load latest Strategist Offers sheet (or optional upload), then run browser-use campaigns.
     Uses reporting_browser_use doordash_agent prompts and Slack notifications.
     """
     oid = (operator_id or "").strip()
@@ -45,28 +51,33 @@ def run(
     if not email or not password:
         raise ValueError("doordash_email and doordash_password are required")
 
-    combos, workbook, strategist_run_dir = load_offers_combos(oid)
-    run_dir = _run_dir(oid, email)
+    if offers_sheet_path:
+        combos = load_offers_combos_from_path(Path(offers_sheet_path))
+        workbook = Path(offers_sheet_path)
+        strategist_run_dir = workbook.parent
+    else:
+        combos, workbook, strategist_run_dir = load_offers_combos(oid)
+
+    slot_info_csv = resolve_slot_info_csv(workbook)
+    if api_run_dir:
+        run_dir = Path(api_run_dir)
+    else:
+        run_dir = _run_dir(oid, email)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     reporting_root = marketingreco_reporting_root()
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
-    if str(reporting_root) not in sys.path:
-        sys.path.insert(0, str(reporting_root))
-
     reporting_subprocess_env(reporting_root)
 
-    from agents.slack_log_notifier import install_slack_log_notifier
-    from agents.doordash_agent import run_offers_campaigns_from_combos
-
-    install_slack_log_notifier()
+    slack_log_notifier = import_reporting_agents_module("slack_log_notifier", reporting_root)
+    doordash_agent = import_reporting_agents_module("doordash_agent", reporting_root)
+    slack_log_notifier.install_slack_log_notifier(doordash_email=email)
+    run_offers_campaigns_from_combos = doordash_agent.run_offers_campaigns_from_combos
 
     logger.info(
-        "Offers: %d campaigns from %s (strategist run %s)",
+        "Offers: %d campaigns from %s%s",
         len(combos),
         workbook,
-        strategist_run_dir,
+        f" (strategist run {strategist_run_dir})" if strategist_run_dir else "",
     )
 
     result = asyncio.run(
@@ -75,13 +86,17 @@ def run(
             email=email,
             password=password,
             combos=combos,
+            campaigns_workbook=workbook,
+            slot_info_csv=slot_info_csv,
         )
     )
 
-    return {
+    out: dict[str, Any] = {
         **result,
         "operator_id": oid,
         "campaigns_source": str(workbook),
-        "strategist_run_dir": str(strategist_run_dir),
         "pending_campaigns": len(combos),
     }
+    if strategist_run_dir:
+        out["strategist_run_dir"] = str(strategist_run_dir)
+    return out

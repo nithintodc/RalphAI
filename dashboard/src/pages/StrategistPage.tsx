@@ -2,9 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
 import type { AccountOperator } from "../components/OperatorAccountPicker";
+import { AgentRunLogPanel } from "../components/AgentRunLogPanel";
+import { appendAgentLogLines, pollAgentRun } from "../lib/agentRunPolling";
 
 type StrategistMode = "auto" | "manual";
 type ResultTab = "slots" | "offers" | "ads";
+
+function formatSlotAction(row: Record<string, unknown>): string {
+  const action = String(row.action ?? "").trim().toLowerCase();
+  if (action === "promo+ads" || (action === "promo" && row.ad_placement === true)) {
+    return "Offer + Ads";
+  }
+  if (action === "promo") return "Offer";
+  if (action === "ads") return "Ads";
+  if (action === "none") return "None";
+  return String(row.action ?? "");
+}
 
 interface OperatorResult {
   operator_id: string;
@@ -14,6 +27,7 @@ interface OperatorResult {
   error?: string;
   combined_analysis?: string | null;
   campaigns_xlsx?: string | null;
+  slot_info_csv?: string | null;
   output_dir?: string;
 }
 
@@ -27,6 +41,10 @@ export function StrategistPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [resultTab, setResultTab] = useState<ResultTab>("slots");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +78,14 @@ export function StrategistPage() {
     | null
     | undefined;
   const adsSlotRows = useMemo(() => adsPlan?.slot_table ?? [], [adsPlan]);
+  const adsQualifyingSlots = useMemo(
+    () =>
+      adsSlotRows.filter((row) => {
+        const placement = String(row.ad_placement ?? "").trim().toLowerCase();
+        return placement === "yes" || placement === "y" || placement === "true" || placement === "1";
+      }),
+    [adsSlotRows],
+  );
   const adsUploadRows = useMemo(
     () => (result?.ads_upload_rows as unknown[]) ?? [],
     [result],
@@ -83,6 +109,10 @@ export function StrategistPage() {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setRunId(null);
+    setRunStatus(null);
+    setQueuePosition(null);
+    setLogLines([]);
 
     const formData = new FormData();
     formData.append("mode", mode);
@@ -113,7 +143,26 @@ export function StrategistPage() {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as Record<string, unknown>;
+      const started = (await res.json()) as Record<string, unknown>;
+      const id = String(started.run_id || "");
+      if (!id) throw new Error("No run_id returned from API.");
+      setRunId(id);
+      setRunStatus(String(started.status || "queued"));
+      if (typeof started.queue_position === "number") {
+        setQueuePosition(started.queue_position);
+      }
+
+      const data = await pollAgentRun("strategist", id, {
+        onStatus: (status, payload) => {
+          setRunStatus(status);
+          if (typeof payload.queue_position === "number") {
+            setQueuePosition(payload.queue_position);
+          }
+        },
+        onLogLines: (lines) => {
+          setLogLines((prev) => appendAgentLogLines(prev, lines));
+        },
+      });
       setResult(data);
       if ((data?.slot_recommendations as unknown[] | undefined)?.length) {
         setResultTab("slots");
@@ -241,24 +290,46 @@ export function StrategistPage() {
         </div>
       </form>
 
+      {runId ? (
+        <AgentRunLogPanel
+          agent="strategist"
+          runId={runId}
+          status={runStatus}
+          queuePosition={queuePosition}
+          lines={logLines}
+        />
+      ) : null}
+
       {result ? (
         <>
           <div className="brand-card rounded-[24px] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="font-display text-lg font-semibold text-ink-900">Run result</h3>
-              {isManualResult && (result?.downloads as { campaigns_excel?: string } | undefined)?.campaigns_excel ? (
-                <a
-                  href={(result.downloads as { campaigns_excel: string }).campaigns_excel}
-                  className="inline-flex items-center gap-2 rounded-xl border border-brand-200 px-3 py-2 text-sm font-medium text-ink-800 hover:bg-brand-50"
-                >
-                  Download marketing plan Excel
-                </a>
+              {isManualResult && (result?.downloads as { campaigns_excel?: string; slot_info_csv?: string } | undefined) ? (
+                <div className="flex flex-wrap gap-2">
+                  {(result.downloads as { campaigns_excel?: string }).campaigns_excel ? (
+                    <a
+                      href={(result.downloads as { campaigns_excel: string }).campaigns_excel}
+                      className="inline-flex items-center gap-2 rounded-xl border border-brand-200 px-3 py-2 text-sm font-medium text-ink-800 hover:bg-brand-50"
+                    >
+                      Download combined_analysis.xlsx
+                    </a>
+                  ) : null}
+                  {(result.downloads as { slot_info_csv?: string }).slot_info_csv ? (
+                    <a
+                      href={(result.downloads as { slot_info_csv: string }).slot_info_csv}
+                      className="inline-flex items-center gap-2 rounded-xl border border-brand-200 px-3 py-2 text-sm font-medium text-ink-800 hover:bg-brand-50"
+                    >
+                      Download slot_info.csv
+                    </a>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             {isManualResult ? (
               <p className="mt-2 text-sm text-ink-700">
                 Slot rows: {slotRecommendations.length} · Promos: {mappings.length} · Ads upload rows:{" "}
-                {adsUploadRows.length} ({adsSlotRows.length} qualifying slots)
+                {adsUploadRows.length} ({adsQualifyingSlots.length} qualifying slots)
               </p>
             ) : (
               <>
@@ -314,7 +385,9 @@ export function StrategistPage() {
                           <td className="py-2 pr-3">{String(row.daypart ?? "")}</td>
                           <td className="py-2 pr-3">{String(row.aov ?? "")}</td>
                           <td className="py-2 pr-3">{String(row.profitability_pct ?? "")}</td>
-                          <td className="py-2 pr-3">{String(row.action ?? "")}</td>
+                          <td className="py-2 pr-3">
+                            {formatSlotAction(row)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -349,30 +422,62 @@ export function StrategistPage() {
                 </div>
               ) : null}
 
-              {resultTab === "ads" && adsUploadRows.length > 0 ? (
-                <div className="brand-card rounded-[24px] p-5 overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-brand-100 text-left text-ink-600">
-                        <th className="py-2 pr-3">Store</th>
-                        <th className="py-2 pr-3">Slots</th>
-                        <th className="py-2 pr-3">Bid</th>
-                        <th className="py-2 pr-3">Budget</th>
-                        <th className="py-2 pr-3">Campaign</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(adsUploadRows as Array<Record<string, unknown>>).map((row, idx) => (
-                        <tr key={idx} className="border-t border-brand-50">
-                          <td className="py-2 pr-3">{String(row.store_id ?? "")}</td>
-                          <td className="py-2 pr-3">{String(row.slots ?? "")}</td>
-                          <td className="py-2 pr-3">{String(row.bid_strategy ?? "")}</td>
-                          <td className="py-2 pr-3">{String(row.budget ?? "")}</td>
-                          <td className="py-2 pr-3">{String(row.campaign_name ?? "")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {resultTab === "ads" && (adsQualifyingSlots.length > 0 || adsUploadRows.length > 0) ? (
+                <div className="space-y-4">
+                  {adsUploadRows.length > 0 ? (
+                    <div className="brand-card rounded-[24px] p-5 overflow-x-auto">
+                      <p className="mb-3 text-sm font-semibold text-ink-800">Per store (Ralph Ads upload)</p>
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-brand-100 text-left text-ink-600">
+                            <th className="py-2 pr-3">Store</th>
+                            <th className="py-2 pr-3">Slot tags</th>
+                            <th className="py-2 pr-3">Bid</th>
+                            <th className="py-2 pr-3">Campaign</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(adsUploadRows as Array<Record<string, unknown>>).map((row, idx) => (
+                            <tr key={idx} className="border-t border-brand-50">
+                              <td className="py-2 pr-3">{String(row.store_id ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.slots ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.bid_strategy ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.campaign_name ?? "")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                  {adsQualifyingSlots.length > 0 ? (
+                    <div className="brand-card rounded-[24px] p-5 overflow-x-auto">
+                      <p className="mb-3 text-sm font-semibold text-ink-800">
+                        Per slot (matches slot_info.csv Offer + Ads rows)
+                      </p>
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-brand-100 text-left text-ink-600">
+                            <th className="py-2 pr-3">Store</th>
+                            <th className="py-2 pr-3">Day</th>
+                            <th className="py-2 pr-3">Daypart</th>
+                            <th className="py-2 pr-3">Orders</th>
+                            <th className="py-2 pr-3">Sales</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adsQualifyingSlots.map((row, idx) => (
+                            <tr key={idx} className="border-t border-brand-50">
+                              <td className="py-2 pr-3">{String(row.store_id ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.day_of_week ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.daypart ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.orders ?? "")}</td>
+                              <td className="py-2 pr-3">{String(row.sales ?? "")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </>
@@ -385,6 +490,7 @@ export function StrategistPage() {
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Combined Analysis</th>
                     <th className="px-3 py-2">Campaigns</th>
+                    <th className="px-3 py-2">Slot info</th>
                     <th className="px-3 py-2">Reason</th>
                   </tr>
                 </thead>
@@ -405,8 +511,9 @@ export function StrategistPage() {
                           {row.status}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{row.combined_analysis ? "combined_analysis.xlsx" : "-"}</td>
-                      <td className="px-3 py-2">{row.campaigns_xlsx ? "campaigns.xlsx" : "-"}</td>
+                      <td className="px-3 py-2">{row.combined_analysis ? "combined_analysis_*.xlsx" : "-"}</td>
+                      <td className="px-3 py-2">{row.campaigns_xlsx ? "Campaign Mappings" : "-"}</td>
+                      <td className="px-3 py-2">{row.slot_info_csv ? "slot_info.csv" : "-"}</td>
                       <td className="px-3 py-2">
                         {row.error ? (
                           <span className="block max-w-md whitespace-pre-wrap break-words text-xs text-red-700">

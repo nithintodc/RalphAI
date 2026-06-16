@@ -20,10 +20,12 @@ import MarketingScreen from './screens/dashboard/MarketingScreen';
 import OperationsScreen from './screens/dashboard/OperationsScreen';
 import ProductMixScreen from './screens/dashboard/ProductMixScreen';
 import RegisterScreen from './screens/dashboard/RegisterScreen';
+import WowScreen from './screens/dashboard/WowScreen';
 import MapScreen from './screens/dashboard/MapScreen';
 import BreakdownScreen from './screens/dashboard/BreakdownScreen';
 import { formatPeriodComparisonLabel } from './lib/utils/dateUtils';
 import { exportAllReports } from './lib/export/exportWorkbook';
+import { exportWowReport } from './lib/export/wowExport';
 import { exportPartnershipReport, openReportForPdf } from './lib/export/reportDocument';
 import { notifySlackExport } from './lib/export/notifySlackExport';
 
@@ -42,6 +44,7 @@ const DASHBOARD_SCREENS = {
   operations: OperationsScreen,
   productMix: ProductMixScreen,
   register: RegisterScreen,
+  wow: WowScreen,
   map: MapScreen,
   breakdown: BreakdownScreen,
 };
@@ -84,6 +87,22 @@ export default function App() {
       const data = useDataStore.getState();
       const config = useConfigStore.getState();
       reportSnapshot.current = { data, config };
+
+      if (config.dateAnalysisMode === 'wow') {
+        const result = exportWowReport(data, config);
+        setExportModal({
+          kind: 'result',
+          filename: result.filename,
+          spreadsheetUrl: null,
+          googleSheets: { skipped: true, reason: 'WoW mode exports a dedicated Excel workbook only.' },
+          docFilename: null,
+          pdfFilename: null,
+          docUrl: null,
+          googleDoc: null,
+          canOpenPdf: false,
+        });
+        return;
+      }
 
       const result = await exportAllReports(data, config);
       if (result.googleSheets?.skipped) {

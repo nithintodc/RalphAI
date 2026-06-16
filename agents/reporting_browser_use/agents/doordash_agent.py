@@ -23,6 +23,29 @@ AGENT_CAMPAIGN_TIMEOUT = 720  # 12 min: create one campaign end-to-end (increase
 # Campaigns per browser session before restart; override via env for tuning
 MAX_CAMPAIGNS_PER_SESSION = int(os.getenv("MAX_CAMPAIGNS_PER_SESSION", "5"))
 
+# Shared between reporting Phase 2 and Ralph Offers/Ads (_run_campaign_items).
+_NAV_TO_MARKETING_TASK = (
+    "Go to this URL: https://merchant-portal.doordash.com/merchant/marketing "
+    "WAIT UNTIL the page has fully loaded. "
+    "If any modal, popup, dialog, or overlay is visible, close it by clicking 'X', 'Close', 'Cancel', or pressing Escape. "
+    "Confirm you see the Marketing page with campaign-related content. Use the done action to finish."
+)
+_MARKETING_RESET_FALLBACK_TASK = (
+    "IMPORTANT: Before navigating, check if any modal, popup, dialog, or overlay is currently visible on the page. "
+    "If so, close it by clicking 'X', 'Close', 'Cancel', or pressing Escape. "
+    "Then navigate to the DoorDash Merchant Portal dashboard. "
+    "In the LEFT SIDEBAR, click 'Marketing'. "
+    "WAIT UNTIL the Marketing page has fully loaded (you see campaign-related content, not a loading spinner). "
+    "If the page shows an error or doesn't load, try clicking 'Marketing' in the sidebar again. "
+    "Confirm you see the Marketing page. Use the done action to finish."
+)
+_PAGE_HEALTH_CHECK_TASK = (
+    "Check if the DoorDash Merchant Portal page is loaded and interactive. "
+    "Look for sidebar navigation, page content, or any visible UI elements. "
+    "If the page is blank, showing only a spinner, or unresponsive, say 'PAGE_BLANK'. "
+    "Otherwise say 'PAGE_OK'. Use the done action."
+)
+
 from agents.combined_report_agent import (
     append_campaign_mappings_to_workbook,
     copy_campaign_mappings_from_previous,
@@ -31,6 +54,7 @@ from agents.combined_report_agent import (
     update_campaign_mapping_status,
 )
 from agents.slack_agent import push_to_slack
+from shared import ralph_slack_messages as slack_msg
 
 logger = logging.getLogger(__name__)
 
@@ -898,12 +922,21 @@ def get_task_description_reports_only(
     password: str,
     start_date: str,
     end_date: str,
+    *,
+    session_prepared: bool = False,
 ) -> str:
     """Task that ends after downloading both reports (no campaign). Used so we can run analysis before campaign."""
-    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+    from shared.doordash_portal_tasks import (
+        build_portal_entry_steps,
+        build_post_login_reports_preamble,
+        resolve_doordash_credentials,
+    )
 
     resolved_email, resolved_password = resolve_doordash_credentials(email, password)
-    entry, s = build_portal_entry_steps(resolved_email, resolved_password, step_num=0)
+    if session_prepared:
+        entry, s = build_post_login_reports_preamble(step_num=0)
+    else:
+        entry, s = build_portal_entry_steps(resolved_email, resolved_password, step_num=0)
     return f"""You are automating the DoorDash Merchant Portal. Complete the following steps in order. Stop after downloading both reports — do NOT create a campaign.
 {entry}
 === STEP {s}: Generate Financial Report ===
@@ -1063,17 +1096,27 @@ def get_task_description_selected_reports(
     start_date: str,
     end_date: str,
     report_types: list[str],
+    *,
+    session_prepared: bool = False,
 ) -> str:
     """Browser-use task: login (if needed) then create + download selected report zips only."""
-    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+    from shared.doordash_portal_tasks import (
+        build_portal_entry_steps,
+        build_post_login_reports_preamble,
+        resolve_doordash_credentials,
+    )
 
     ordered = list(report_types)
     report_labels = ", ".join(_selected_report_meta(r)["label"] for r in ordered)
     resolved_email, resolved_password = resolve_doordash_credentials(email, password)
+    if session_prepared:
+        portal_entry = build_post_login_reports_preamble(step_num=0)[0]
+    else:
+        portal_entry = build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0]
     header = (
         f"You are automating the DoorDash Merchant Portal. "
         f"Download ONLY these report types as .zip files (do not unzip): {report_labels}.\n"
-        + build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0]
+        + portal_entry
     )
 
     body_parts: list[str] = []
@@ -1098,9 +1141,14 @@ def get_task_description_one_selected_report(
     report_type_id: str,
     *,
     include_portal_entry: bool = False,
+    session_prepared: bool = False,
 ) -> str:
     """Single report type: optional portal entry, then create + download one .zip."""
-    from shared.doordash_portal_tasks import build_portal_entry_steps, resolve_doordash_credentials
+    from shared.doordash_portal_tasks import (
+        build_portal_entry_steps,
+        build_post_login_reports_preamble,
+        resolve_doordash_credentials,
+    )
 
     resolved_email, resolved_password = resolve_doordash_credentials(email, password)
     meta = _selected_report_meta(report_type_id)
@@ -1109,7 +1157,10 @@ def get_task_description_one_selected_report(
         f"for date range {start_date} to {end_date}. Complete this report fully before stopping.",
     ]
     if include_portal_entry:
-        parts.append(build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0])
+        if session_prepared:
+            parts.append(build_post_login_reports_preamble(step_num=0)[0])
+        else:
+            parts.append(build_portal_entry_steps(resolved_email, resolved_password, step_num=0)[0])
     else:
         parts.append(
             "\nYou should already be on the DoorDash Reports page. "
@@ -1336,15 +1387,6 @@ async def run_selected_reports(
     browser = _get_browser(download_dir, doordash_email=email)
     found: dict[str, Optional[Path]] = {rid: None for rid in ordered}
 
-    if _use_multilogin_session():
-        try:
-            await browser.start()
-            await browser.navigate_to("https://merchant-portal.doordash.com/merchant/reports")
-            await asyncio.sleep(3)
-            logger.info("Multilogin warmup: navigated to DoorDash Reports before agent run")
-        except Exception as warm_err:
-            logger.warning("Multilogin browser warmup failed: %s", warm_err)
-
     try:
         for idx, rid in enumerate(ordered):
             logger.info(
@@ -1360,6 +1402,7 @@ async def run_selected_reports(
                 end_date=end_date,
                 report_type_id=rid,
                 include_portal_entry=(idx == 0),
+                session_prepared=False,
             )
             path = await _run_single_report_agent(
                 agent=Agent(task=task, llm=llm, browser=browser),
@@ -1441,7 +1484,11 @@ def _inspect_marketing_zip(path: Optional[Path]) -> dict[str, Any]:
 
 
 # --- IN USE: Campaign creation with subtotal + slot tags (Phase 2, per store per subtotal) ---
-def get_task_description_campaign_for_subtotal_combo(combo: dict) -> str:
+def get_task_description_campaign_for_subtotal_combo(
+    combo: dict,
+    *,
+    include_session_preamble: bool = True,
+) -> str:
     store_id = str(combo.get("store_id", "")).strip()
     store_name = str(combo.get("store_name", "")).strip()
     min_subtotal = combo.get("min_subtotal", 10)
@@ -1505,16 +1552,16 @@ def get_task_description_campaign_for_subtotal_combo(combo: dict) -> str:
 
     session_email = str(combo.get("doordash_email") or os.getenv("DOORDASH_EMAIL", "")).strip()
     session_password = str(combo.get("doordash_password") or os.getenv("DOORDASH_PASSWORD", "")).strip()
-    from shared.doordash_portal_tasks import build_campaign_session_preamble
+    preamble_block = ""
+    if include_session_preamble:
+        from shared.doordash_portal_tasks import build_campaign_session_preamble
 
-    preamble = build_campaign_session_preamble(session_email, session_password or None)
+        preamble_block = build_campaign_session_preamble(session_email, session_password or None) + "\n"
 
     return f"""
-ROLE: You are automating campaign creation on DoorDash Merchant Portal.
+ROLE: You are automating campaign creation on DoorDash Merchant Portal. You are already logged in.
 
-{preamble}
-
-RULES:
+{preamble_block}RULES:
 - Do NOT create or download reports.
 - Do NOT click "Get started" (that is for BOGO, not discount campaigns).
 - Do NOT click "Create promotion" until step 6 explicitly says to.
@@ -1573,7 +1620,7 @@ DONE: Use done action. Say: "{campaign_name}" created for store {store_id}.
 
 
 def _get_llm():
-    """Use Google Gemini API (GEMINI_API_KEY) with gemini-2.0-flash."""
+    """Use Google Gemini API (GEMINI_API_KEY) with gemini-3-flash-preview."""
     try:
         from browser_use import ChatGoogle
     except ImportError:
@@ -1584,7 +1631,7 @@ def _get_llm():
         raise ValueError(
             "GEMINI_API_KEY is not set. Add it to your .env file."
         )
-    return ChatGoogle(model="gemini-2.5-flash", api_key=api_key)
+    return ChatGoogle(model="gemini-3-flash-preview", api_key=api_key)
 
 
 def _get_browser(
@@ -1599,6 +1646,54 @@ def _get_browser(
     return create_browser_use_browser(
         download_dir, keep_alive=keep_alive, doordash_email=doordash_email
     )
+
+
+async def _prepare_portal_session(
+    browser,
+    email: str,
+    password: str,
+    *,
+    operator_name: str | None = None,
+) -> None:
+    """Uniform logout → credential login → Reports (native) or MLX warmup."""
+    from shared.doordash_browser_use_login import prepare_doordash_browser_session
+
+    ok = await prepare_doordash_browser_session(
+        browser,
+        email,
+        password,
+        operator_name=operator_name,
+    )
+    if not ok:
+        raise RuntimeError(f"DoorDash portal login failed for {email}")
+
+
+async def _relogin_portal_session(
+    browser,
+    email: str,
+    password: str,
+    *,
+    attempts: int = 2,
+) -> bool:
+    """Re-login via browser-use Agent after browser restart."""
+    from browser_use import Agent
+
+    login_task = (
+        f"Go to https://merchant-portal.doordash.com/merchant/login "
+        f"and log in with email: {email} and password: {password}. "
+        "Wait for the dashboard to load, then use the done action."
+    )
+    for relogin_attempt in range(1, attempts + 1):
+        try:
+            agent = Agent(task=login_task, llm=_get_llm(), browser=browser)
+            await asyncio.wait_for(agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
+            logger.info("--- Re-login successful (attempt %d) ---", relogin_attempt)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning("--- Re-login attempt %d timed out ---", relogin_attempt)
+        except Exception as e:
+            logger.warning("--- Re-login attempt %d failed: %s ---", relogin_attempt, e)
+    return False
 
 
 def _peek_zip_type(path: Path) -> str:
@@ -1639,84 +1734,15 @@ def _discover_downloads(
     baseline_files: set[Path] | None = None,
     min_mtime: float | None = None,
 ) -> Tuple[Optional[Path], Optional[Path], dict[str, Any]]:
-    """
-    Find the most recent financial and marketing report files in download_dir.
-    Strategy:
-      1. Filename keyword match ("financial", "marketing").
-      2. If keywords fail, peek inside ZIPs to classify by content.
-      3. Last resort: treat the most-recent file as financial.
-    Filters:
-      - baseline_files: ignore files that existed before this run.
-      - min_mtime: ignore files older than this timestamp.
-    Returns (marketing_path, financial_path, diagnostics).
-    """
-    download_dir = Path(download_dir)
-    if not download_dir.is_dir():
-        return (None, None, {"considered_files": [], "filtered_out": []})
+    """Find financial + marketing zips in download_dir and system Downloads."""
+    from shared.doordash_report_discovery import discover_doordash_reports
 
-    all_files: list[tuple[float, Path]] = []
-    filtered_out: list[str] = []
-    existing = baseline_files or set()
-    for f in _list_report_files(download_dir):
-        st = f.stat()
-        if f in existing:
-            filtered_out.append(f"{f.name}:baseline")
-            continue
-        if min_mtime is not None and st.st_mtime < min_mtime:
-            filtered_out.append(f"{f.name}:old")
-            continue
-        all_files.append((st.st_mtime, f))
-
-    financial_path: Optional[Path] = None
-    marketing_path: Optional[Path] = None
-
-    # Pass 1: filename keywords (fast)
-    unmatched = []
-    for _mtime, path in all_files:
-        name_lower = path.name.lower()
-        if "financial" in name_lower or "financials" in name_lower:
-            if financial_path is None:
-                financial_path = path
-        elif "marketing" in name_lower:
-            if marketing_path is None:
-                marketing_path = path
-        else:
-            unmatched.append(path)
-        if financial_path and marketing_path:
-            break
-
-    # Pass 2: ZIP content inspection for files not matched by name
-    if (financial_path is None or marketing_path is None) and unmatched:
-        for path in unmatched:
-            if path.suffix.lower() == ".zip":
-                kind = _peek_zip_type(path)
-                if kind == "financial" and financial_path is None:
-                    financial_path = path
-                    logger.info("DoorDash: classified %s as financial by content", path.name)
-                elif kind == "marketing" and marketing_path is None:
-                    marketing_path = path
-                    logger.info("DoorDash: classified %s as marketing by content", path.name)
-            if financial_path and marketing_path:
-                break
-
-    # Pass 3: last resort — treat most-recent unmatched file as financial
-    # but never reuse a file already assigned to marketing_path
-    if financial_path is None and all_files:
-        for _mtime, candidate in all_files:
-            if candidate != marketing_path:
-                financial_path = candidate
-                logger.warning("DoorDash: no filename/content match; treating %s as financial", financial_path.name)
-                break
-        if financial_path is None:
-            logger.warning("DoorDash: only one file found and it is already assigned as marketing; no financial report available")
-
-    diagnostics = {
-        "considered_files": [p.name for _m, p in all_files],
-        "filtered_out": filtered_out,
-        "marketing": marketing_path.name if marketing_path else None,
-        "financial": financial_path.name if financial_path else None,
-    }
-    return (marketing_path, financial_path, diagnostics)
+    return discover_doordash_reports(
+        download_dir,
+        baseline_files=baseline_files,
+        min_mtime=min_mtime,
+        relocate_external=True,
+    )
 
 
 async def _kill_browser(browser) -> None:
@@ -1746,6 +1772,7 @@ async def run_reports_only(
         password=password,
         start_date=start_date,
         end_date=end_date,
+        session_prepared=False,
     )
     logger.info("DoorDash (browser-use): Starting reports-only run (login, reports, download)")
     baseline_files = set(_list_report_files(download_dir))
@@ -1935,7 +1962,7 @@ async def run_reports_then_analysis_then_campaign(
     download_dir.mkdir(parents=True, exist_ok=True)
 
     llm = _get_llm()
-    browser = _get_browser(download_dir, keep_alive=True)
+    browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
 
     # --- CAMPAIGNS-ONLY MODE: skip reports & analysis, just login and run campaigns ---
     if campaigns_only_combined_path and Path(campaigns_only_combined_path).is_file():
@@ -1946,25 +1973,11 @@ async def run_reports_then_analysis_then_campaign(
         logger.info("  Combined analysis: %s", combined_path)
         logger.info("  Download dir: %s", download_dir)
         logger.info("=" * 70)
-        push_to_slack(
-            f"*Campaigns-only mode* — skipping reports & analysis\n"
-            f"Email: {email}\n"
-            f"Using: {combined_path.name}"
-        )
+        push_to_slack(f"▶️ *Campaigns only* — using {combined_path.name}")
 
-        from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
+        from shared.doordash_portal_tasks import resolve_doordash_credentials
 
         resolved_email, resolved_password = resolve_doordash_credentials(email, password)
-        login_task = build_compact_login_task(resolved_email, resolved_password)
-        try:
-            login_agent = Agent(task=login_task, llm=llm, browser=browser)
-            await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
-            logger.info("Login successful")
-            push_to_slack(f"Login successful for {email}")
-        except Exception as e:
-            await _kill_browser(browser)
-            push_to_slack(f"*FAILED* — Login failed for {email}: {e}")
-            raise e
 
         # Read combos from Campaign Mappings, skip Successful ones
         all_combos = read_campaign_combos_from_mappings(combined_path)
@@ -1980,7 +1993,7 @@ async def run_reports_then_analysis_then_campaign(
             "DoorDash: %d campaign mappings; %d already Successful, %d remaining.",
             before, skipped, len(combos),
         )
-        push_to_slack(f"Resuming: {skipped} Successful (skipped), {len(combos)} to run")
+        push_to_slack(slack_msg.campaigns_resume(skipped=skipped, remaining=len(combos)))
 
     else:
         # --- FULL MODE: Login → Reports → Analysis → Campaigns ---
@@ -1989,6 +2002,7 @@ async def run_reports_then_analysis_then_campaign(
             password=password,
             start_date=start_date,
             end_date=end_date,
+            session_prepared=False,
         )
 
         agent = Agent(task=reports_task, llm=llm, browser=browser)
@@ -2000,23 +2014,25 @@ async def run_reports_then_analysis_then_campaign(
         logger.info("  Download dir: %s", download_dir)
         logger.info("=" * 70)
         push_to_slack(
-            f"*Phase 1 started* — Login + Reports\n"
-            f"Email: {email}\n"
-            f"Date range: {start_date} to {end_date}"
+            slack_msg.reports_phase_started(date_range=f"{start_date} → {end_date}")
         )
         phase1_start = time.time()
         try:
             await asyncio.wait_for(agent.run(), timeout=AGENT_REPORTS_TIMEOUT)
             phase1_elapsed = time.time() - phase1_start
             logger.info("Phase 1: Login + reports completed in %.0fs", phase1_elapsed)
-            push_to_slack(f"Login successful for {email} ({phase1_elapsed:.0f}s)")
+            push_to_slack(slack_msg.portal_logged_in())
         except asyncio.TimeoutError:
             await _kill_browser(browser)
-            push_to_slack(f"*FAILED* — Phase 1 timed out after {AGENT_REPORTS_TIMEOUT}s for {email}")
+            push_to_slack(
+                slack_msg.portal_login_failed(
+                    detail=f"Reports timed out after {AGENT_REPORTS_TIMEOUT}s"
+                )
+            )
             raise RuntimeError(f"Phase 1 (reports) timed out after {AGENT_REPORTS_TIMEOUT}s")
         except Exception as e:
             await _kill_browser(browser)
-            push_to_slack(f"*FAILED* — Login failed for {email}: {e}")
+            push_to_slack(slack_msg.portal_login_failed(detail=str(e)))
             raise e
 
         marketing_path, financial_path = _discover_downloads(download_dir)
@@ -2029,7 +2045,7 @@ async def run_reports_then_analysis_then_campaign(
             if not marketing_path:
                 missing.append("Marketing")
             logger.warning("DoorDash (browser-use): Missing report(s) after Phase 1: %s. Retrying download.", ", ".join(missing))
-            push_to_slack(f"Missing report(s): {', '.join(missing)}. Retrying download...")
+            push_to_slack(slack_msg.report_missing_retry(names=missing))
 
             retry_task = _get_retry_download_task(missing)
             retry_agent = Agent(task=retry_task, llm=llm, browser=browser)
@@ -2042,18 +2058,18 @@ async def run_reports_then_analysis_then_campaign(
 
         if financial_path:
             logger.info("DoorDash (browser-use): Financial report at %s", financial_path)
-            push_to_slack("Financials Report pulled")
+            push_to_slack("📥 Financial report ready")
         else:
-            push_to_slack("Financials Report failed: file not found after retry")
+            push_to_slack("❌ Financial report missing")
 
         if marketing_path:
             logger.info("DoorDash (browser-use): Marketing report at %s", marketing_path)
-            push_to_slack("Marketing report pulled")
+            push_to_slack("📥 Marketing report ready")
         else:
-            push_to_slack("Marketing report failed: file not found after retry")
+            push_to_slack("❌ Marketing report missing")
 
         if financial_path and marketing_path:
-            push_to_slack("Reports downloaded")
+            push_to_slack(slack_msg.reports_ready())
 
         # --- Find previous combined analysis from sibling run folders ---
         _all_combined: list[Path] = []
@@ -2073,7 +2089,7 @@ async def run_reports_then_analysis_then_campaign(
         logger.info("=" * 70)
         logger.info("ANALYSIS PHASE: Financial + Marketing analysis, combined report, Google Sheets")
         logger.info("=" * 70)
-        push_to_slack("*Analysis phase started* — Processing downloaded reports...")
+        push_to_slack(slack_msg.analysis_started())
         analysis_start = time.time()
         combined_path = await analysis_callback(marketing_path, financial_path)
         analysis_elapsed = time.time() - analysis_start
@@ -2081,9 +2097,9 @@ async def run_reports_then_analysis_then_campaign(
 
         if not combined_path or not Path(combined_path).is_file():
             logger.warning("No combined_analysis file returned — campaigns will have no slot data")
-            push_to_slack("*Warning:* Combined analysis not created — check financial/marketing report paths")
+            push_to_slack(slack_msg.analysis_missing())
         else:
-            push_to_slack(f"Combined analysis created ({analysis_elapsed:.0f}s) — {combined_path}")
+            push_to_slack(slack_msg.analysis_ready(seconds=analysis_elapsed))
 
         # --- Copy Campaign Mappings from previous run if available, then run non-Successful ones ---
         combos = []
@@ -2104,7 +2120,9 @@ async def run_reports_then_analysis_then_campaign(
                         before, skipped, len(combos),
                     )
                     if skipped:
-                        push_to_slack(f"Resuming: {skipped} campaigns already Successful, {len(combos)} remaining")
+                        push_to_slack(
+                            slack_msg.campaigns_resume(skipped=skipped, remaining=len(combos))
+                        )
 
         # Fallback: build combos from Day-Slot sheets if no previous Campaign Mappings available
         if not copied_from_previous:
@@ -2133,21 +2151,8 @@ async def run_reports_then_analysis_then_campaign(
                     })
                 append_campaign_mappings_to_workbook(Path(combined_path), mappings)
 
-    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
-
-    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
-    relogin_task = build_compact_login_task(resolved_email, resolved_password)
-
-    # Navigation reset run before each campaign to dismiss any leftover UI and land on Marketing page
-    reset_task = (
-        "IMPORTANT: Before navigating, check if any modal, popup, dialog, or overlay is currently visible on the page. "
-        "If so, close it by clicking 'X', 'Close', 'Cancel', or pressing Escape. "
-        "Then navigate to the DoorDash Merchant Portal dashboard. "
-        "In the LEFT SIDEBAR, click 'Marketing'. "
-        "WAIT UNTIL the Marketing page has fully loaded (you see campaign-related content, not a loading spinner). "
-        "If the page shows an error or doesn't load, try clicking 'Marketing' in the sidebar again. "
-        "Confirm you see the Marketing page. Use the done action to finish."
-    )
+    reset_task = _MARKETING_RESET_FALLBACK_TASK
+    nav_to_marketing_task = _NAV_TO_MARKETING_TASK
 
     if combos:
         if ensure_campaigns_executed_csv:
@@ -2158,11 +2163,7 @@ async def run_reports_then_analysis_then_campaign(
         logger.info("PHASE 2: CAMPAIGN CREATION — %s campaigns to create", total)
         logger.info("Source: %s | Browser restart every %s campaigns", "slots.csv" if use_slots_csv else "combined_analysis", MAX_CAMPAIGNS_PER_SESSION)
         logger.info("=" * 70)
-        push_to_slack(
-            f"*Phase 2 started* — {total} campaigns to create\n"
-            f"Source: {'slots.csv' if use_slots_csv else 'combined_analysis'} | "
-            f"Timeout: {AGENT_CAMPAIGN_TIMEOUT}s/campaign | Browser restart every {MAX_CAMPAIGNS_PER_SESSION}"
-        )
+        push_to_slack(slack_msg.campaigns_phase_started(product="Offers", count=total))
 
         # Tracking stats
         phase2_start = time.time()
@@ -2176,41 +2177,24 @@ async def run_reports_then_analysis_then_campaign(
             if i > 1 and (i - 1) % MAX_CAMPAIGNS_PER_SESSION == 0:
                 logger.info("--- Browser restart after %d campaigns (session limit: %d) ---", i - 1, MAX_CAMPAIGNS_PER_SESSION)
                 await _kill_browser(browser)
-                browser = _get_browser(download_dir, keep_alive=True)
-                relogin_ok = False
-                for relogin_attempt in range(1, 3):
-                    try:
-                        login_agent = Agent(task=relogin_task, llm=llm, browser=browser)
-                        await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
-                        logger.info("--- Re-login successful (attempt %d) ---", relogin_attempt)
-                        relogin_ok = True
-                        break
-                    except asyncio.TimeoutError:
-                        logger.warning("--- Re-login attempt %d timed out ---", relogin_attempt)
-                        await _kill_browser(browser)
-                        browser = _get_browser(download_dir, keep_alive=True)
-                    except Exception as e:
-                        logger.warning("--- Re-login attempt %d failed: %s ---", relogin_attempt, e)
-                        await _kill_browser(browser)
-                        browser = _get_browser(download_dir, keep_alive=True)
+                browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
+                relogin_ok = await _relogin_portal_session(browser, email, password)
                 if not relogin_ok:
                     elapsed = time.time() - phase2_start
                     push_to_slack(
-                        f"*ABORTED* — Re-login failed at campaign {i}/{total}\n"
-                        f"Completed: {stats['successful']} ok, {stats['failed']} failed, {stats['skipped']} skipped\n"
-                        f"Time elapsed: {elapsed/60:.0f} min"
+                        slack_msg.campaigns_aborted(
+                            index=i,
+                            total=total,
+                            ok=stats["successful"],
+                            failed=stats["failed"],
+                            skipped=stats["skipped"],
+                        )
                     )
                     logger.error("Re-login failed after 2 attempts; stopping campaign loop")
                     await _kill_browser(browser)
                     return
 
             # --- Navigation reset ---
-            nav_to_marketing_task = (
-                "Go to this URL: https://merchant-portal.doordash.com/merchant/marketing "
-                "WAIT UNTIL the page has fully loaded. "
-                "If any modal, popup, dialog, or overlay is visible, close it by clicking 'X', 'Close', 'Cancel', or pressing Escape. "
-                "Confirm you see the Marketing page with campaign-related content. Use the done action to finish."
-            )
             try:
                 reset_agent = Agent(task=nav_to_marketing_task, llm=llm, browser=browser)
                 await asyncio.wait_for(reset_agent.run(), timeout=AGENT_RESET_TIMEOUT)
@@ -2228,10 +2212,7 @@ async def run_reports_then_analysis_then_campaign(
             if i > 1 and (i - 1) % MAX_CAMPAIGNS_PER_SESSION != 0 and (i - 1) % 5 == 0:
                 try:
                     health_agent = Agent(
-                        task="Check if the DoorDash Merchant Portal page is loaded and interactive. "
-                             "Look for sidebar navigation, page content, or any visible UI elements. "
-                             "If the page is blank, showing only a spinner, or unresponsive, say 'PAGE_BLANK'. "
-                             "Otherwise say 'PAGE_OK'. Use the done action.",
+                        task=_PAGE_HEALTH_CHECK_TASK,
                         llm=llm, browser=browser,
                     )
                     health_history = await asyncio.wait_for(health_agent.run(), timeout=30)
@@ -2242,10 +2223,9 @@ async def run_reports_then_analysis_then_campaign(
                     if "PAGE_BLANK" in health_result.upper():
                         logger.warning("[%d/%d] Health check: page blank — restarting browser", i, total)
                         await _kill_browser(browser)
-                        browser = _get_browser(download_dir, keep_alive=True)
-                        login_agent = Agent(task=relogin_task, llm=llm, browser=browser)
-                        await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
-                        push_to_slack(f"Browser auto-restarted (blank page detected) before campaign {i}/{total}")
+                        browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
+                        await _relogin_portal_session(browser, email, password)
+                        push_to_slack(slack_msg.browser_restarted(index=i, total=total))
                         reset_agent = Agent(task=nav_to_marketing_task, llm=llm, browser=browser)
                         await asyncio.wait_for(reset_agent.run(), timeout=AGENT_RESET_TIMEOUT)
                 except Exception as health_err:
@@ -2269,7 +2249,9 @@ async def run_reports_then_analysis_then_campaign(
             )
 
             # --- Run campaign agent ---
-            campaign_task = get_task_description_campaign_for_subtotal_combo(combo)
+            campaign_task = get_task_description_campaign_for_subtotal_combo(
+                combo, include_session_preamble=False
+            )
             status = "Failed"
             try:
                 campaign_tools = _build_campaign_tools()
@@ -2328,23 +2310,41 @@ async def run_reports_then_analysis_then_campaign(
 
             # --- Slack: per-campaign status + periodic progress ---
             if status == "Successful":
-                push_to_slack(f"[{i}/{total}] {campaign_name} — done ({campaign_elapsed:.0f}s)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="done"
+                    )
+                )
             elif status == "Skipped (duplicate)":
-                push_to_slack(f"[{i}/{total}] {campaign_name} — skipped (duplicate already live)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="skipped"
+                    )
+                )
             elif "timed_out" in str(stats.get("_last_reason", "")) or campaign_elapsed >= AGENT_CAMPAIGN_TIMEOUT - 5:
-                push_to_slack(f"[{i}/{total}] {campaign_name} — timed out ({AGENT_CAMPAIGN_TIMEOUT}s limit)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="timed out"
+                    )
+                )
             else:
-                push_to_slack(f"[{i}/{total}] {campaign_name} — failed ({campaign_elapsed:.0f}s)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="failed"
+                    )
+                )
 
             # Slack progress summary every 10 campaigns
             if i % 10 == 0 or i == total:
-                elapsed_total = time.time() - phase2_start
-                remaining = total - i
-                eta_total = (elapsed_total / i) * remaining if i > 0 else 0
                 push_to_slack(
-                    f"*Progress: {i}/{total} ({pct:.0f}%)*\n"
-                    f"Results: {stats['successful']} ok | {stats['failed']} failed | {stats['skipped']} skipped | {stats['timed_out']} timed out\n"
-                    f"Avg: {sum(campaign_times)/len(campaign_times):.0f}s/campaign | Elapsed: {elapsed_total/60:.0f}m | ETA: {eta_total/60:.0f}m remaining"
+                    slack_msg.campaigns_progress(
+                        product="Offers",
+                        index=i,
+                        total=total,
+                        ok=stats["successful"],
+                        failed=stats["failed"],
+                        skipped=stats["skipped"],
+                    )
                 )
 
             # --- Write status to tracking ---
@@ -2380,10 +2380,13 @@ async def run_reports_then_analysis_then_campaign(
         logger.info("=" * 70)
 
         push_to_slack(
-            f"*Phase 2 complete*\n"
-            f"Campaigns: {total} total | {stats['successful']} ok | {stats['failed']} failed | {stats['skipped']} skipped\n"
-            f"Success rate: {success_rate:.0f}% | Timeouts: {stats['timed_out']}\n"
-            f"Time: {total_elapsed/60:.0f} min ({total_elapsed/3600:.1f} hrs) | Avg: {avg_campaign:.0f}s/campaign"
+            slack_msg.campaigns_complete(
+                product="Offers",
+                ok=stats["successful"],
+                failed=stats["failed"],
+                skipped=stats["skipped"],
+                minutes=total_elapsed / 60,
+            )
         )
 
     else:
@@ -2395,7 +2398,11 @@ async def run_reports_then_analysis_then_campaign(
     await _kill_browser(browser)
 
 
-def get_task_description_ads_campaign(row: dict) -> str:
+def get_task_description_ads_campaign(
+    row: dict,
+    *,
+    include_session_preamble: bool = True,
+) -> str:
     """Sponsored listing campaign task (Advertise to all customers / Existing customers)."""
     store_id = str(row.get("store_id", "")).strip()
     store_name = str(row.get("store_name", "")).strip()
@@ -2462,9 +2469,11 @@ def get_task_description_ads_campaign(row: dict) -> str:
 
     session_email = str(row.get("doordash_email") or os.getenv("DOORDASH_EMAIL", "")).strip()
     session_password = str(row.get("doordash_password") or os.getenv("DOORDASH_PASSWORD", "")).strip()
-    from shared.doordash_portal_tasks import build_campaign_session_preamble
+    preamble_block = ""
+    if include_session_preamble:
+        from shared.doordash_portal_tasks import build_campaign_session_preamble
 
-    preamble = build_campaign_session_preamble(session_email, session_password or None)
+        preamble_block = build_campaign_session_preamble(session_email, session_password or None) + "\n"
 
     budget_step = (
         f"- Click Edit next to budget. Set weekly budget to ${budget:.2f}. Click Save."
@@ -2473,11 +2482,9 @@ def get_task_description_ads_campaign(row: dict) -> str:
     )
 
     return f"""
-ROLE: You are automating sponsored listing campaign creation on DoorDash Merchant Portal.
+ROLE: You are automating sponsored listing campaign creation on DoorDash Merchant Portal. You are already logged in.
 
-{preamble}
-
-RULES:
+{preamble_block}RULES:
 - Do NOT create or download reports.
 - Use "Advertise to all customers" (sponsored listing), NOT discount promotion cards.
 
@@ -2527,15 +2534,18 @@ DONE: Use done action. Say: "{campaign_name}" created for store {store_id}.
 
 
 async def _login_for_campaigns(browser, llm, email: str, password: str) -> None:
+    """Browser-use login before campaign tasks."""
     from browser_use import Agent
-    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
 
-    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
-    login_task = build_compact_login_task(resolved_email, resolved_password)
-    login_agent = Agent(task=login_task, llm=llm, browser=browser)
-    await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
+    login_task = (
+        f"Go to https://merchant-portal.doordash.com/merchant/login "
+        f"and log in with email: {email} and password: {password}. "
+        "Wait for the dashboard to load, then use the done action."
+    )
+    agent = Agent(task=login_task, llm=llm, browser=browser)
+    await asyncio.wait_for(agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
     logger.info("Login successful for campaign-only run")
-    push_to_slack(f"Login successful for {email}")
+    push_to_slack(slack_msg.portal_logged_in())
 
 
 async def _run_campaign_items(
@@ -2547,10 +2557,12 @@ async def _run_campaign_items(
     task_builder: Callable[[dict], str],
     label: str,
     use_offer_tools: bool = True,
+    campaigns_workbook: Path | str | None = None,
+    slot_info_csv: Path | str | None = None,
+    campaign_kind: str = "offers",
 ) -> dict[str, Any]:
     """Login once, then create campaigns from pre-built row/combo dicts."""
     from browser_use import Agent
-    from shared.doordash_portal_tasks import build_compact_login_task, resolve_doordash_credentials
 
     if not items:
         return {"status": "success", "total": 0, "successful": 0, "failed": 0, "skipped": 0}
@@ -2558,22 +2570,13 @@ async def _run_campaign_items(
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
     llm = _get_llm()
-    browser = _get_browser(download_dir, keep_alive=True)
+    browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
 
-    resolved_email, resolved_password = resolve_doordash_credentials(email, password)
-    relogin_task = build_compact_login_task(resolved_email, resolved_password)
-    reset_task = (
-        "IMPORTANT: Before navigating, close any modal/popup (X, Close, Cancel, or Escape). "
-        "Navigate to DoorDash Merchant Portal, click 'Marketing' in the left sidebar, "
-        "WAIT until Marketing page loads. Use done."
-    )
-    nav_to_marketing_task = (
-        "Go to https://merchant-portal.doordash.com/merchant/marketing "
-        "WAIT until loaded. Close any modal. Use done when Marketing page is visible."
-    )
+    reset_task = _MARKETING_RESET_FALLBACK_TASK
+    nav_to_marketing_task = _NAV_TO_MARKETING_TASK
 
     try:
-        push_to_slack(f"*Ralph {label}* — starting {len(items)} campaign(s) for {email}")
+        push_to_slack(slack_msg.campaigns_starting(product=label, count=len(items)))
         await _login_for_campaigns(browser, llm, email, password)
 
         total = len(items)
@@ -2583,45 +2586,91 @@ async def _run_campaign_items(
 
         logger.info("=" * 70)
         logger.info("CAMPAIGN CREATION — %s %s items", label, total)
+        logger.info("  Browser restart every %s campaigns", MAX_CAMPAIGNS_PER_SESSION)
         logger.info("=" * 70)
-        push_to_slack(
-            f"*Phase 2 started* — {total} {label.lower()} campaign(s) | "
-            f"Timeout: {AGENT_CAMPAIGN_TIMEOUT}s/campaign"
-        )
+        push_to_slack(slack_msg.campaigns_phase_started(product=label, count=total))
 
         for i, item in enumerate(items, 1):
             campaign_start = time.time()
 
             if i > 1 and (i - 1) % MAX_CAMPAIGNS_PER_SESSION == 0:
-                logger.info("--- Browser restart after %d campaigns ---", i - 1)
+                logger.info(
+                    "--- Browser restart after %d campaigns (session limit: %d) ---",
+                    i - 1,
+                    MAX_CAMPAIGNS_PER_SESSION,
+                )
                 await _kill_browser(browser)
-                browser = _get_browser(download_dir, keep_alive=True)
-                relogin_ok = False
-                for relogin_attempt in range(1, 3):
-                    try:
-                        login_agent = Agent(task=relogin_task, llm=llm, browser=browser)
-                        await asyncio.wait_for(login_agent.run(), timeout=AGENT_LOGIN_TIMEOUT)
-                        relogin_ok = True
-                        break
-                    except Exception as e:
-                        logger.warning("Re-login attempt %d failed: %s", relogin_attempt, e)
-                        await _kill_browser(browser)
-                        browser = _get_browser(download_dir, keep_alive=True)
+                browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
+                relogin_ok = await _relogin_portal_session(browser, email, password)
                 if not relogin_ok:
-                    push_to_slack(f"*ABORTED* — Re-login failed at campaign {i}/{total}")
+                    push_to_slack(
+                        slack_msg.campaigns_aborted(
+                            index=i,
+                            total=total,
+                            ok=stats["successful"],
+                            failed=stats["failed"],
+                            skipped=stats["skipped"],
+                        )
+                    )
+                    logger.error("Re-login failed after 2 attempts; stopping campaign loop")
                     break
 
             try:
                 reset_agent = Agent(task=nav_to_marketing_task, llm=llm, browser=browser)
                 await asyncio.wait_for(reset_agent.run(), timeout=AGENT_RESET_TIMEOUT)
-            except Exception:
+            except asyncio.TimeoutError:
+                logger.warning("[%d/%d] Nav reset timed out; trying sidebar fallback", i, total)
                 try:
                     fallback_agent = Agent(task=reset_task, llm=llm, browser=browser)
                     await asyncio.wait_for(fallback_agent.run(), timeout=AGENT_RESET_TIMEOUT)
-                except Exception as e:
-                    logger.warning("[%d/%d] Nav reset failed: %s", i, total, e)
+                except Exception:
+                    logger.warning("[%d/%d] Sidebar fallback also failed", i, total)
+            except Exception as e:
+                logger.warning("[%d/%d] Nav reset failed: %s; continuing", i, total, e)
+
+            if i > 1 and (i - 1) % MAX_CAMPAIGNS_PER_SESSION != 0 and (i - 1) % 5 == 0:
+                try:
+                    health_agent = Agent(
+                        task=_PAGE_HEALTH_CHECK_TASK,
+                        llm=llm,
+                        browser=browser,
+                    )
+                    health_history = await asyncio.wait_for(health_agent.run(), timeout=30)
+                    health_result = ""
+                    if health_history and hasattr(health_history, "final_result"):
+                        val = health_history.final_result
+                        health_result = str(val() if callable(val) else val) if val is not None else ""
+                    if "PAGE_BLANK" in health_result.upper():
+                        logger.warning("[%d/%d] Health check: page blank — restarting browser", i, total)
+                        await _kill_browser(browser)
+                        browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
+                        await _relogin_portal_session(browser, email, password)
+                        push_to_slack(slack_msg.browser_restarted(index=i, total=total))
+                        reset_agent = Agent(task=nav_to_marketing_task, llm=llm, browser=browser)
+                        await asyncio.wait_for(reset_agent.run(), timeout=AGENT_RESET_TIMEOUT)
+                except Exception as health_err:
+                    logger.debug("Health check error (non-fatal): %s", health_err)
 
             campaign_name = str(item.get("campaign_name", ""))
+            store_id = str(item.get("store_id", ""))
+            min_subtotal = str(item.get("min_subtotal", ""))
+            slot_count = len(item.get("slot_tags") or [])
+            pct = (i / total) * 100
+            avg_time = sum(campaign_times) / len(campaign_times) if campaign_times else 0
+            eta_sec = avg_time * (total - i) if campaign_times else 0
+            eta_str = f"{eta_sec/60:.0f}m" if eta_sec > 0 else "calculating..."
+            logger.info(
+                "[%d/%d] (%.0f%%) %s — store %s, $%s, %d slots | ETA: %s",
+                i,
+                total,
+                pct,
+                campaign_name,
+                store_id,
+                min_subtotal,
+                slot_count,
+                eta_str,
+            )
+
             campaign_task = task_builder(item)
             status = "Failed"
             try:
@@ -2651,6 +2700,14 @@ async def _run_campaign_items(
                 if is_duplicate:
                     status = "Skipped (duplicate)"
                     stats["skipped"] += 1
+                    slot_tags = item.get("slot_tags") or []
+                    logger.warning(
+                        "[%d/%d] %s duplicate on portal — intended slot_tags=%s",
+                        i,
+                        total,
+                        campaign_name,
+                        slot_tags,
+                    )
                 elif completed_ok:
                     status = "Successful"
                     stats["successful"] += 1
@@ -2671,25 +2728,68 @@ async def _run_campaign_items(
             item["status"] = status
             logger.info("[%d/%d] %s %s (%.0fs)", i, total, status, campaign_name, campaign_elapsed)
 
+            if campaigns_workbook:
+                try:
+                    from shared.strategist_campaign_sheets import write_strategist_campaign_statuses
+
+                    write_strategist_campaign_statuses(
+                        campaigns_workbook,
+                        slot_info_csv,
+                        item,
+                        status,
+                        kind="ads" if campaign_kind == "ads" else "offers",
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[%d/%d] Strategist status writeback failed for %s: %s",
+                        i,
+                        total,
+                        campaign_name,
+                        exc,
+                    )
+
             if status == "Successful":
-                push_to_slack(f"[{i}/{total}] {campaign_name} — done ({campaign_elapsed:.0f}s)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="done"
+                    )
+                )
             elif status == "Skipped (duplicate)":
-                push_to_slack(f"[{i}/{total}] {campaign_name} — skipped (duplicate)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="skipped"
+                    )
+                )
             else:
-                push_to_slack(f"[{i}/{total}] {campaign_name} — failed ({campaign_elapsed:.0f}s)")
+                push_to_slack(
+                    slack_msg.campaign_item_result(
+                        index=i, total=total, name=campaign_name, outcome="failed"
+                    )
+                )
 
             if i % 10 == 0 or i == total:
                 push_to_slack(
-                    f"*Progress: {i}/{total}* — "
-                    f"{stats['successful']} ok | {stats['failed']} failed | {stats['skipped']} skipped"
+                    slack_msg.campaigns_progress(
+                        product=label,
+                        index=i,
+                        total=total,
+                        ok=stats["successful"],
+                        failed=stats["failed"],
+                        skipped=stats["skipped"],
+                    )
                 )
 
             await asyncio.sleep(1)
 
         total_elapsed = time.time() - phase_start
         push_to_slack(
-            f"*{label} complete* — {stats['successful']} ok | {stats['failed']} failed | "
-            f"{stats['skipped']} skipped | {total_elapsed/60:.0f} min"
+            slack_msg.campaigns_complete(
+                product=label,
+                ok=stats["successful"],
+                failed=stats["failed"],
+                skipped=stats["skipped"],
+                minutes=total_elapsed / 60,
+            )
         )
         return {
             "status": "success",
@@ -2711,6 +2811,8 @@ async def run_offers_campaigns_from_combos(
     email: str,
     password: str,
     combos: list[dict],
+    campaigns_workbook: Path | str | None = None,
+    slot_info_csv: Path | str | None = None,
 ) -> dict[str, Any]:
     """Create discount/promo campaigns from Strategist Offers rows (combo dicts)."""
     enriched = []
@@ -2724,9 +2826,14 @@ async def run_offers_campaigns_from_combos(
         email=email,
         password=password,
         items=enriched,
-        task_builder=get_task_description_campaign_for_subtotal_combo,
+        task_builder=lambda item: get_task_description_campaign_for_subtotal_combo(
+            item, include_session_preamble=False
+        ),
         label="Offers",
         use_offer_tools=True,
+        campaigns_workbook=campaigns_workbook,
+        slot_info_csv=slot_info_csv,
+        campaign_kind="offers",
     )
 
 
@@ -2736,6 +2843,8 @@ async def run_ads_campaigns_from_rows(
     email: str,
     password: str,
     rows: list[dict],
+    campaigns_workbook: Path | str | None = None,
+    slot_info_csv: Path | str | None = None,
 ) -> dict[str, Any]:
     """Create sponsored listing campaigns from Strategist Ads rows."""
     enriched = []
@@ -2749,9 +2858,14 @@ async def run_ads_campaigns_from_rows(
         email=email,
         password=password,
         items=enriched,
-        task_builder=get_task_description_ads_campaign,
+        task_builder=lambda item: get_task_description_ads_campaign(
+            item, include_session_preamble=False
+        ),
         label="Ads",
         use_offer_tools=True,
+        campaigns_workbook=campaigns_workbook,
+        slot_info_csv=slot_info_csv,
+        campaign_kind="ads",
     )
 
 

@@ -1,0 +1,1009 @@
+Store ID,Store Name,Day,Slot,Slot Tag,Orders,Sales,AOV,Campaign Type,Campaign Name,Ads Campaign Name,Minimum Subtotal,Minimum Bid,Status
+10661,,Monday,Overnight,1,6,104.0,17.3,Offer,TODC-10661-$25,,25,,Successful
+10661,,Monday,Breakfast,8,4,68.0,17.12,Offer + Ads,TODC-10661-$25,TODC-ADS-10661,25,3.0,Successful
+10661,,Monday,Lunch,15,4,77.0,19.22,Offer + Ads,TODC-10661-$25,TODC-ADS-10661,25,3.0,Successful
+10661,,Monday,Afternoon,22,4,82.0,20.58,Offer + Ads,TODC-10661-$25,TODC-ADS-10661,25,3.0,Successful
+10661,,Monday,Dinner,29,4,88.0,21.94,Offer + Ads,TODC-10661-$30,TODC-ADS-10661,30,3.0,Skipped (duplicate)
+10661,,Monday,Late night,36,15,268.0,17.86,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Overnight,2,8,141.0,17.68,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Breakfast,9,4,68.0,17.12,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Lunch,16,5,91.0,18.29,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Afternoon,23,6,118.0,19.66,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Dinner,30,5,102.0,20.31,Offer,TODC-10661-$25,,25,,Successful
+10661,,Tuesday,Late night,37,13,233.0,17.92,Offer,TODC-10661-$25,,25,,Successful
+10661,,Wednesday,Overnight,3,6,103.0,17.24,Offer,TODC-10661-$25,,25,,Successful
+10661,,Wednesday,Breakfast,10,4,76.0,19.04,Offer,TODC-10661-$25,,25,,Successful
+10661,,Wednesday,Lunch,17,5,94.0,18.74,Offer,TODC-10661-$25,,25,,Successful
+10661,,Wednesday,Afternoon,24,4,64.0,16.06,Offer,TODC-10661-$20,,20,,Successful
+10661,,Wednesday,Dinner,31,5,114.0,22.86,Offer,TODC-10661-$30,,30,,Skipped (duplicate)
+10661,,Wednesday,Late night,38,14,257.0,18.36,Offer,TODC-10661-$25,,25,,Successful
+10661,,Thursday,Overnight,4,10,184.0,18.39,Offer,TODC-10661-$25,,25,,Successful
+10661,,Thursday,Breakfast,11,5,86.0,17.17,Offer,TODC-10661-$25,,25,,Successful
+10661,,Thursday,Lunch,18,5,97.0,19.49,Offer,TODC-10661-$25,,25,,Successful
+10661,,Thursday,Afternoon,25,4,82.0,20.48,Offer,TODC-10661-$25,,25,,Successful
+10661,,Thursday,Dinner,32,5,109.0,21.78,Offer,TODC-10661-$30,,30,,Skipped (duplicate)
+10661,,Thursday,Late night,39,14,256.0,18.27,Offer,TODC-10661-$25,,25,,Successful
+10661,,Friday,Overnight,5,8,125.0,15.64,Offer,TODC-10661-$20,,20,,Successful
+10661,,Friday,Breakfast,12,5,94.0,18.77,Offer,TODC-10661-$25,,25,,Successful
+10661,,Friday,Lunch,19,6,118.0,19.61,Offer,TODC-10661-$25,,25,,Successful
+10661,,Friday,Afternoon,26,4,83.0,20.63,Offer + Ads,TODC-10661-$25,TODC-ADS-10661,25,3.0,Successful
+10661,,Friday,Dinner,33,6,111.0,18.54,Offer,TODC-10661-$25,,25,,Successful
+10661,,Friday,Late night,40,11,197.0,17.95,Offer,TODC-10661-$25,,25,,Successful
+10661,,Saturday,Overnight,6,9,146.0,16.22,Offer,TODC-10661-$20,,20,,Successful
+10661,,Saturday,Breakfast,13,5,103.0,20.66,Offer,TODC-10661-$25,,25,,Successful
+10661,,Saturday,Lunch,20,4,85.0,21.14,Offer + Ads,TODC-10661-$30,TODC-ADS-10661,30,3.0,Skipped (duplicate)
+10661,,Saturday,Afternoon,27,4,65.0,16.2,Offer + Ads,TODC-10661-$20,TODC-ADS-10661,20,3.0,Successful
+10661,,Saturday,Dinner,34,5,102.0,20.36,Offer,TODC-10661-$25,,25,,Successful
+10661,,Saturday,Late night,41,9,166.0,18.42,Offer,TODC-10661-$25,,25,,Successful
+10661,,Sunday,Overnight,7,7,124.0,17.75,Offer,TODC-10661-$25,,25,,Successful
+10661,,Sunday,Breakfast,14,4,72.0,18.08,Offer,TODC-10661-$25,,25,,Successful
+10661,,Sunday,Lunch,21,6,112.0,18.59,Offer,TODC-10661-$25,,25,,Successful
+10661,,Sunday,Afternoon,28,4,85.0,21.28,Offer + Ads,TODC-10661-$30,TODC-ADS-10661,30,3.0,Skipped (duplicate)
+10661,,Sunday,Dinner,35,5,99.0,19.73,Offer,TODC-10661-$25,,25,,Successful
+10661,,Sunday,Late night,42,14,250.0,17.84,Offer,TODC-10661-$25,,25,,Successful
+11399,,Monday,Overnight,1,13,216.0,16.63,Offer,TODC-11399-$20,,20,,Successful
+11399,,Monday,Breakfast,8,11,201.0,18.26,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Monday,Lunch,15,9,140.0,15.55,Offer + Ads,TODC-11399-$20,TODC-ADS-11399,20,3.0,Successful
+11399,,Monday,Afternoon,22,8,136.0,16.99,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Monday,Dinner,29,9,173.0,19.27,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Monday,Late night,36,25,413.0,16.52,Offer,TODC-11399-$20,,20,,Successful
+11399,,Tuesday,Overnight,2,14,221.0,15.8,Offer,TODC-11399-$20,,20,,Successful
+11399,,Tuesday,Breakfast,9,10,146.0,14.61,Offer,TODC-11399-$20,,20,,Successful
+11399,,Tuesday,Lunch,16,9,156.0,17.32,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Tuesday,Afternoon,23,9,167.0,18.55,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Tuesday,Dinner,30,11,199.0,18.11,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Tuesday,Late night,37,26,416.0,16.0,Offer,TODC-11399-$20,,20,,Successful
+11399,,Wednesday,Overnight,3,18,287.0,15.94,Offer,TODC-11399-$20,,20,,Successful
+11399,,Wednesday,Breakfast,10,10,172.0,17.21,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Wednesday,Lunch,17,9,139.0,15.4,Offer + Ads,TODC-11399-$20,TODC-ADS-11399,20,3.0,Successful
+11399,,Wednesday,Afternoon,24,8,158.0,19.75,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Wednesday,Dinner,31,11,218.0,19.85,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Wednesday,Late night,38,29,512.0,17.65,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Thursday,Overnight,4,17,291.0,17.09,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Thursday,Breakfast,11,12,219.0,18.29,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Thursday,Lunch,18,9,163.0,18.09,Offer + Ads,TODC-11399-$25,TODC-ADS-11399,25,3.0,Skipped (duplicate)
+11399,,Thursday,Afternoon,25,10,152.0,15.22,Offer,TODC-11399-$20,,20,,Successful
+11399,,Thursday,Dinner,32,10,197.0,19.72,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Thursday,Late night,39,32,563.0,17.59,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Friday,Overnight,5,19,324.0,17.06,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Friday,Breakfast,12,13,214.0,16.42,Offer,TODC-11399-$20,,20,,Successful
+11399,,Friday,Lunch,19,11,189.0,17.2,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Friday,Afternoon,26,10,192.0,19.21,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Friday,Dinner,33,12,197.0,16.45,Offer,TODC-11399-$20,,20,,Successful
+11399,,Friday,Late night,40,26,471.0,18.12,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Overnight,6,19,325.0,17.1,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Breakfast,13,14,268.0,19.15,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Lunch,20,11,197.0,17.95,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Afternoon,27,10,190.0,19.01,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Dinner,34,12,222.0,18.52,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Saturday,Late night,41,22,379.0,17.25,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Overnight,7,17,289.0,16.99,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Breakfast,14,13,257.0,19.79,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Lunch,21,10,179.0,17.92,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Afternoon,28,10,178.0,17.8,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Dinner,35,11,211.0,19.23,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+11399,,Sunday,Late night,42,24,404.0,16.83,Offer,TODC-11399-$25,,25,,Skipped (duplicate)
+12093,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+12093,,Monday,Breakfast,8,2,41.0,20.73,Offer + Ads,TODC-12093-$25,TODC-ADS-12093,25,3.0,Pending
+12093,,Monday,Lunch,15,2,33.0,16.68,Offer + Ads,TODC-12093-$25,TODC-ADS-12093,25,3.0,Pending
+12093,,Monday,Afternoon,22,2,30.0,14.92,Offer + Ads,TODC-12093-$20,TODC-ADS-12093,20,3.0,Pending
+12093,,Monday,Dinner,29,2,36.0,17.77,Offer + Ads,TODC-12093-$25,TODC-ADS-12093,25,3.0,Pending
+12093,,Monday,Late night,36,2,48.0,23.75,Offer + Ads,TODC-12093-$30,TODC-ADS-12093,30,3.0,Pending
+12093,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+12093,,Tuesday,Breakfast,9,3,50.0,16.69,Offer,TODC-12093-$25,,25,,Pending
+12093,,Tuesday,Lunch,16,3,56.0,18.53,Offer,TODC-12093-$25,,25,,Pending
+12093,,Tuesday,Afternoon,23,2,32.0,16.25,Offer,TODC-12093-$20,,20,,Pending
+12093,,Tuesday,Dinner,30,2,38.0,19.23,Offer,TODC-12093-$25,,25,,Pending
+12093,,Tuesday,Late night,37,2,35.0,17.65,Offer,TODC-12093-$25,,25,,Pending
+12093,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+12093,,Wednesday,Breakfast,10,3,45.0,14.9,Offer,TODC-12093-$20,,20,,Pending
+12093,,Wednesday,Lunch,17,3,43.0,14.4,Offer,TODC-12093-$20,,20,,Pending
+12093,,Wednesday,Afternoon,24,2,43.0,21.54,Offer,TODC-12093-$30,,30,,Pending
+12093,,Wednesday,Dinner,31,2,50.0,24.85,Offer,TODC-12093-$30,,30,,Pending
+12093,,Wednesday,Late night,38,3,52.0,17.47,Offer,TODC-12093-$25,,25,,Pending
+12093,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+12093,,Thursday,Breakfast,11,3,65.0,21.75,Offer,TODC-12093-$30,,30,,Pending
+12093,,Thursday,Lunch,18,3,64.0,21.21,Offer,TODC-12093-$30,,30,,Pending
+12093,,Thursday,Afternoon,25,3,62.0,20.55,Offer,TODC-12093-$25,,25,,Pending
+12093,,Thursday,Dinner,32,2,41.0,20.49,Offer,TODC-12093-$25,,25,,Pending
+12093,,Thursday,Late night,39,3,55.0,18.44,Offer,TODC-12093-$25,,25,,Pending
+12093,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+12093,,Friday,Breakfast,12,3,56.0,18.64,Offer,TODC-12093-$25,,25,,Pending
+12093,,Friday,Lunch,19,3,51.0,16.89,Offer,TODC-12093-$25,,25,,Pending
+12093,,Friday,Afternoon,26,2,42.0,21.01,Offer + Ads,TODC-12093-$30,TODC-ADS-12093,30,3.0,Pending
+12093,,Friday,Dinner,33,3,56.0,18.76,Offer,TODC-12093-$25,,25,,Pending
+12093,,Friday,Late night,40,3,66.0,21.95,Offer,TODC-12093-$30,,30,,Pending
+12093,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+12093,,Saturday,Breakfast,13,2,44.0,22.17,Offer + Ads,TODC-12093-$30,TODC-ADS-12093,30,3.0,Pending
+12093,,Saturday,Lunch,20,3,63.0,20.96,Offer,TODC-12093-$30,,30,,Pending
+12093,,Saturday,Afternoon,27,3,55.0,18.26,Offer,TODC-12093-$25,,25,,Pending
+12093,,Saturday,Dinner,34,2,41.0,20.56,Offer + Ads,TODC-12093-$25,TODC-ADS-12093,25,3.0,Pending
+12093,,Saturday,Late night,41,4,67.0,16.72,Offer,TODC-12093-$25,,25,,Pending
+12093,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+12093,,Sunday,Breakfast,14,3,66.0,21.85,Offer,TODC-12093-$30,,30,,Pending
+12093,,Sunday,Lunch,21,3,54.0,17.89,Offer,TODC-12093-$25,,25,,Pending
+12093,,Sunday,Afternoon,28,2,28.0,13.99,Offer,TODC-12093-$20,,20,,Pending
+12093,,Sunday,Dinner,35,3,62.0,20.59,Offer,TODC-12093-$25,,25,,Pending
+12093,,Sunday,Late night,42,3,58.0,19.48,Offer,TODC-12093-$25,,25,,Pending
+12502,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+12502,,Monday,Breakfast,8,14,209.0,14.9,Offer,TODC-12502-$20,,20,,Pending
+12502,,Monday,Lunch,15,9,152.0,16.89,Offer,TODC-12502-$25,,25,,Pending
+12502,,Monday,Afternoon,22,6,103.0,17.23,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Monday,Dinner,29,9,151.0,16.75,Offer,TODC-12502-$25,,25,,Pending
+12502,,Monday,Late night,36,9,147.0,16.31,Offer,TODC-12502-$20,,20,,Pending
+12502,,Tuesday,Overnight,2,1,21.0,21.03,Offer + Ads,TODC-12502-$30,TODC-ADS-12502,30,3.0,Pending
+12502,,Tuesday,Breakfast,9,13,201.0,15.43,Offer,TODC-12502-$20,,20,,Pending
+12502,,Tuesday,Lunch,16,6,105.0,17.57,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Tuesday,Afternoon,23,8,151.0,18.87,Offer,TODC-12502-$25,,25,,Pending
+12502,,Tuesday,Dinner,30,8,143.0,17.82,Offer,TODC-12502-$25,,25,,Pending
+12502,,Tuesday,Late night,37,10,162.0,16.17,Offer,TODC-12502-$20,,20,,Pending
+12502,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+12502,,Wednesday,Breakfast,10,14,188.0,13.4,Offer,TODC-12502-$20,,20,,Pending
+12502,,Wednesday,Lunch,17,9,145.0,16.09,Offer,TODC-12502-$20,,20,,Pending
+12502,,Wednesday,Afternoon,24,6,107.0,17.77,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Wednesday,Dinner,31,10,179.0,17.93,Offer,TODC-12502-$25,,25,,Pending
+12502,,Wednesday,Late night,38,10,162.0,16.23,Offer,TODC-12502-$20,,20,,Pending
+12502,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+12502,,Thursday,Breakfast,11,15,211.0,14.06,Offer,TODC-12502-$20,,20,,Pending
+12502,,Thursday,Lunch,18,9,161.0,17.94,Offer,TODC-12502-$25,,25,,Pending
+12502,,Thursday,Afternoon,25,7,110.0,15.69,Offer,TODC-12502-$20,,20,,Pending
+12502,,Thursday,Dinner,32,10,193.0,19.34,Offer,TODC-12502-$25,,25,,Pending
+12502,,Thursday,Late night,39,10,173.0,17.29,Offer,TODC-12502-$25,,25,,Pending
+12502,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+12502,,Friday,Breakfast,12,17,259.0,15.24,Offer,TODC-12502-$20,,20,,Pending
+12502,,Friday,Lunch,19,10,162.0,16.21,Offer,TODC-12502-$20,,20,,Pending
+12502,,Friday,Afternoon,26,7,127.0,18.14,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Friday,Dinner,33,10,191.0,19.08,Offer,TODC-12502-$25,,25,,Pending
+12502,,Friday,Late night,40,12,203.0,16.89,Offer,TODC-12502-$25,,25,,Pending
+12502,,Saturday,Overnight,6,2,35.0,17.52,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Saturday,Breakfast,13,15,234.0,15.59,Offer,TODC-12502-$20,,20,,Pending
+12502,,Saturday,Lunch,20,8,152.0,18.99,Offer,TODC-12502-$25,,25,,Pending
+12502,,Saturday,Afternoon,27,7,131.0,18.72,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Saturday,Dinner,34,10,180.0,18.03,Offer,TODC-12502-$25,,25,,Pending
+12502,,Saturday,Late night,41,13,214.0,16.47,Offer,TODC-12502-$20,,20,,Pending
+12502,,Sunday,Overnight,7,2,41.0,20.74,Offer + Ads,TODC-12502-$25,TODC-ADS-12502,25,3.0,Pending
+12502,,Sunday,Breakfast,14,16,264.0,16.51,Offer,TODC-12502-$20,,20,,Pending
+12502,,Sunday,Lunch,21,11,190.0,17.26,Offer,TODC-12502-$25,,25,,Pending
+12502,,Sunday,Afternoon,28,8,146.0,18.25,Offer,TODC-12502-$25,,25,,Pending
+12502,,Sunday,Dinner,35,9,168.0,18.68,Offer,TODC-12502-$25,,25,,Pending
+12502,,Sunday,Late night,42,13,219.0,16.84,Offer,TODC-12502-$25,,25,,Pending
+12504,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+12504,,Monday,Breakfast,8,7,128.0,18.34,Offer,TODC-12504-$25,,25,,Pending
+12504,,Monday,Lunch,15,7,138.0,19.65,Offer,TODC-12504-$25,,25,,Pending
+12504,,Monday,Afternoon,22,5,102.0,20.33,Offer + Ads,TODC-12504-$25,TODC-ADS-12504,25,3.0,Pending
+12504,,Monday,Dinner,29,7,131.0,18.68,Offer,TODC-12504-$25,,25,,Pending
+12504,,Monday,Late night,36,9,172.0,19.06,Offer,TODC-12504-$25,,25,,Pending
+12504,,Tuesday,Overnight,2,1,26.0,26.07,Offer + Ads,TODC-12504-$35,TODC-ADS-12504,35,3.0,Pending
+12504,,Tuesday,Breakfast,9,6,97.0,16.13,Offer,TODC-12504-$20,,20,,Pending
+12504,,Tuesday,Lunch,16,5,103.0,20.52,Offer + Ads,TODC-12504-$25,TODC-ADS-12504,25,3.0,Pending
+12504,,Tuesday,Afternoon,23,5,118.0,23.51,Offer + Ads,TODC-12504-$30,TODC-ADS-12504,30,3.0,Pending
+12504,,Tuesday,Dinner,30,7,146.0,20.81,Offer,TODC-12504-$25,,25,,Pending
+12504,,Tuesday,Late night,37,9,171.0,19.03,Offer,TODC-12504-$25,,25,,Pending
+12504,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+12504,,Wednesday,Breakfast,10,6,100.0,16.68,Offer,TODC-12504-$25,,25,,Pending
+12504,,Wednesday,Lunch,17,6,119.0,19.87,Offer,TODC-12504-$25,,25,,Pending
+12504,,Wednesday,Afternoon,24,5,85.0,17.02,Offer + Ads,TODC-12504-$25,TODC-ADS-12504,25,3.0,Pending
+12504,,Wednesday,Dinner,31,7,153.0,21.82,Offer,TODC-12504-$30,,30,,Pending
+12504,,Wednesday,Late night,38,11,203.0,18.45,Offer,TODC-12504-$25,,25,,Pending
+12504,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+12504,,Thursday,Breakfast,11,7,119.0,16.95,Offer,TODC-12504-$25,,25,,Pending
+12504,,Thursday,Lunch,18,7,137.0,19.57,Offer,TODC-12504-$25,,25,,Pending
+12504,,Thursday,Afternoon,25,6,132.0,21.97,Offer,TODC-12504-$30,,30,,Pending
+12504,,Thursday,Dinner,32,7,150.0,21.49,Offer,TODC-12504-$30,,30,,Pending
+12504,,Thursday,Late night,39,11,195.0,17.7,Offer,TODC-12504-$25,,25,,Pending
+12504,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+12504,,Friday,Breakfast,12,8,146.0,18.23,Offer,TODC-12504-$25,,25,,Pending
+12504,,Friday,Lunch,19,7,125.0,17.87,Offer,TODC-12504-$25,,25,,Pending
+12504,,Friday,Afternoon,26,6,129.0,21.56,Offer,TODC-12504-$30,,30,,Pending
+12504,,Friday,Dinner,33,8,158.0,19.77,Offer,TODC-12504-$25,,25,,Pending
+12504,,Friday,Late night,40,9,179.0,19.91,Offer,TODC-12504-$25,,25,,Pending
+12504,,Saturday,Overnight,6,3,64.0,21.31,Offer + Ads,TODC-12504-$30,TODC-ADS-12504,30,3.0,Pending
+12504,,Saturday,Breakfast,13,8,149.0,18.58,Offer,TODC-12504-$25,,25,,Pending
+12504,,Saturday,Lunch,20,7,129.0,18.42,Offer,TODC-12504-$25,,25,,Pending
+12504,,Saturday,Afternoon,27,6,118.0,19.7,Offer,TODC-12504-$25,,25,,Pending
+12504,,Saturday,Dinner,34,6,116.0,19.38,Offer,TODC-12504-$25,,25,,Pending
+12504,,Saturday,Late night,41,11,223.0,20.25,Offer,TODC-12504-$25,,25,,Pending
+12504,,Sunday,Overnight,7,2,48.0,23.88,Offer + Ads,TODC-12504-$30,TODC-ADS-12504,30,3.0,Pending
+12504,,Sunday,Breakfast,14,10,187.0,18.65,Offer,TODC-12504-$25,,25,,Pending
+12504,,Sunday,Lunch,21,8,188.0,23.53,Offer,TODC-12504-$30,,30,,Pending
+12504,,Sunday,Afternoon,28,5,112.0,22.31,Offer + Ads,TODC-12504-$30,TODC-ADS-12504,30,3.0,Pending
+12504,,Sunday,Dinner,35,6,114.0,19.07,Offer,TODC-12504-$25,,25,,Pending
+12504,,Sunday,Late night,42,11,184.0,16.73,Offer,TODC-12504-$25,,25,,Pending
+13704,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+13704,,Monday,Breakfast,8,1,23.0,22.66,Offer + Ads,TODC-13704-$30,TODC-ADS-13704,30,3.0,Pending
+13704,,Monday,Lunch,15,2,31.0,15.75,Offer,TODC-13704-$20,,20,,Pending
+13704,,Monday,Afternoon,22,1,24.0,23.67,Offer + Ads,TODC-13704-$30,TODC-ADS-13704,30,3.0,Pending
+13704,,Monday,Dinner,29,2,29.0,14.32,Offer,TODC-13704-$20,,20,,Pending
+13704,,Monday,Late night,36,1,18.0,18.15,Offer + Ads,TODC-13704-$25,TODC-ADS-13704,25,3.0,Pending
+13704,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+13704,,Tuesday,Breakfast,9,2,33.0,16.33,Offer,TODC-13704-$20,,20,,Pending
+13704,,Tuesday,Lunch,16,2,43.0,21.73,Offer,TODC-13704-$30,,30,,Pending
+13704,,Tuesday,Afternoon,23,2,26.0,12.78,Offer,TODC-13704-$20,,20,,Pending
+13704,,Tuesday,Dinner,30,2,34.0,16.89,Offer,TODC-13704-$25,,25,,Pending
+13704,,Tuesday,Late night,37,2,25.0,12.48,Offer,TODC-13704-$15,,15,,Pending
+13704,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+13704,,Wednesday,Breakfast,10,2,38.0,18.94,Offer,TODC-13704-$25,,25,,Pending
+13704,,Wednesday,Lunch,17,2,36.0,18.12,Offer,TODC-13704-$25,,25,,Pending
+13704,,Wednesday,Afternoon,24,2,32.0,15.91,Offer,TODC-13704-$20,,20,,Pending
+13704,,Wednesday,Dinner,31,2,39.0,19.73,Offer,TODC-13704-$25,,25,,Pending
+13704,,Wednesday,Late night,38,1,13.0,13.06,Offer + Ads,TODC-13704-$20,TODC-ADS-13704,20,3.0,Pending
+13704,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+13704,,Thursday,Breakfast,11,2,21.0,10.72,Offer,TODC-13704-$15,,15,,Pending
+13704,,Thursday,Lunch,18,2,46.0,23.05,Offer,TODC-13704-$30,,30,,Pending
+13704,,Thursday,Afternoon,25,2,37.0,18.51,Offer,TODC-13704-$25,,25,,Pending
+13704,,Thursday,Dinner,32,2,33.0,16.52,Offer,TODC-13704-$20,,20,,Pending
+13704,,Thursday,Late night,39,1,26.0,25.85,Offer + Ads,TODC-13704-$35,TODC-ADS-13704,35,3.0,Pending
+13704,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+13704,,Friday,Breakfast,12,2,42.0,20.78,Offer + Ads,TODC-13704-$25,TODC-ADS-13704,25,3.0,Pending
+13704,,Friday,Lunch,19,2,37.0,18.53,Offer,TODC-13704-$25,,25,,Pending
+13704,,Friday,Afternoon,26,2,39.0,19.64,Offer + Ads,TODC-13704-$25,TODC-ADS-13704,25,3.0,Pending
+13704,,Friday,Dinner,33,3,56.0,18.61,Offer,TODC-13704-$25,,25,,Pending
+13704,,Friday,Late night,40,2,27.0,13.41,Offer,TODC-13704-$20,,20,,Pending
+13704,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+13704,,Saturday,Breakfast,13,2,46.0,22.87,Offer,TODC-13704-$30,,30,,Pending
+13704,,Saturday,Lunch,20,2,27.0,13.68,Offer,TODC-13704-$20,,20,,Pending
+13704,,Saturday,Afternoon,27,3,52.0,17.21,Offer,TODC-13704-$25,,25,,Pending
+13704,,Saturday,Dinner,34,2,47.0,23.47,Offer,TODC-13704-$30,,30,,Pending
+13704,,Saturday,Late night,41,2,31.0,15.74,Offer,TODC-13704-$20,,20,,Pending
+13704,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+13704,,Sunday,Breakfast,14,2,38.0,18.85,Offer,TODC-13704-$25,,25,,Pending
+13704,,Sunday,Lunch,21,2,29.0,14.52,Offer,TODC-13704-$20,,20,,Pending
+13704,,Sunday,Afternoon,28,3,50.0,16.59,Offer,TODC-13704-$20,,20,,Pending
+13704,,Sunday,Dinner,35,2,39.0,19.63,Offer,TODC-13704-$25,,25,,Pending
+13704,,Sunday,Late night,42,1,26.0,25.56,Offer + Ads,TODC-13704-$35,TODC-ADS-13704,35,3.0,Pending
+14448,,Monday,Overnight,1,16,282.0,17.61,Offer,TODC-14448-$25,,25,,Pending
+14448,,Monday,Breakfast,8,10,168.0,16.77,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Monday,Lunch,15,10,171.0,17.1,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Monday,Afternoon,22,9,166.0,18.4,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Monday,Dinner,29,12,248.0,20.69,Offer,TODC-14448-$25,,25,,Pending
+14448,,Monday,Late night,36,17,301.0,17.71,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Overnight,2,16,274.0,17.15,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Breakfast,9,11,194.0,17.67,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Lunch,16,11,184.0,16.75,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Afternoon,23,11,204.0,18.5,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Dinner,30,12,216.0,18.0,Offer,TODC-14448-$25,,25,,Pending
+14448,,Tuesday,Late night,37,20,368.0,18.42,Offer,TODC-14448-$25,,25,,Pending
+14448,,Wednesday,Overnight,3,19,333.0,17.51,Offer,TODC-14448-$25,,25,,Pending
+14448,,Wednesday,Breakfast,10,10,172.0,17.19,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Wednesday,Lunch,17,12,218.0,18.14,Offer,TODC-14448-$25,,25,,Pending
+14448,,Wednesday,Afternoon,24,14,277.0,19.77,Offer,TODC-14448-$25,,25,,Pending
+14448,,Wednesday,Dinner,31,16,297.0,18.58,Offer,TODC-14448-$25,,25,,Pending
+14448,,Wednesday,Late night,38,22,382.0,17.35,Offer,TODC-14448-$25,,25,,Pending
+14448,,Thursday,Overnight,4,24,439.0,18.29,Offer,TODC-14448-$25,,25,,Pending
+14448,,Thursday,Breakfast,11,10,176.0,17.57,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Thursday,Lunch,18,13,232.0,17.85,Offer,TODC-14448-$25,,25,,Pending
+14448,,Thursday,Afternoon,25,11,196.0,17.86,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Thursday,Dinner,32,13,235.0,18.05,Offer,TODC-14448-$25,,25,,Pending
+14448,,Thursday,Late night,39,19,345.0,18.15,Offer,TODC-14448-$25,,25,,Pending
+14448,,Friday,Overnight,5,18,318.0,17.66,Offer,TODC-14448-$25,,25,,Pending
+14448,,Friday,Breakfast,12,14,230.0,16.41,Offer,TODC-14448-$20,,20,,Pending
+14448,,Friday,Lunch,19,12,217.0,18.07,Offer,TODC-14448-$25,,25,,Pending
+14448,,Friday,Afternoon,26,13,226.0,17.41,Offer,TODC-14448-$25,,25,,Pending
+14448,,Friday,Dinner,33,14,264.0,18.86,Offer,TODC-14448-$25,,25,,Pending
+14448,,Friday,Late night,40,21,387.0,18.45,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Overnight,6,20,340.0,17.01,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Breakfast,13,12,213.0,17.75,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Lunch,20,14,256.0,18.29,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Afternoon,27,13,247.0,19.0,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Dinner,34,13,256.0,19.67,Offer,TODC-14448-$25,,25,,Pending
+14448,,Saturday,Late night,41,17,296.0,17.4,Offer,TODC-14448-$25,,25,,Pending
+14448,,Sunday,Overnight,7,18,301.0,16.74,Offer,TODC-14448-$25,,25,,Pending
+14448,,Sunday,Breakfast,14,12,208.0,17.35,Offer,TODC-14448-$25,,25,,Pending
+14448,,Sunday,Lunch,21,12,216.0,17.96,Offer,TODC-14448-$25,,25,,Pending
+14448,,Sunday,Afternoon,28,10,196.0,19.64,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Sunday,Dinner,35,11,205.0,18.65,Offer + Ads,TODC-14448-$25,TODC-ADS-14448,25,3.0,Pending
+14448,,Sunday,Late night,42,15,264.0,17.6,Offer,TODC-14448-$25,,25,,Pending
+21386,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+21386,,Monday,Breakfast,8,2,36.0,17.8,Offer + Ads,TODC-21386-$25,TODC-ADS-21386,25,3.0,Pending
+21386,,Monday,Lunch,15,3,47.0,15.76,Offer,TODC-21386-$20,,20,,Pending
+21386,,Monday,Afternoon,22,2,43.0,21.26,Offer + Ads,TODC-21386-$30,TODC-ADS-21386,30,3.0,Pending
+21386,,Monday,Dinner,29,3,52.0,17.36,Offer,TODC-21386-$25,,25,,Pending
+21386,,Monday,Late night,36,2,32.0,16.18,Offer + Ads,TODC-21386-$20,TODC-ADS-21386,20,3.0,Pending
+21386,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+21386,,Tuesday,Breakfast,9,2,36.0,17.77,Offer,TODC-21386-$25,,25,,Pending
+21386,,Tuesday,Lunch,16,2,37.0,18.32,Offer,TODC-21386-$25,,25,,Pending
+21386,,Tuesday,Afternoon,23,2,42.0,20.83,Offer,TODC-21386-$25,,25,,Pending
+21386,,Tuesday,Dinner,30,2,35.0,17.51,Offer,TODC-21386-$25,,25,,Pending
+21386,,Tuesday,Late night,37,2,36.0,18.17,Offer,TODC-21386-$25,,25,,Pending
+21386,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+21386,,Wednesday,Breakfast,10,2,32.0,16.18,Offer,TODC-21386-$20,,20,,Pending
+21386,,Wednesday,Lunch,17,3,59.0,19.79,Offer,TODC-21386-$25,,25,,Pending
+21386,,Wednesday,Afternoon,24,2,39.0,19.55,Offer,TODC-21386-$25,,25,,Pending
+21386,,Wednesday,Dinner,31,2,48.0,23.89,Offer,TODC-21386-$30,,30,,Pending
+21386,,Wednesday,Late night,38,2,31.0,15.74,Offer,TODC-21386-$20,,20,,Pending
+21386,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+21386,,Thursday,Breakfast,11,3,39.0,12.91,Offer,TODC-21386-$20,,20,,Pending
+21386,,Thursday,Lunch,18,2,44.0,21.91,Offer,TODC-21386-$30,,30,,Pending
+21386,,Thursday,Afternoon,25,2,36.0,18.03,Offer,TODC-21386-$25,,25,,Pending
+21386,,Thursday,Dinner,32,3,45.0,14.92,Offer,TODC-21386-$20,,20,,Pending
+21386,,Thursday,Late night,39,2,43.0,21.7,Offer,TODC-21386-$30,,30,,Pending
+21386,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+21386,,Friday,Breakfast,12,3,43.0,14.44,Offer,TODC-21386-$20,,20,,Pending
+21386,,Friday,Lunch,19,2,44.0,21.84,Offer + Ads,TODC-21386-$30,TODC-ADS-21386,30,3.0,Pending
+21386,,Friday,Afternoon,26,3,44.0,14.73,Offer,TODC-21386-$20,,20,,Pending
+21386,,Friday,Dinner,33,3,61.0,20.43,Offer,TODC-21386-$25,,25,,Pending
+21386,,Friday,Late night,40,2,36.0,18.05,Offer + Ads,TODC-21386-$25,TODC-ADS-21386,25,3.0,Pending
+21386,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+21386,,Saturday,Breakfast,13,2,43.0,21.37,Offer + Ads,TODC-21386-$30,TODC-ADS-21386,30,3.0,Pending
+21386,,Saturday,Lunch,20,4,71.0,17.85,Offer,TODC-21386-$25,,25,,Pending
+21386,,Saturday,Afternoon,27,3,55.0,18.49,Offer,TODC-21386-$25,,25,,Pending
+21386,,Saturday,Dinner,34,3,47.0,15.58,Offer,TODC-21386-$20,,20,,Pending
+21386,,Saturday,Late night,41,3,37.0,12.46,Offer,TODC-21386-$15,,15,,Pending
+21386,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+21386,,Sunday,Breakfast,14,2,41.0,20.62,Offer + Ads,TODC-21386-$25,TODC-ADS-21386,25,3.0,Pending
+21386,,Sunday,Lunch,21,3,53.0,17.72,Offer,TODC-21386-$25,,25,,Pending
+21386,,Sunday,Afternoon,28,2,39.0,19.74,Offer + Ads,TODC-21386-$25,TODC-ADS-21386,25,3.0,Pending
+21386,,Sunday,Dinner,35,3,57.0,19.01,Offer,TODC-21386-$25,,25,,Pending
+21386,,Sunday,Late night,42,2,23.0,11.73,Offer,TODC-21386-$15,,15,,Pending
+24311,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+24311,,Monday,Breakfast,8,8,126.0,15.7,Offer,TODC-24311-$20,,20,,Pending
+24311,,Monday,Lunch,15,7,121.0,17.25,Offer,TODC-24311-$25,,25,,Pending
+24311,,Monday,Afternoon,22,5,82.0,16.46,Offer + Ads,TODC-24311-$20,TODC-ADS-24311,20,3.0,Pending
+24311,,Monday,Dinner,29,8,155.0,19.43,Offer,TODC-24311-$25,,25,,Pending
+24311,,Monday,Late night,36,7,114.0,16.25,Offer,TODC-24311-$20,,20,,Pending
+24311,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+24311,,Tuesday,Breakfast,9,8,125.0,15.56,Offer,TODC-24311-$20,,20,,Pending
+24311,,Tuesday,Lunch,16,7,126.0,17.96,Offer,TODC-24311-$25,,25,,Pending
+24311,,Tuesday,Afternoon,23,6,102.0,16.95,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+24311,,Tuesday,Dinner,30,7,127.0,18.2,Offer,TODC-24311-$25,,25,,Pending
+24311,,Tuesday,Late night,37,6,121.0,20.18,Offer,TODC-24311-$25,,25,,Pending
+24311,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+24311,,Wednesday,Breakfast,10,7,122.0,17.41,Offer,TODC-24311-$25,,25,,Pending
+24311,,Wednesday,Lunch,17,6,95.0,15.88,Offer,TODC-24311-$20,,20,,Pending
+24311,,Wednesday,Afternoon,24,5,90.0,18.0,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+24311,,Wednesday,Dinner,31,7,128.0,18.29,Offer,TODC-24311-$25,,25,,Pending
+24311,,Wednesday,Late night,38,6,95.0,15.84,Offer,TODC-24311-$20,,20,,Pending
+24311,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+24311,,Thursday,Breakfast,11,8,127.0,15.9,Offer,TODC-24311-$20,,20,,Pending
+24311,,Thursday,Lunch,18,7,124.0,17.72,Offer,TODC-24311-$25,,25,,Pending
+24311,,Thursday,Afternoon,25,6,96.0,16.05,Offer + Ads,TODC-24311-$20,TODC-ADS-24311,20,3.0,Pending
+24311,,Thursday,Dinner,32,7,142.0,20.26,Offer,TODC-24311-$25,,25,,Pending
+24311,,Thursday,Late night,39,7,114.0,16.27,Offer,TODC-24311-$20,,20,,Pending
+24311,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+24311,,Friday,Breakfast,12,10,161.0,16.1,Offer,TODC-24311-$20,,20,,Pending
+24311,,Friday,Lunch,19,7,124.0,17.73,Offer,TODC-24311-$25,,25,,Pending
+24311,,Friday,Afternoon,26,5,101.0,20.27,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+24311,,Friday,Dinner,33,8,154.0,19.2,Offer,TODC-24311-$25,,25,,Pending
+24311,,Friday,Late night,40,11,191.0,17.36,Offer,TODC-24311-$25,,25,,Pending
+24311,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+24311,,Saturday,Breakfast,13,11,206.0,18.7,Offer,TODC-24311-$25,,25,,Pending
+24311,,Saturday,Lunch,20,7,135.0,19.22,Offer,TODC-24311-$25,,25,,Pending
+24311,,Saturday,Afternoon,27,6,107.0,17.77,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+24311,,Saturday,Dinner,34,7,128.0,18.36,Offer,TODC-24311-$25,,25,,Pending
+24311,,Saturday,Late night,41,10,169.0,16.87,Offer,TODC-24311-$25,,25,,Pending
+24311,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+24311,,Sunday,Breakfast,14,12,223.0,18.59,Offer,TODC-24311-$25,,25,,Pending
+24311,,Sunday,Lunch,21,8,157.0,19.67,Offer,TODC-24311-$25,,25,,Pending
+24311,,Sunday,Afternoon,28,5,95.0,18.94,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+24311,,Sunday,Dinner,35,7,140.0,20.05,Offer,TODC-24311-$25,,25,,Pending
+24311,,Sunday,Late night,42,6,121.0,20.22,Offer + Ads,TODC-24311-$25,TODC-ADS-24311,25,3.0,Pending
+2629,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+2629,,Monday,Breakfast,8,10,167.0,16.74,Offer,TODC-2629-$25,,25,,Pending
+2629,,Monday,Lunch,15,9,150.0,16.64,Offer + Ads,TODC-2629-$20,TODC-ADS-2629,20,3.0,Pending
+2629,,Monday,Afternoon,22,8,140.0,17.48,Offer + Ads,TODC-2629-$25,TODC-ADS-2629,25,3.0,Pending
+2629,,Monday,Dinner,29,11,208.0,18.87,Offer,TODC-2629-$25,,25,,Pending
+2629,,Monday,Late night,36,15,268.0,17.85,Offer,TODC-2629-$25,,25,,Pending
+2629,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+2629,,Tuesday,Breakfast,9,11,181.0,16.43,Offer,TODC-2629-$20,,20,,Pending
+2629,,Tuesday,Lunch,16,8,150.0,18.77,Offer + Ads,TODC-2629-$25,TODC-ADS-2629,25,3.0,Pending
+2629,,Tuesday,Afternoon,23,9,164.0,18.2,Offer,TODC-2629-$25,,25,,Pending
+2629,,Tuesday,Dinner,30,11,207.0,18.83,Offer,TODC-2629-$25,,25,,Pending
+2629,,Tuesday,Late night,37,13,241.0,18.52,Offer,TODC-2629-$25,,25,,Pending
+2629,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+2629,,Wednesday,Breakfast,10,10,166.0,16.6,Offer,TODC-2629-$20,,20,,Pending
+2629,,Wednesday,Lunch,17,8,137.0,17.08,Offer + Ads,TODC-2629-$25,TODC-ADS-2629,25,3.0,Pending
+2629,,Wednesday,Afternoon,24,7,141.0,20.21,Offer + Ads,TODC-2629-$25,TODC-ADS-2629,25,3.0,Pending
+2629,,Wednesday,Dinner,31,12,215.0,17.95,Offer,TODC-2629-$25,,25,,Pending
+2629,,Wednesday,Late night,38,18,325.0,18.06,Offer,TODC-2629-$25,,25,,Pending
+2629,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+2629,,Thursday,Breakfast,11,12,200.0,16.7,Offer,TODC-2629-$25,,25,,Pending
+2629,,Thursday,Lunch,18,8,156.0,19.44,Offer + Ads,TODC-2629-$25,TODC-ADS-2629,25,3.0,Pending
+2629,,Thursday,Afternoon,25,10,177.0,17.68,Offer,TODC-2629-$25,,25,,Pending
+2629,,Thursday,Dinner,32,12,232.0,19.36,Offer,TODC-2629-$25,,25,,Pending
+2629,,Thursday,Late night,39,13,237.0,18.27,Offer,TODC-2629-$25,,25,,Pending
+2629,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+2629,,Friday,Breakfast,12,13,215.0,16.51,Offer,TODC-2629-$20,,20,,Pending
+2629,,Friday,Lunch,19,10,174.0,17.42,Offer,TODC-2629-$25,,25,,Pending
+2629,,Friday,Afternoon,26,10,176.0,17.64,Offer,TODC-2629-$25,,25,,Pending
+2629,,Friday,Dinner,33,13,237.0,18.24,Offer,TODC-2629-$25,,25,,Pending
+2629,,Friday,Late night,40,16,305.0,19.05,Offer,TODC-2629-$25,,25,,Pending
+2629,,Saturday,Overnight,6,3,46.0,15.39,Offer + Ads,TODC-2629-$20,TODC-ADS-2629,20,3.0,Pending
+2629,,Saturday,Breakfast,13,10,166.0,16.57,Offer,TODC-2629-$20,,20,,Pending
+2629,,Saturday,Lunch,20,9,158.0,17.55,Offer,TODC-2629-$25,,25,,Pending
+2629,,Saturday,Afternoon,27,10,179.0,17.87,Offer,TODC-2629-$25,,25,,Pending
+2629,,Saturday,Dinner,34,9,165.0,18.28,Offer,TODC-2629-$25,,25,,Pending
+2629,,Saturday,Late night,41,16,290.0,18.11,Offer,TODC-2629-$25,,25,,Pending
+2629,,Sunday,Overnight,7,3,39.0,12.95,Offer + Ads,TODC-2629-$20,TODC-ADS-2629,20,3.0,Pending
+2629,,Sunday,Breakfast,14,10,187.0,18.68,Offer,TODC-2629-$25,,25,,Pending
+2629,,Sunday,Lunch,21,9,176.0,19.51,Offer,TODC-2629-$25,,25,,Pending
+2629,,Sunday,Afternoon,28,10,191.0,19.1,Offer,TODC-2629-$25,,25,,Pending
+2629,,Sunday,Dinner,35,10,178.0,17.79,Offer,TODC-2629-$25,,25,,Pending
+2629,,Sunday,Late night,42,16,288.0,18.0,Offer,TODC-2629-$25,,25,,Pending
+26764,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+26764,,Monday,Breakfast,8,1,24.0,24.09,Offer + Ads,TODC-26764-$30,TODC-ADS-26764,30,3.0,Pending
+26764,,Monday,Lunch,15,2,27.0,13.73,Offer,TODC-26764-$20,,20,,Pending
+26764,,Monday,Afternoon,22,1,19.0,18.7,Offer + Ads,TODC-26764-$25,TODC-ADS-26764,25,3.0,Pending
+26764,,Monday,Dinner,29,1,23.0,22.83,Offer + Ads,TODC-26764-$30,TODC-ADS-26764,30,3.0,Pending
+26764,,Monday,Late night,36,1,20.0,20.32,Offer + Ads,TODC-26764-$25,TODC-ADS-26764,25,3.0,Pending
+26764,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+26764,,Tuesday,Breakfast,9,1,27.0,26.86,Offer,TODC-26764-$35,,35,,Pending
+26764,,Tuesday,Lunch,16,2,30.0,14.83,Offer,TODC-26764-$20,,20,,Pending
+26764,,Tuesday,Afternoon,23,2,33.0,16.52,Offer,TODC-26764-$20,,20,,Pending
+26764,,Tuesday,Dinner,30,2,35.0,17.6,Offer,TODC-26764-$25,,25,,Pending
+26764,,Tuesday,Late night,37,1,15.0,14.86,Offer,TODC-26764-$20,,20,,Pending
+26764,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+26764,,Wednesday,Breakfast,10,1,18.0,18.11,Offer,TODC-26764-$25,,25,,Pending
+26764,,Wednesday,Lunch,17,2,19.0,9.47,Offer,TODC-26764-$15,,15,,Pending
+26764,,Wednesday,Afternoon,24,2,25.0,12.54,Offer,TODC-26764-$20,,20,,Pending
+26764,,Wednesday,Dinner,31,1,27.0,26.77,Offer,TODC-26764-$35,,35,,Pending
+26764,,Wednesday,Late night,38,1,10.0,9.58,Offer,TODC-26764-$15,,15,,Pending
+26764,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+26764,,Thursday,Breakfast,11,2,27.0,13.73,Offer,TODC-26764-$20,,20,,Pending
+26764,,Thursday,Lunch,18,2,27.0,13.7,Offer,TODC-26764-$20,,20,,Pending
+26764,,Thursday,Afternoon,25,2,28.0,13.82,Offer,TODC-26764-$20,,20,,Pending
+26764,,Thursday,Dinner,32,2,36.0,17.77,Offer,TODC-26764-$25,,25,,Pending
+26764,,Thursday,Late night,39,1,21.0,21.12,Offer,TODC-26764-$30,,30,,Pending
+26764,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+26764,,Friday,Breakfast,12,1,12.0,11.77,Offer + Ads,TODC-26764-$15,TODC-ADS-26764,15,3.0,Pending
+26764,,Friday,Lunch,19,2,47.0,23.64,Offer,TODC-26764-$30,,30,,Pending
+26764,,Friday,Afternoon,26,1,19.0,19.09,Offer + Ads,TODC-26764-$25,TODC-ADS-26764,25,3.0,Pending
+26764,,Friday,Dinner,33,2,38.0,19.07,Offer,TODC-26764-$25,,25,,Pending
+26764,,Friday,Late night,40,1,23.0,22.99,Offer + Ads,TODC-26764-$30,TODC-ADS-26764,30,3.0,Pending
+26764,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+26764,,Saturday,Breakfast,13,2,24.0,12.0,Offer,TODC-26764-$15,,15,,Pending
+26764,,Saturday,Lunch,20,2,43.0,21.3,Offer,TODC-26764-$30,,30,,Pending
+26764,,Saturday,Afternoon,27,2,45.0,22.5,Offer,TODC-26764-$30,,30,,Pending
+26764,,Saturday,Dinner,34,2,56.0,27.89,Offer,TODC-26764-$35,,35,,Pending
+26764,,Saturday,Late night,41,2,41.0,20.55,Offer,TODC-26764-$25,,25,,Pending
+26764,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+26764,,Sunday,Breakfast,14,1,25.0,25.43,Offer,TODC-26764-$35,,35,,Pending
+26764,,Sunday,Lunch,21,1,20.0,19.62,Offer,TODC-26764-$25,,25,,Pending
+26764,,Sunday,Afternoon,28,1,32.0,32.25,Offer + Ads,TODC-26764-$40,TODC-ADS-26764,40,3.0,Pending
+26764,,Sunday,Dinner,35,1,26.0,26.1,Offer,TODC-26764-$35,,35,,Pending
+26764,,Sunday,Late night,42,1,15.0,14.54,Offer,TODC-26764-$20,,20,,Pending
+2691,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+2691,,Monday,Breakfast,8,10,173.0,17.35,Offer,TODC-2691-$25,,25,,Pending
+2691,,Monday,Lunch,15,8,132.0,16.56,Offer,TODC-2691-$20,,20,,Pending
+2691,,Monday,Afternoon,22,7,136.0,19.48,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Monday,Dinner,29,8,152.0,18.99,Offer,TODC-2691-$25,,25,,Pending
+2691,,Monday,Late night,36,12,200.0,16.65,Offer,TODC-2691-$20,,20,,Pending
+2691,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+2691,,Tuesday,Breakfast,9,12,194.0,16.21,Offer,TODC-2691-$20,,20,,Pending
+2691,,Tuesday,Lunch,16,8,126.0,15.73,Offer,TODC-2691-$20,,20,,Pending
+2691,,Tuesday,Afternoon,23,8,133.0,16.66,Offer,TODC-2691-$20,,20,,Pending
+2691,,Tuesday,Dinner,30,11,224.0,20.38,Offer,TODC-2691-$25,,25,,Pending
+2691,,Tuesday,Late night,37,11,204.0,18.55,Offer,TODC-2691-$25,,25,,Pending
+2691,,Wednesday,Overnight,3,1,18.0,17.57,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Wednesday,Breakfast,10,12,188.0,15.63,Offer,TODC-2691-$20,,20,,Pending
+2691,,Wednesday,Lunch,17,7,127.0,18.09,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Wednesday,Afternoon,24,7,138.0,19.75,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Wednesday,Dinner,31,10,224.0,22.37,Offer,TODC-2691-$30,,30,,Pending
+2691,,Wednesday,Late night,38,12,204.0,16.99,Offer,TODC-2691-$25,,25,,Pending
+2691,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+2691,,Thursday,Breakfast,11,14,227.0,16.18,Offer,TODC-2691-$20,,20,,Pending
+2691,,Thursday,Lunch,18,8,135.0,16.87,Offer,TODC-2691-$25,,25,,Pending
+2691,,Thursday,Afternoon,25,7,120.0,17.12,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Thursday,Dinner,32,11,220.0,20.02,Offer,TODC-2691-$25,,25,,Pending
+2691,,Thursday,Late night,39,13,243.0,18.68,Offer,TODC-2691-$25,,25,,Pending
+2691,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+2691,,Friday,Breakfast,12,16,267.0,16.66,Offer,TODC-2691-$20,,20,,Pending
+2691,,Friday,Lunch,19,9,146.0,16.23,Offer,TODC-2691-$20,,20,,Pending
+2691,,Friday,Afternoon,26,9,148.0,16.45,Offer,TODC-2691-$20,,20,,Pending
+2691,,Friday,Dinner,33,9,181.0,20.12,Offer,TODC-2691-$25,,25,,Pending
+2691,,Friday,Late night,40,14,267.0,19.05,Offer,TODC-2691-$25,,25,,Pending
+2691,,Saturday,Overnight,6,2,11.0,5.74,Offer + Ads,TODC-2691-$10,TODC-ADS-2691,10,3.0,Pending
+2691,,Saturday,Breakfast,13,14,246.0,17.56,Offer,TODC-2691-$25,,25,,Pending
+2691,,Saturday,Lunch,20,10,189.0,18.93,Offer,TODC-2691-$25,,25,,Pending
+2691,,Saturday,Afternoon,27,8,151.0,18.9,Offer,TODC-2691-$25,,25,,Pending
+2691,,Saturday,Dinner,34,8,148.0,18.46,Offer,TODC-2691-$25,,25,,Pending
+2691,,Saturday,Late night,41,10,195.0,19.55,Offer,TODC-2691-$25,,25,,Pending
+2691,,Sunday,Overnight,7,1,29.0,29.28,Offer + Ads,TODC-2691-$40,TODC-ADS-2691,40,3.0,Pending
+2691,,Sunday,Breakfast,14,13,216.0,16.61,Offer,TODC-2691-$20,,20,,Pending
+2691,,Sunday,Lunch,21,9,185.0,20.53,Offer,TODC-2691-$25,,25,,Pending
+2691,,Sunday,Afternoon,28,8,167.0,20.91,Offer,TODC-2691-$30,,30,,Pending
+2691,,Sunday,Dinner,35,7,144.0,20.51,Offer + Ads,TODC-2691-$25,TODC-ADS-2691,25,3.0,Pending
+2691,,Sunday,Late night,42,10,169.0,16.95,Offer,TODC-2691-$25,,25,,Pending
+27992,,Monday,Overnight,1,21,379.0,18.06,Offer,TODC-27992-$25,,25,,Pending
+27992,,Monday,Breakfast,8,6,98.0,16.31,Offer + Ads,TODC-27992-$20,TODC-ADS-27992,20,3.0,Pending
+27992,,Monday,Lunch,15,6,112.0,18.72,Offer + Ads,TODC-27992-$25,TODC-ADS-27992,25,3.0,Pending
+27992,,Monday,Afternoon,22,7,113.0,16.07,Offer + Ads,TODC-27992-$20,TODC-ADS-27992,20,3.0,Pending
+27992,,Monday,Dinner,29,8,145.0,18.1,Offer,TODC-27992-$25,,25,,Pending
+27992,,Monday,Late night,36,16,275.0,17.18,Offer,TODC-27992-$25,,25,,Pending
+27992,,Tuesday,Overnight,2,27,490.0,18.13,Offer,TODC-27992-$25,,25,,Pending
+27992,,Tuesday,Breakfast,9,9,157.0,17.48,Offer,TODC-27992-$25,,25,,Pending
+27992,,Tuesday,Lunch,16,8,137.0,17.15,Offer,TODC-27992-$25,,25,,Pending
+27992,,Tuesday,Afternoon,23,6,109.0,18.12,Offer + Ads,TODC-27992-$25,TODC-ADS-27992,25,3.0,Pending
+27992,,Tuesday,Dinner,30,9,169.0,18.78,Offer,TODC-27992-$25,,25,,Pending
+27992,,Tuesday,Late night,37,16,289.0,18.05,Offer,TODC-27992-$25,,25,,Pending
+27992,,Wednesday,Overnight,3,22,378.0,17.17,Offer,TODC-27992-$25,,25,,Pending
+27992,,Wednesday,Breakfast,10,8,113.0,14.15,Offer,TODC-27992-$20,,20,,Pending
+27992,,Wednesday,Lunch,17,6,106.0,17.61,Offer + Ads,TODC-27992-$25,TODC-ADS-27992,25,3.0,Pending
+27992,,Wednesday,Afternoon,24,6,90.0,14.98,Offer + Ads,TODC-27992-$20,TODC-ADS-27992,20,3.0,Pending
+27992,,Wednesday,Dinner,31,10,172.0,17.16,Offer,TODC-27992-$25,,25,,Pending
+27992,,Wednesday,Late night,38,18,307.0,17.05,Offer,TODC-27992-$25,,25,,Pending
+27992,,Thursday,Overnight,4,23,415.0,18.04,Offer,TODC-27992-$25,,25,,Pending
+27992,,Thursday,Breakfast,11,8,123.0,15.42,Offer,TODC-27992-$20,,20,,Pending
+27992,,Thursday,Lunch,18,7,121.0,17.24,Offer + Ads,TODC-27992-$25,TODC-ADS-27992,25,3.0,Pending
+27992,,Thursday,Afternoon,25,8,131.0,16.4,Offer,TODC-27992-$20,,20,,Pending
+27992,,Thursday,Dinner,32,9,159.0,17.63,Offer,TODC-27992-$25,,25,,Pending
+27992,,Thursday,Late night,39,20,329.0,16.46,Offer,TODC-27992-$20,,20,,Pending
+27992,,Friday,Overnight,5,25,483.0,19.32,Offer,TODC-27992-$25,,25,,Pending
+27992,,Friday,Breakfast,12,9,147.0,16.33,Offer,TODC-27992-$20,,20,,Pending
+27992,,Friday,Lunch,19,7,118.0,16.87,Offer + Ads,TODC-27992-$25,TODC-ADS-27992,25,3.0,Pending
+27992,,Friday,Afternoon,26,8,150.0,18.79,Offer,TODC-27992-$25,,25,,Pending
+27992,,Friday,Dinner,33,12,222.0,18.48,Offer,TODC-27992-$25,,25,,Pending
+27992,,Friday,Late night,40,16,295.0,18.43,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Overnight,6,19,349.0,18.35,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Breakfast,13,10,176.0,17.65,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Lunch,20,9,173.0,19.27,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Afternoon,27,8,151.0,18.82,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Dinner,34,11,187.0,16.98,Offer,TODC-27992-$25,,25,,Pending
+27992,,Saturday,Late night,41,16,266.0,16.65,Offer,TODC-27992-$20,,20,,Pending
+27992,,Sunday,Overnight,7,28,483.0,17.23,Offer,TODC-27992-$25,,25,,Pending
+27992,,Sunday,Breakfast,14,10,175.0,17.46,Offer,TODC-27992-$25,,25,,Pending
+27992,,Sunday,Lunch,21,9,171.0,18.95,Offer,TODC-27992-$25,,25,,Pending
+27992,,Sunday,Afternoon,28,8,153.0,19.09,Offer,TODC-27992-$25,,25,,Pending
+27992,,Sunday,Dinner,35,10,172.0,17.16,Offer,TODC-27992-$25,,25,,Pending
+27992,,Sunday,Late night,42,16,287.0,17.95,Offer,TODC-27992-$25,,25,,Pending
+29617,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+29617,,Monday,Breakfast,8,7,124.0,17.71,Offer,TODC-29617-$25,,25,,Pending
+29617,,Monday,Lunch,15,5,95.0,19.07,Offer,TODC-29617-$25,,25,,Pending
+29617,,Monday,Afternoon,22,4,69.0,17.34,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Monday,Dinner,29,5,97.0,19.43,Offer,TODC-29617-$25,,25,,Pending
+29617,,Monday,Late night,36,8,146.0,18.24,Offer,TODC-29617-$25,,25,,Pending
+29617,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+29617,,Tuesday,Breakfast,9,8,126.0,15.71,Offer,TODC-29617-$20,,20,,Pending
+29617,,Tuesday,Lunch,16,4,71.0,17.8,Offer,TODC-29617-$25,,25,,Pending
+29617,,Tuesday,Afternoon,23,4,73.0,18.32,Offer,TODC-29617-$25,,25,,Pending
+29617,,Tuesday,Dinner,30,5,110.0,21.92,Offer,TODC-29617-$30,,30,,Pending
+29617,,Tuesday,Late night,37,8,134.0,16.7,Offer,TODC-29617-$25,,25,,Pending
+29617,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+29617,,Wednesday,Breakfast,10,8,124.0,15.54,Offer,TODC-29617-$20,,20,,Pending
+29617,,Wednesday,Lunch,17,4,61.0,15.22,Offer,TODC-29617-$20,,20,,Pending
+29617,,Wednesday,Afternoon,24,4,68.0,16.97,Offer,TODC-29617-$25,,25,,Pending
+29617,,Wednesday,Dinner,31,5,99.0,19.83,Offer,TODC-29617-$25,,25,,Pending
+29617,,Wednesday,Late night,38,9,157.0,17.41,Offer,TODC-29617-$25,,25,,Pending
+29617,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+29617,,Thursday,Breakfast,11,10,152.0,15.21,Offer,TODC-29617-$20,,20,,Pending
+29617,,Thursday,Lunch,18,4,75.0,18.85,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Thursday,Afternoon,25,4,76.0,18.91,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Thursday,Dinner,32,5,114.0,22.78,Offer,TODC-29617-$30,,30,,Pending
+29617,,Thursday,Late night,39,8,147.0,18.38,Offer,TODC-29617-$25,,25,,Pending
+29617,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+29617,,Friday,Breakfast,12,12,195.0,16.21,Offer,TODC-29617-$20,,20,,Pending
+29617,,Friday,Lunch,19,4,72.0,18.04,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Friday,Afternoon,26,4,76.0,18.9,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Friday,Dinner,33,5,94.0,18.81,Offer,TODC-29617-$25,,25,,Pending
+29617,,Friday,Late night,40,8,122.0,15.22,Offer,TODC-29617-$20,,20,,Pending
+29617,,Saturday,Overnight,6,3,50.0,16.51,Offer + Ads,TODC-29617-$20,TODC-ADS-29617,20,3.0,Pending
+29617,,Saturday,Breakfast,13,11,198.0,18.0,Offer,TODC-29617-$25,,25,,Pending
+29617,,Saturday,Lunch,20,7,130.0,18.58,Offer,TODC-29617-$25,,25,,Pending
+29617,,Saturday,Afternoon,27,4,75.0,18.73,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Saturday,Dinner,34,6,108.0,17.99,Offer,TODC-29617-$25,,25,,Pending
+29617,,Saturday,Late night,41,9,178.0,19.81,Offer,TODC-29617-$25,,25,,Pending
+29617,,Sunday,Overnight,7,2,33.0,16.74,Offer + Ads,TODC-29617-$25,TODC-ADS-29617,25,3.0,Pending
+29617,,Sunday,Breakfast,14,12,200.0,16.67,Offer,TODC-29617-$25,,25,,Pending
+29617,,Sunday,Lunch,21,7,124.0,17.69,Offer,TODC-29617-$25,,25,,Pending
+29617,,Sunday,Afternoon,28,5,88.0,17.55,Offer,TODC-29617-$25,,25,,Pending
+29617,,Sunday,Dinner,35,7,125.0,17.89,Offer,TODC-29617-$25,,25,,Pending
+29617,,Sunday,Late night,42,10,176.0,17.55,Offer,TODC-29617-$25,,25,,Pending
+34235,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+34235,,Monday,Breakfast,8,6,94.0,15.6,Offer,TODC-34235-$20,,20,,Pending
+34235,,Monday,Lunch,15,5,108.0,21.66,Offer,TODC-34235-$30,,30,,Pending
+34235,,Monday,Afternoon,22,5,92.0,18.38,Offer + Ads,TODC-34235-$25,TODC-ADS-34235,25,3.0,Pending
+34235,,Monday,Dinner,29,8,181.0,22.63,Offer,TODC-34235-$30,,30,,Pending
+34235,,Monday,Late night,36,5,90.0,18.01,Offer,TODC-34235-$25,,25,,Pending
+34235,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+34235,,Tuesday,Breakfast,9,6,125.0,20.83,Offer,TODC-34235-$25,,25,,Pending
+34235,,Tuesday,Lunch,16,4,75.0,18.65,Offer + Ads,TODC-34235-$25,TODC-ADS-34235,25,3.0,Pending
+34235,,Tuesday,Afternoon,23,5,84.0,16.81,Offer,TODC-34235-$25,,25,,Pending
+34235,,Tuesday,Dinner,30,6,111.0,18.51,Offer,TODC-34235-$25,,25,,Pending
+34235,,Tuesday,Late night,37,5,100.0,20.08,Offer,TODC-34235-$25,,25,,Pending
+34235,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+34235,,Wednesday,Breakfast,10,7,121.0,17.34,Offer,TODC-34235-$25,,25,,Pending
+34235,,Wednesday,Lunch,17,5,100.0,20.08,Offer,TODC-34235-$25,,25,,Pending
+34235,,Wednesday,Afternoon,24,3,54.0,17.96,Offer + Ads,TODC-34235-$25,TODC-ADS-34235,25,3.0,Pending
+34235,,Wednesday,Dinner,31,6,141.0,23.52,Offer,TODC-34235-$30,,30,,Pending
+34235,,Wednesday,Late night,38,6,102.0,17.06,Offer,TODC-34235-$25,,25,,Pending
+34235,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+34235,,Thursday,Breakfast,11,5,92.0,18.43,Offer,TODC-34235-$25,,25,,Pending
+34235,,Thursday,Lunch,18,6,99.0,16.54,Offer,TODC-34235-$20,,20,,Pending
+34235,,Thursday,Afternoon,25,4,81.0,20.26,Offer + Ads,TODC-34235-$25,TODC-ADS-34235,25,3.0,Pending
+34235,,Thursday,Dinner,32,7,145.0,20.65,Offer,TODC-34235-$25,,25,,Pending
+34235,,Thursday,Late night,39,5,99.0,19.73,Offer,TODC-34235-$25,,25,,Pending
+34235,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+34235,,Friday,Breakfast,12,7,127.0,18.15,Offer,TODC-34235-$25,,25,,Pending
+34235,,Friday,Lunch,19,5,91.0,18.13,Offer + Ads,TODC-34235-$25,TODC-ADS-34235,25,3.0,Pending
+34235,,Friday,Afternoon,26,4,100.0,25.1,Offer + Ads,TODC-34235-$35,TODC-ADS-34235,35,3.0,Pending
+34235,,Friday,Dinner,33,8,171.0,21.41,Offer,TODC-34235-$30,,30,,Pending
+34235,,Friday,Late night,40,6,99.0,16.56,Offer,TODC-34235-$20,,20,,Pending
+34235,,Saturday,Overnight,6,2,28.0,14.15,Offer + Ads,TODC-34235-$20,TODC-ADS-34235,20,3.0,Pending
+34235,,Saturday,Breakfast,13,9,169.0,18.83,Offer,TODC-34235-$25,,25,,Pending
+34235,,Saturday,Lunch,20,5,110.0,21.92,Offer,TODC-34235-$30,,30,,Pending
+34235,,Saturday,Afternoon,27,5,99.0,19.83,Offer,TODC-34235-$25,,25,,Pending
+34235,,Saturday,Dinner,34,7,149.0,21.27,Offer,TODC-34235-$30,,30,,Pending
+34235,,Saturday,Late night,41,8,150.0,18.75,Offer,TODC-34235-$25,,25,,Pending
+34235,,Sunday,Overnight,7,2,43.0,21.47,Offer + Ads,TODC-34235-$30,TODC-ADS-34235,30,3.0,Pending
+34235,,Sunday,Breakfast,14,10,216.0,21.55,Offer,TODC-34235-$30,,30,,Pending
+34235,,Sunday,Lunch,21,7,138.0,19.78,Offer,TODC-34235-$25,,25,,Pending
+34235,,Sunday,Afternoon,28,5,93.0,18.59,Offer,TODC-34235-$25,,25,,Pending
+34235,,Sunday,Dinner,35,6,131.0,21.75,Offer,TODC-34235-$30,,30,,Pending
+34235,,Sunday,Late night,42,6,123.0,20.45,Offer,TODC-34235-$25,,25,,Pending
+34996,,Monday,Overnight,1,1,11.0,11.39,Offer + Ads,TODC-34996-$15,TODC-ADS-34996,15,3.0,Pending
+34996,,Monday,Breakfast,8,4,61.0,15.14,Offer,TODC-34996-$20,,20,,Pending
+34996,,Monday,Lunch,15,5,98.0,19.53,Offer,TODC-34996-$25,,25,,Pending
+34996,,Monday,Afternoon,22,3,62.0,20.76,Offer + Ads,TODC-34996-$25,TODC-ADS-34996,25,3.0,Pending
+34996,,Monday,Dinner,29,6,116.0,19.4,Offer,TODC-34996-$25,,25,,Pending
+34996,,Monday,Late night,36,7,132.0,18.83,Offer,TODC-34996-$25,,25,,Pending
+34996,,Tuesday,Overnight,2,1,18.0,17.63,Offer + Ads,TODC-34996-$25,TODC-ADS-34996,25,3.0,Pending
+34996,,Tuesday,Breakfast,9,3,48.0,15.87,Offer + Ads,TODC-34996-$20,TODC-ADS-34996,20,3.0,Pending
+34996,,Tuesday,Lunch,16,3,55.0,18.31,Offer + Ads,TODC-34996-$25,TODC-ADS-34996,25,3.0,Pending
+34996,,Tuesday,Afternoon,23,3,60.0,19.93,Offer + Ads,TODC-34996-$25,TODC-ADS-34996,25,3.0,Pending
+34996,,Tuesday,Dinner,30,6,118.0,19.59,Offer,TODC-34996-$25,,25,,Pending
+34996,,Tuesday,Late night,37,7,130.0,18.54,Offer,TODC-34996-$25,,25,,Pending
+34996,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+34996,,Wednesday,Breakfast,10,4,67.0,16.85,Offer,TODC-34996-$25,,25,,Pending
+34996,,Wednesday,Lunch,17,4,63.0,15.81,Offer,TODC-34996-$20,,20,,Pending
+34996,,Wednesday,Afternoon,24,3,60.0,20.08,Offer,TODC-34996-$25,,25,,Pending
+34996,,Wednesday,Dinner,31,6,110.0,18.4,Offer,TODC-34996-$25,,25,,Pending
+34996,,Wednesday,Late night,38,7,122.0,17.42,Offer,TODC-34996-$25,,25,,Pending
+34996,,Thursday,Overnight,4,1,11.0,10.93,Offer + Ads,TODC-34996-$15,TODC-ADS-34996,15,3.0,Pending
+34996,,Thursday,Breakfast,11,4,66.0,16.43,Offer,TODC-34996-$20,,20,,Pending
+34996,,Thursday,Lunch,18,4,68.0,17.0,Offer,TODC-34996-$25,,25,,Pending
+34996,,Thursday,Afternoon,25,4,74.0,18.41,Offer,TODC-34996-$25,,25,,Pending
+34996,,Thursday,Dinner,32,6,126.0,20.93,Offer,TODC-34996-$30,,30,,Pending
+34996,,Thursday,Late night,39,9,172.0,19.13,Offer,TODC-34996-$25,,25,,Pending
+34996,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+34996,,Friday,Breakfast,12,5,98.0,19.57,Offer,TODC-34996-$25,,25,,Pending
+34996,,Friday,Lunch,19,5,106.0,21.22,Offer,TODC-34996-$30,,30,,Pending
+34996,,Friday,Afternoon,26,4,83.0,20.65,Offer,TODC-34996-$25,,25,,Pending
+34996,,Friday,Dinner,33,6,127.0,21.12,Offer,TODC-34996-$30,,30,,Pending
+34996,,Friday,Late night,40,7,130.0,18.62,Offer,TODC-34996-$25,,25,,Pending
+34996,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+34996,,Saturday,Breakfast,13,7,147.0,20.93,Offer,TODC-34996-$30,,30,,Pending
+34996,,Saturday,Lunch,20,4,81.0,20.13,Offer,TODC-34996-$25,,25,,Pending
+34996,,Saturday,Afternoon,27,5,93.0,18.66,Offer,TODC-34996-$25,,25,,Pending
+34996,,Saturday,Dinner,34,6,104.0,17.41,Offer,TODC-34996-$25,,25,,Pending
+34996,,Saturday,Late night,41,6,113.0,18.78,Offer,TODC-34996-$25,,25,,Pending
+34996,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+34996,,Sunday,Breakfast,14,9,178.0,19.73,Offer,TODC-34996-$25,,25,,Pending
+34996,,Sunday,Lunch,21,6,112.0,18.75,Offer,TODC-34996-$25,,25,,Pending
+34996,,Sunday,Afternoon,28,3,68.0,22.65,Offer + Ads,TODC-34996-$30,TODC-ADS-34996,30,3.0,Pending
+34996,,Sunday,Dinner,35,5,94.0,18.74,Offer,TODC-34996-$25,,25,,Pending
+34996,,Sunday,Late night,42,9,143.0,15.9,Offer,TODC-34996-$20,,20,,Pending
+36912,,Monday,Overnight,1,8,135.0,16.9,Offer,TODC-36912-$25,,25,,Pending
+36912,,Monday,Breakfast,8,4,60.0,15.11,Offer + Ads,TODC-36912-$20,TODC-ADS-36912,20,3.0,Pending
+36912,,Monday,Lunch,15,3,52.0,17.43,Offer + Ads,TODC-36912-$25,TODC-ADS-36912,25,3.0,Pending
+36912,,Monday,Afternoon,22,4,75.0,18.85,Offer + Ads,TODC-36912-$25,TODC-ADS-36912,25,3.0,Pending
+36912,,Monday,Dinner,29,4,72.0,18.09,Offer + Ads,TODC-36912-$25,TODC-ADS-36912,25,3.0,Pending
+36912,,Monday,Late night,36,8,149.0,18.59,Offer,TODC-36912-$25,,25,,Pending
+36912,,Tuesday,Overnight,2,4,61.0,15.33,Offer,TODC-36912-$20,,20,,Pending
+36912,,Tuesday,Breakfast,9,5,73.0,14.66,Offer,TODC-36912-$20,,20,,Pending
+36912,,Tuesday,Lunch,16,3,68.0,22.62,Offer + Ads,TODC-36912-$30,TODC-ADS-36912,30,3.0,Pending
+36912,,Tuesday,Afternoon,23,4,62.0,15.48,Offer,TODC-36912-$20,,20,,Pending
+36912,,Tuesday,Dinner,30,5,93.0,18.65,Offer,TODC-36912-$25,,25,,Pending
+36912,,Tuesday,Late night,37,8,138.0,17.29,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Overnight,3,5,91.0,18.14,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Breakfast,10,4,78.0,19.39,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Lunch,17,5,85.0,16.91,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Afternoon,24,4,75.0,18.67,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Dinner,31,5,92.0,18.37,Offer,TODC-36912-$25,,25,,Pending
+36912,,Wednesday,Late night,38,10,185.0,18.53,Offer,TODC-36912-$25,,25,,Pending
+36912,,Thursday,Overnight,4,9,163.0,18.11,Offer,TODC-36912-$25,,25,,Pending
+36912,,Thursday,Breakfast,11,6,98.0,16.27,Offer,TODC-36912-$20,,20,,Pending
+36912,,Thursday,Lunch,18,4,66.0,16.45,Offer + Ads,TODC-36912-$20,TODC-ADS-36912,20,3.0,Pending
+36912,,Thursday,Afternoon,25,5,83.0,16.68,Offer,TODC-36912-$25,,25,,Pending
+36912,,Thursday,Dinner,32,7,133.0,19.04,Offer,TODC-36912-$25,,25,,Pending
+36912,,Thursday,Late night,39,10,183.0,18.33,Offer,TODC-36912-$25,,25,,Pending
+36912,,Friday,Overnight,5,10,183.0,18.3,Offer,TODC-36912-$25,,25,,Pending
+36912,,Friday,Breakfast,12,7,105.0,15.05,Offer,TODC-36912-$20,,20,,Pending
+36912,,Friday,Lunch,19,5,85.0,17.06,Offer,TODC-36912-$25,,25,,Pending
+36912,,Friday,Afternoon,26,4,57.0,14.27,Offer + Ads,TODC-36912-$20,TODC-ADS-36912,20,3.0,Pending
+36912,,Friday,Dinner,33,5,105.0,20.98,Offer,TODC-36912-$30,,30,,Pending
+36912,,Friday,Late night,40,9,155.0,17.24,Offer,TODC-36912-$25,,25,,Pending
+36912,,Saturday,Overnight,6,6,110.0,18.28,Offer,TODC-36912-$25,,25,,Pending
+36912,,Saturday,Breakfast,13,9,167.0,18.55,Offer,TODC-36912-$25,,25,,Pending
+36912,,Saturday,Lunch,20,5,96.0,19.17,Offer,TODC-36912-$25,,25,,Pending
+36912,,Saturday,Afternoon,27,4,69.0,17.27,Offer + Ads,TODC-36912-$25,TODC-ADS-36912,25,3.0,Pending
+36912,,Saturday,Dinner,34,5,80.0,16.06,Offer,TODC-36912-$20,,20,,Pending
+36912,,Saturday,Late night,41,8,116.0,14.46,Offer,TODC-36912-$20,,20,,Pending
+36912,,Sunday,Overnight,7,6,98.0,16.4,Offer,TODC-36912-$20,,20,,Pending
+36912,,Sunday,Breakfast,14,9,168.0,18.62,Offer,TODC-36912-$25,,25,,Pending
+36912,,Sunday,Lunch,21,5,94.0,18.87,Offer,TODC-36912-$25,,25,,Pending
+36912,,Sunday,Afternoon,28,5,75.0,14.93,Offer,TODC-36912-$20,,20,,Pending
+36912,,Sunday,Dinner,35,5,76.0,15.24,Offer,TODC-36912-$20,,20,,Pending
+36912,,Sunday,Late night,42,12,216.0,18.02,Offer,TODC-36912-$25,,25,,Pending
+37387,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+37387,,Monday,Breakfast,8,5,88.0,17.67,Offer,TODC-37387-$25,,25,,Pending
+37387,,Monday,Lunch,15,3,53.0,17.73,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+37387,,Monday,Afternoon,22,4,67.0,16.74,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+37387,,Monday,Dinner,29,5,82.0,16.32,Offer,TODC-37387-$20,,20,,Pending
+37387,,Monday,Late night,36,4,78.0,19.51,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+37387,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+37387,,Tuesday,Breakfast,9,4,62.0,15.46,Offer,TODC-37387-$20,,20,,Pending
+37387,,Tuesday,Lunch,16,4,71.0,17.72,Offer,TODC-37387-$25,,25,,Pending
+37387,,Tuesday,Afternoon,23,4,71.0,17.78,Offer,TODC-37387-$25,,25,,Pending
+37387,,Tuesday,Dinner,30,5,91.0,18.12,Offer,TODC-37387-$25,,25,,Pending
+37387,,Tuesday,Late night,37,3,50.0,16.58,Offer + Ads,TODC-37387-$20,TODC-ADS-37387,20,3.0,Pending
+37387,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+37387,,Wednesday,Breakfast,10,5,78.0,15.68,Offer,TODC-37387-$20,,20,,Pending
+37387,,Wednesday,Lunch,17,4,75.0,18.75,Offer,TODC-37387-$25,,25,,Pending
+37387,,Wednesday,Afternoon,24,4,77.0,19.2,Offer,TODC-37387-$25,,25,,Pending
+37387,,Wednesday,Dinner,31,5,97.0,19.38,Offer,TODC-37387-$25,,25,,Pending
+37387,,Wednesday,Late night,38,4,71.0,17.84,Offer,TODC-37387-$25,,25,,Pending
+37387,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+37387,,Thursday,Breakfast,11,6,101.0,16.81,Offer,TODC-37387-$25,,25,,Pending
+37387,,Thursday,Lunch,18,4,63.0,15.84,Offer,TODC-37387-$20,,20,,Pending
+37387,,Thursday,Afternoon,25,4,72.0,17.89,Offer,TODC-37387-$25,,25,,Pending
+37387,,Thursday,Dinner,32,6,122.0,20.4,Offer,TODC-37387-$25,,25,,Pending
+37387,,Thursday,Late night,39,4,83.0,20.85,Offer,TODC-37387-$30,,30,,Pending
+37387,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+37387,,Friday,Breakfast,12,7,107.0,15.34,Offer,TODC-37387-$20,,20,,Pending
+37387,,Friday,Lunch,19,3,61.0,20.25,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+37387,,Friday,Afternoon,26,4,73.0,18.36,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+37387,,Friday,Dinner,33,7,138.0,19.66,Offer,TODC-37387-$25,,25,,Pending
+37387,,Friday,Late night,40,7,138.0,19.66,Offer,TODC-37387-$25,,25,,Pending
+37387,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+37387,,Saturday,Breakfast,13,6,98.0,16.25,Offer,TODC-37387-$20,,20,,Pending
+37387,,Saturday,Lunch,20,5,92.0,18.48,Offer,TODC-37387-$25,,25,,Pending
+37387,,Saturday,Afternoon,27,4,70.0,17.62,Offer,TODC-37387-$25,,25,,Pending
+37387,,Saturday,Dinner,34,5,107.0,21.36,Offer,TODC-37387-$30,,30,,Pending
+37387,,Saturday,Late night,41,7,121.0,17.33,Offer,TODC-37387-$25,,25,,Pending
+37387,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+37387,,Sunday,Breakfast,14,6,111.0,18.46,Offer,TODC-37387-$25,,25,,Pending
+37387,,Sunday,Lunch,21,5,104.0,20.79,Offer,TODC-37387-$25,,25,,Pending
+37387,,Sunday,Afternoon,28,4,71.0,17.87,Offer,TODC-37387-$25,,25,,Pending
+37387,,Sunday,Dinner,35,3,70.0,23.34,Offer + Ads,TODC-37387-$30,TODC-ADS-37387,30,3.0,Pending
+37387,,Sunday,Late night,42,3,55.0,18.2,Offer + Ads,TODC-37387-$25,TODC-ADS-37387,25,3.0,Pending
+4302,,Monday,Overnight,1,2,28.0,14.1,Offer + Ads,TODC-4302-$20,TODC-ADS-4302,20,3.0,Pending
+4302,,Monday,Breakfast,8,6,105.0,17.53,Offer,TODC-4302-$25,,25,,Pending
+4302,,Monday,Lunch,15,4,65.0,16.14,Offer + Ads,TODC-4302-$20,TODC-ADS-4302,20,3.0,Pending
+4302,,Monday,Afternoon,22,5,97.0,19.45,Offer,TODC-4302-$25,,25,,Pending
+4302,,Monday,Dinner,29,5,96.0,19.28,Offer,TODC-4302-$25,,25,,Pending
+4302,,Monday,Late night,36,9,167.0,18.57,Offer,TODC-4302-$25,,25,,Pending
+4302,,Tuesday,Overnight,2,1,19.0,18.91,Offer + Ads,TODC-4302-$25,TODC-ADS-4302,25,3.0,Pending
+4302,,Tuesday,Breakfast,9,7,103.0,14.69,Offer,TODC-4302-$20,,20,,Pending
+4302,,Tuesday,Lunch,16,7,121.0,17.26,Offer,TODC-4302-$25,,25,,Pending
+4302,,Tuesday,Afternoon,23,5,82.0,16.31,Offer,TODC-4302-$20,,20,,Pending
+4302,,Tuesday,Dinner,30,7,124.0,17.65,Offer,TODC-4302-$25,,25,,Pending
+4302,,Tuesday,Late night,37,8,139.0,17.31,Offer,TODC-4302-$25,,25,,Pending
+4302,,Wednesday,Overnight,3,2,27.0,13.65,Offer + Ads,TODC-4302-$20,TODC-ADS-4302,20,3.0,Pending
+4302,,Wednesday,Breakfast,10,7,98.0,13.96,Offer,TODC-4302-$20,,20,,Pending
+4302,,Wednesday,Lunch,17,6,96.0,16.03,Offer,TODC-4302-$20,,20,,Pending
+4302,,Wednesday,Afternoon,24,5,93.0,18.53,Offer,TODC-4302-$25,,25,,Pending
+4302,,Wednesday,Dinner,31,7,133.0,19.04,Offer,TODC-4302-$25,,25,,Pending
+4302,,Wednesday,Late night,38,9,161.0,17.92,Offer,TODC-4302-$25,,25,,Pending
+4302,,Thursday,Overnight,4,2,33.0,16.65,Offer + Ads,TODC-4302-$20,TODC-ADS-4302,20,3.0,Pending
+4302,,Thursday,Breakfast,11,8,117.0,14.68,Offer,TODC-4302-$20,,20,,Pending
+4302,,Thursday,Lunch,18,6,104.0,17.32,Offer,TODC-4302-$25,,25,,Pending
+4302,,Thursday,Afternoon,25,7,120.0,17.16,Offer,TODC-4302-$25,,25,,Pending
+4302,,Thursday,Dinner,32,7,148.0,21.08,Offer,TODC-4302-$30,,30,,Pending
+4302,,Thursday,Late night,39,8,140.0,17.55,Offer,TODC-4302-$25,,25,,Pending
+4302,,Friday,Overnight,5,2,32.0,16.14,Offer + Ads,TODC-4302-$20,TODC-ADS-4302,20,3.0,Pending
+4302,,Friday,Breakfast,12,8,120.0,14.99,Offer,TODC-4302-$20,,20,,Pending
+4302,,Friday,Lunch,19,7,111.0,15.83,Offer,TODC-4302-$20,,20,,Pending
+4302,,Friday,Afternoon,26,5,102.0,20.48,Offer,TODC-4302-$25,,25,,Pending
+4302,,Friday,Dinner,33,8,142.0,17.77,Offer,TODC-4302-$25,,25,,Pending
+4302,,Friday,Late night,40,9,155.0,17.23,Offer,TODC-4302-$25,,25,,Pending
+4302,,Saturday,Overnight,6,4,76.0,19.03,Offer + Ads,TODC-4302-$25,TODC-ADS-4302,25,3.0,Pending
+4302,,Saturday,Breakfast,13,10,183.0,18.28,Offer,TODC-4302-$25,,25,,Pending
+4302,,Saturday,Lunch,20,8,131.0,16.34,Offer,TODC-4302-$20,,20,,Pending
+4302,,Saturday,Afternoon,27,6,111.0,18.46,Offer,TODC-4302-$25,,25,,Pending
+4302,,Saturday,Dinner,34,7,118.0,16.83,Offer,TODC-4302-$25,,25,,Pending
+4302,,Saturday,Late night,41,7,133.0,19.04,Offer,TODC-4302-$25,,25,,Pending
+4302,,Sunday,Overnight,7,4,68.0,16.98,Offer + Ads,TODC-4302-$25,TODC-ADS-4302,25,3.0,Pending
+4302,,Sunday,Breakfast,14,11,191.0,17.39,Offer,TODC-4302-$25,,25,,Pending
+4302,,Sunday,Lunch,21,7,123.0,17.61,Offer,TODC-4302-$25,,25,,Pending
+4302,,Sunday,Afternoon,28,7,113.0,16.09,Offer,TODC-4302-$20,,20,,Pending
+4302,,Sunday,Dinner,35,6,112.0,18.73,Offer,TODC-4302-$25,,25,,Pending
+4302,,Sunday,Late night,42,10,169.0,16.92,Offer,TODC-4302-$25,,25,,Pending
+558,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+558,,Monday,Breakfast,8,15,237.0,15.81,Offer,TODC-558-$20,,20,,Pending
+558,,Monday,Lunch,15,12,211.0,17.55,Offer,TODC-558-$25,,25,,Pending
+558,,Monday,Afternoon,22,9,182.0,20.18,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Monday,Dinner,29,12,229.0,19.1,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Monday,Late night,36,10,186.0,18.57,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+558,,Tuesday,Breakfast,9,18,288.0,15.98,Offer,TODC-558-$20,,20,,Pending
+558,,Tuesday,Lunch,16,13,214.0,16.48,Offer,TODC-558-$20,,20,,Pending
+558,,Tuesday,Afternoon,23,11,195.0,17.7,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Tuesday,Dinner,30,14,277.0,19.76,Offer,TODC-558-$25,,25,,Pending
+558,,Tuesday,Late night,37,10,192.0,19.23,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+558,,Wednesday,Breakfast,10,18,289.0,16.03,Offer,TODC-558-$20,,20,,Pending
+558,,Wednesday,Lunch,17,12,215.0,17.9,Offer,TODC-558-$25,,25,,Pending
+558,,Wednesday,Afternoon,24,13,254.0,19.56,Offer,TODC-558-$25,,25,,Pending
+558,,Wednesday,Dinner,31,14,265.0,18.9,Offer,TODC-558-$25,,25,,Pending
+558,,Wednesday,Late night,38,13,251.0,19.31,Offer,TODC-558-$25,,25,,Pending
+558,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+558,,Thursday,Breakfast,11,21,332.0,15.8,Offer,TODC-558-$20,,20,,Pending
+558,,Thursday,Lunch,18,13,238.0,18.29,Offer,TODC-558-$25,,25,,Pending
+558,,Thursday,Afternoon,25,11,192.0,17.41,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Thursday,Dinner,32,16,317.0,19.81,Offer,TODC-558-$25,,25,,Pending
+558,,Thursday,Late night,39,13,256.0,19.7,Offer,TODC-558-$25,,25,,Pending
+558,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+558,,Friday,Breakfast,12,21,331.0,15.78,Offer,TODC-558-$20,,20,,Pending
+558,,Friday,Lunch,19,15,281.0,18.76,Offer,TODC-558-$25,,25,,Pending
+558,,Friday,Afternoon,26,12,217.0,18.12,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Friday,Dinner,33,17,301.0,17.72,Offer,TODC-558-$25,,25,,Pending
+558,,Friday,Late night,40,17,301.0,17.7,Offer,TODC-558-$25,,25,,Pending
+558,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+558,,Saturday,Breakfast,13,19,358.0,18.86,Offer,TODC-558-$25,,25,,Pending
+558,,Saturday,Lunch,20,13,254.0,19.54,Offer,TODC-558-$25,,25,,Pending
+558,,Saturday,Afternoon,27,11,209.0,18.98,Offer + Ads,TODC-558-$25,TODC-ADS-558,25,3.0,Pending
+558,,Saturday,Dinner,34,13,254.0,19.55,Offer,TODC-558-$25,,25,,Pending
+558,,Saturday,Late night,41,17,317.0,18.62,Offer,TODC-558-$25,,25,,Pending
+558,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+558,,Sunday,Breakfast,14,17,287.0,16.87,Offer,TODC-558-$25,,25,,Pending
+558,,Sunday,Lunch,21,12,222.0,18.47,Offer,TODC-558-$25,,25,,Pending
+558,,Sunday,Afternoon,28,12,200.0,16.69,Offer,TODC-558-$25,,25,,Pending
+558,,Sunday,Dinner,35,13,245.0,18.86,Offer,TODC-558-$25,,25,,Pending
+558,,Sunday,Late night,42,12,206.0,17.2,Offer,TODC-558-$25,,25,,Pending
+5827,,Monday,Overnight,1,4,60.0,15.03,Offer + Ads,TODC-5827-$20,TODC-ADS-5827,20,3.0,Pending
+5827,,Monday,Breakfast,8,8,138.0,17.22,Offer,TODC-5827-$25,,25,,Pending
+5827,,Monday,Lunch,15,8,133.0,16.66,Offer,TODC-5827-$20,,20,,Pending
+5827,,Monday,Afternoon,22,8,148.0,18.5,Offer,TODC-5827-$25,,25,,Pending
+5827,,Monday,Dinner,29,8,171.0,21.41,Offer,TODC-5827-$30,,30,,Pending
+5827,,Monday,Late night,36,23,391.0,16.98,Offer,TODC-5827-$25,,25,,Pending
+5827,,Tuesday,Overnight,2,4,67.0,16.63,Offer + Ads,TODC-5827-$20,TODC-ADS-5827,20,3.0,Pending
+5827,,Tuesday,Breakfast,9,9,150.0,16.62,Offer,TODC-5827-$20,,20,,Pending
+5827,,Tuesday,Lunch,16,7,127.0,18.14,Offer,TODC-5827-$25,,25,,Pending
+5827,,Tuesday,Afternoon,23,8,157.0,19.68,Offer,TODC-5827-$25,,25,,Pending
+5827,,Tuesday,Dinner,30,10,199.0,19.93,Offer,TODC-5827-$25,,25,,Pending
+5827,,Tuesday,Late night,37,20,347.0,17.33,Offer,TODC-5827-$25,,25,,Pending
+5827,,Wednesday,Overnight,3,4,69.0,17.3,Offer + Ads,TODC-5827-$25,TODC-ADS-5827,25,3.0,Pending
+5827,,Wednesday,Breakfast,10,8,143.0,17.83,Offer,TODC-5827-$25,,25,,Pending
+5827,,Wednesday,Lunch,17,7,123.0,17.54,Offer,TODC-5827-$25,,25,,Pending
+5827,,Wednesday,Afternoon,24,8,148.0,18.54,Offer,TODC-5827-$25,,25,,Pending
+5827,,Wednesday,Dinner,31,11,200.0,18.19,Offer,TODC-5827-$25,,25,,Pending
+5827,,Wednesday,Late night,38,19,333.0,17.54,Offer,TODC-5827-$25,,25,,Pending
+5827,,Thursday,Overnight,4,5,85.0,17.0,Offer + Ads,TODC-5827-$25,TODC-ADS-5827,25,3.0,Pending
+5827,,Thursday,Breakfast,11,10,176.0,17.58,Offer,TODC-5827-$25,,25,,Pending
+5827,,Thursday,Lunch,18,8,144.0,17.94,Offer,TODC-5827-$25,,25,,Pending
+5827,,Thursday,Afternoon,25,8,130.0,16.23,Offer,TODC-5827-$20,,20,,Pending
+5827,,Thursday,Dinner,32,10,182.0,18.21,Offer,TODC-5827-$25,,25,,Pending
+5827,,Thursday,Late night,39,21,381.0,18.13,Offer,TODC-5827-$25,,25,,Pending
+5827,,Friday,Overnight,5,4,64.0,16.12,Offer + Ads,TODC-5827-$20,TODC-ADS-5827,20,3.0,Pending
+5827,,Friday,Breakfast,12,11,179.0,16.29,Offer,TODC-5827-$20,,20,,Pending
+5827,,Friday,Lunch,19,8,156.0,19.47,Offer,TODC-5827-$25,,25,,Pending
+5827,,Friday,Afternoon,26,8,146.0,18.2,Offer,TODC-5827-$25,,25,,Pending
+5827,,Friday,Dinner,33,13,249.0,19.12,Offer,TODC-5827-$25,,25,,Pending
+5827,,Friday,Late night,40,20,359.0,17.94,Offer,TODC-5827-$25,,25,,Pending
+5827,,Saturday,Overnight,6,4,71.0,17.8,Offer + Ads,TODC-5827-$25,TODC-ADS-5827,25,3.0,Pending
+5827,,Saturday,Breakfast,13,9,168.0,18.61,Offer,TODC-5827-$25,,25,,Pending
+5827,,Saturday,Lunch,20,7,127.0,18.18,Offer + Ads,TODC-5827-$25,TODC-ADS-5827,25,3.0,Pending
+5827,,Saturday,Afternoon,27,9,155.0,17.25,Offer,TODC-5827-$25,,25,,Pending
+5827,,Saturday,Dinner,34,9,173.0,19.21,Offer,TODC-5827-$25,,25,,Pending
+5827,,Saturday,Late night,41,19,332.0,17.49,Offer,TODC-5827-$25,,25,,Pending
+5827,,Sunday,Overnight,7,3,43.0,14.24,Offer + Ads,TODC-5827-$20,TODC-ADS-5827,20,3.0,Pending
+5827,,Sunday,Breakfast,14,9,176.0,19.54,Offer,TODC-5827-$25,,25,,Pending
+5827,,Sunday,Lunch,21,8,150.0,18.72,Offer,TODC-5827-$25,,25,,Pending
+5827,,Sunday,Afternoon,28,8,141.0,17.66,Offer,TODC-5827-$25,,25,,Pending
+5827,,Sunday,Dinner,35,10,184.0,18.38,Offer,TODC-5827-$25,,25,,Pending
+5827,,Sunday,Late night,42,18,336.0,18.69,Offer,TODC-5827-$25,,25,,Pending
+6124,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+6124,,Monday,Breakfast,8,13,204.0,15.73,Offer,TODC-6124-$20,,20,,Pending
+6124,,Monday,Lunch,15,8,129.0,16.11,Offer + Ads,TODC-6124-$20,TODC-ADS-6124,20,3.0,Pending
+6124,,Monday,Afternoon,22,8,119.0,14.91,Offer + Ads,TODC-6124-$20,TODC-ADS-6124,20,3.0,Pending
+6124,,Monday,Dinner,29,8,155.0,19.32,Offer + Ads,TODC-6124-$25,TODC-ADS-6124,25,3.0,Pending
+6124,,Monday,Late night,36,11,189.0,17.2,Offer,TODC-6124-$25,,25,,Pending
+6124,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+6124,,Tuesday,Breakfast,9,12,203.0,16.91,Offer,TODC-6124-$25,,25,,Pending
+6124,,Tuesday,Lunch,16,8,154.0,19.3,Offer,TODC-6124-$25,,25,,Pending
+6124,,Tuesday,Afternoon,23,9,139.0,15.47,Offer,TODC-6124-$20,,20,,Pending
+6124,,Tuesday,Dinner,30,8,149.0,18.63,Offer,TODC-6124-$25,,25,,Pending
+6124,,Tuesday,Late night,37,11,190.0,17.31,Offer,TODC-6124-$25,,25,,Pending
+6124,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+6124,,Wednesday,Breakfast,10,14,241.0,17.18,Offer,TODC-6124-$25,,25,,Pending
+6124,,Wednesday,Lunch,17,8,148.0,18.55,Offer,TODC-6124-$25,,25,,Pending
+6124,,Wednesday,Afternoon,24,9,157.0,17.48,Offer,TODC-6124-$25,,25,,Pending
+6124,,Wednesday,Dinner,31,8,160.0,20.05,Offer,TODC-6124-$25,,25,,Pending
+6124,,Wednesday,Late night,38,11,201.0,18.31,Offer,TODC-6124-$25,,25,,Pending
+6124,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+6124,,Thursday,Breakfast,11,16,252.0,15.75,Offer,TODC-6124-$20,,20,,Pending
+6124,,Thursday,Lunch,18,10,158.0,15.75,Offer,TODC-6124-$20,,20,,Pending
+6124,,Thursday,Afternoon,25,9,151.0,16.78,Offer,TODC-6124-$25,,25,,Pending
+6124,,Thursday,Dinner,32,9,179.0,19.88,Offer,TODC-6124-$25,,25,,Pending
+6124,,Thursday,Late night,39,12,228.0,19.01,Offer,TODC-6124-$25,,25,,Pending
+6124,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+6124,,Friday,Breakfast,12,16,242.0,15.13,Offer,TODC-6124-$20,,20,,Pending
+6124,,Friday,Lunch,19,8,152.0,18.94,Offer + Ads,TODC-6124-$25,TODC-ADS-6124,25,3.0,Pending
+6124,,Friday,Afternoon,26,10,179.0,17.9,Offer,TODC-6124-$25,,25,,Pending
+6124,,Friday,Dinner,33,9,162.0,18.0,Offer,TODC-6124-$25,,25,,Pending
+6124,,Friday,Late night,40,13,230.0,17.69,Offer,TODC-6124-$25,,25,,Pending
+6124,,Saturday,Overnight,6,0,0.0,0.0,None,no campaign,,,,
+6124,,Saturday,Breakfast,13,16,267.0,16.69,Offer,TODC-6124-$25,,25,,Pending
+6124,,Saturday,Lunch,20,12,194.0,16.19,Offer,TODC-6124-$20,,20,,Pending
+6124,,Saturday,Afternoon,27,6,110.0,18.36,Offer + Ads,TODC-6124-$25,TODC-ADS-6124,25,3.0,Pending
+6124,,Saturday,Dinner,34,8,138.0,17.29,Offer + Ads,TODC-6124-$25,TODC-ADS-6124,25,3.0,Pending
+6124,,Saturday,Late night,41,8,130.0,16.29,Offer + Ads,TODC-6124-$20,TODC-ADS-6124,20,3.0,Pending
+6124,,Sunday,Overnight,7,0,0.0,0.0,None,no campaign,,,,
+6124,,Sunday,Breakfast,14,15,268.0,17.84,Offer,TODC-6124-$25,,25,,Pending
+6124,,Sunday,Lunch,21,11,197.0,17.91,Offer,TODC-6124-$25,,25,,Pending
+6124,,Sunday,Afternoon,28,10,190.0,19.01,Offer,TODC-6124-$25,,25,,Pending
+6124,,Sunday,Dinner,35,7,130.0,18.64,Offer + Ads,TODC-6124-$25,TODC-ADS-6124,25,3.0,Pending
+6124,,Sunday,Late night,42,12,226.0,18.81,Offer,TODC-6124-$25,,25,,Pending
+7298,,Monday,Overnight,1,0,0.0,0.0,None,no campaign,,,,
+7298,,Monday,Breakfast,8,16,254.0,15.89,Offer,TODC-7298-$20,,20,,Pending
+7298,,Monday,Lunch,15,13,232.0,17.81,Offer,TODC-7298-$25,,25,,Pending
+7298,,Monday,Afternoon,22,12,219.0,18.25,Offer + Ads,TODC-7298-$25,TODC-ADS-7298,25,3.0,Pending
+7298,,Monday,Dinner,29,13,250.0,19.25,Offer,TODC-7298-$25,,25,,Pending
+7298,,Monday,Late night,36,6,96.0,16.04,Offer + Ads,TODC-7298-$20,TODC-ADS-7298,20,3.0,Pending
+7298,,Tuesday,Overnight,2,0,0.0,0.0,None,no campaign,,,,
+7298,,Tuesday,Breakfast,9,17,260.0,15.31,Offer,TODC-7298-$20,,20,,Pending
+7298,,Tuesday,Lunch,16,12,208.0,17.32,Offer,TODC-7298-$25,,25,,Pending
+7298,,Tuesday,Afternoon,23,13,244.0,18.76,Offer,TODC-7298-$25,,25,,Pending
+7298,,Tuesday,Dinner,30,16,316.0,19.77,Offer,TODC-7298-$25,,25,,Pending
+7298,,Tuesday,Late night,37,6,102.0,17.05,Offer + Ads,TODC-7298-$25,TODC-ADS-7298,25,3.0,Pending
+7298,,Wednesday,Overnight,3,0,0.0,0.0,None,no campaign,,,,
+7298,,Wednesday,Breakfast,10,15,242.0,16.12,Offer,TODC-7298-$20,,20,,Pending
+7298,,Wednesday,Lunch,17,14,250.0,17.83,Offer,TODC-7298-$25,,25,,Pending
+7298,,Wednesday,Afternoon,24,14,264.0,18.83,Offer,TODC-7298-$25,,25,,Pending
+7298,,Wednesday,Dinner,31,17,357.0,20.99,Offer,TODC-7298-$30,,30,,Pending
+7298,,Wednesday,Late night,38,7,124.0,17.7,Offer + Ads,TODC-7298-$25,TODC-ADS-7298,25,3.0,Pending
+7298,,Thursday,Overnight,4,0,0.0,0.0,None,no campaign,,,,
+7298,,Thursday,Breakfast,11,15,250.0,16.68,Offer,TODC-7298-$25,,25,,Pending
+7298,,Thursday,Lunch,18,12,204.0,17.01,Offer,TODC-7298-$25,,25,,Pending
+7298,,Thursday,Afternoon,25,13,235.0,18.07,Offer,TODC-7298-$25,,25,,Pending
+7298,,Thursday,Dinner,32,15,290.0,19.37,Offer,TODC-7298-$25,,25,,Pending
+7298,,Thursday,Late night,39,9,186.0,20.69,Offer + Ads,TODC-7298-$25,TODC-ADS-7298,25,3.0,Pending
+7298,,Friday,Overnight,5,0,0.0,0.0,None,no campaign,,,,
+7298,,Friday,Breakfast,12,20,319.0,15.95,Offer,TODC-7298-$20,,20,,Pending
+7298,,Friday,Lunch,19,17,306.0,17.99,Offer,TODC-7298-$25,,25,,Pending
+7298,,Friday,Afternoon,26,15,284.0,18.92,Offer,TODC-7298-$25,,25,,Pending
+7298,,Friday,Dinner,33,20,393.0,19.65,Offer,TODC-7298-$25,,25,,Pending
+7298,,Friday,Late night,40,22,413.0,18.77,Offer,TODC-7298-$25,,25,,Pending
+7298,,Saturday,Overnight,6,1,21.0,21.16,Offer + Ads,TODC-7298-$30,TODC-ADS-7298,30,3.0,Pending
+7298,,Saturday,Breakfast,13,24,408.0,16.98,Offer,TODC-7298-$25,,25,,Pending
+7298,,Saturday,Lunch,20,16,294.0,18.39,Offer,TODC-7298-$25,,25,,Pending
+7298,,Saturday,Afternoon,27,15,275.0,18.32,Offer,TODC-7298-$25,,25,,Pending
+7298,,Saturday,Dinner,34,15,299.0,19.91,Offer,TODC-7298-$25,,25,,Pending
+7298,,Saturday,Late night,41,20,342.0,17.08,Offer,TODC-7298-$25,,25,,Pending
+7298,,Sunday,Overnight,7,1,11.0,10.76,Offer + Ads,TODC-7298-$15,TODC-ADS-7298,15,3.0,Pending
+7298,,Sunday,Breakfast,14,21,375.0,17.86,Offer,TODC-7298-$25,,25,,Pending
+7298,,Sunday,Lunch,21,14,247.0,17.64,Offer,TODC-7298-$25,,25,,Pending
+7298,,Sunday,Afternoon,28,13,236.0,18.16,Offer,TODC-7298-$25,,25,,Pending
+7298,,Sunday,Dinner,35,13,226.0,17.36,Offer,TODC-7298-$25,,25,,Pending
+7298,,Sunday,Late night,42,8,146.0,18.19,Offer + Ads,TODC-7298-$25,TODC-ADS-7298,25,3.0,Pending
+7782,,Monday,Overnight,1,2,39.0,19.6,Offer + Ads,TODC-7782-$25,TODC-ADS-7782,25,3.0,Pending
+7782,,Monday,Breakfast,8,15,262.0,17.49,Offer,TODC-7782-$25,,25,,Pending
+7782,,Monday,Lunch,15,11,209.0,18.97,Offer,TODC-7782-$25,,25,,Pending
+7782,,Monday,Afternoon,22,12,222.0,18.54,Offer,TODC-7782-$25,,25,,Pending
+7782,,Monday,Dinner,29,12,207.0,17.22,Offer,TODC-7782-$25,,25,,Pending
+7782,,Monday,Late night,36,16,260.0,16.23,Offer,TODC-7782-$20,,20,,Pending
+7782,,Tuesday,Overnight,2,3,50.0,16.81,Offer + Ads,TODC-7782-$25,TODC-ADS-7782,25,3.0,Pending
+7782,,Tuesday,Breakfast,9,14,264.0,18.85,Offer,TODC-7782-$25,,25,,Pending
+7782,,Tuesday,Lunch,16,11,174.0,15.8,Offer,TODC-7782-$20,,20,,Pending
+7782,,Tuesday,Afternoon,23,13,225.0,17.3,Offer,TODC-7782-$25,,25,,Pending
+7782,,Tuesday,Dinner,30,14,264.0,18.82,Offer,TODC-7782-$25,,25,,Pending
+7782,,Tuesday,Late night,37,15,240.0,15.98,Offer,TODC-7782-$20,,20,,Pending
+7782,,Wednesday,Overnight,3,3,42.0,14.02,Offer + Ads,TODC-7782-$20,TODC-ADS-7782,20,3.0,Pending
+7782,,Wednesday,Breakfast,10,16,278.0,17.37,Offer,TODC-7782-$25,,25,,Pending
+7782,,Wednesday,Lunch,17,11,200.0,18.21,Offer,TODC-7782-$25,,25,,Pending
+7782,,Wednesday,Afternoon,24,12,195.0,16.27,Offer,TODC-7782-$20,,20,,Pending
+7782,,Wednesday,Dinner,31,13,235.0,18.04,Offer,TODC-7782-$25,,25,,Pending
+7782,,Wednesday,Late night,38,17,296.0,17.43,Offer,TODC-7782-$25,,25,,Pending
+7782,,Thursday,Overnight,4,3,45.0,15.08,Offer + Ads,TODC-7782-$20,TODC-ADS-7782,20,3.0,Pending
+7782,,Thursday,Breakfast,11,14,246.0,17.54,Offer,TODC-7782-$25,,25,,Pending
+7782,,Thursday,Lunch,18,10,173.0,17.31,Offer + Ads,TODC-7782-$25,TODC-ADS-7782,25,3.0,Pending
+7782,,Thursday,Afternoon,25,15,256.0,17.09,Offer,TODC-7782-$25,,25,,Pending
+7782,,Thursday,Dinner,32,13,261.0,20.06,Offer,TODC-7782-$25,,25,,Pending
+7782,,Thursday,Late night,39,17,302.0,17.75,Offer,TODC-7782-$25,,25,,Pending
+7782,,Friday,Overnight,5,2,43.0,21.75,Offer + Ads,TODC-7782-$30,TODC-ADS-7782,30,3.0,Pending
+7782,,Friday,Breakfast,12,20,336.0,16.8,Offer,TODC-7782-$25,,25,,Pending
+7782,,Friday,Lunch,19,13,218.0,16.73,Offer,TODC-7782-$25,,25,,Pending
+7782,,Friday,Afternoon,26,15,268.0,17.84,Offer,TODC-7782-$25,,25,,Pending
+7782,,Friday,Dinner,33,16,292.0,18.24,Offer,TODC-7782-$25,,25,,Pending
+7782,,Friday,Late night,40,19,344.0,18.08,Offer,TODC-7782-$25,,25,,Pending
+7782,,Saturday,Overnight,6,3,47.0,15.73,Offer + Ads,TODC-7782-$20,TODC-ADS-7782,20,3.0,Pending
+7782,,Saturday,Breakfast,13,19,366.0,19.25,Offer,TODC-7782-$25,,25,,Pending
+7782,,Saturday,Lunch,20,16,290.0,18.12,Offer,TODC-7782-$25,,25,,Pending
+7782,,Saturday,Afternoon,27,15,262.0,17.47,Offer,TODC-7782-$25,,25,,Pending
+7782,,Saturday,Dinner,34,13,230.0,17.71,Offer,TODC-7782-$25,,25,,Pending
+7782,,Saturday,Late night,41,18,291.0,16.19,Offer,TODC-7782-$20,,20,,Pending
+7782,,Sunday,Overnight,7,3,58.0,19.25,Offer + Ads,TODC-7782-$25,TODC-ADS-7782,25,3.0,Pending
+7782,,Sunday,Breakfast,14,20,364.0,18.2,Offer,TODC-7782-$25,,25,,Pending
+7782,,Sunday,Lunch,21,15,267.0,17.81,Offer,TODC-7782-$25,,25,,Pending
+7782,,Sunday,Afternoon,28,13,240.0,18.43,Offer,TODC-7782-$25,,25,,Pending
+7782,,Sunday,Dinner,35,12,211.0,17.56,Offer,TODC-7782-$25,,25,,Pending
+7782,,Sunday,Late night,42,15,281.0,18.73,Offer,TODC-7782-$25,,25,,Pending

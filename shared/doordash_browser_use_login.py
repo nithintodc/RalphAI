@@ -1,7 +1,8 @@
-"""Programmatic DoorDash login for an existing browser-use Browser session."""
+"""Uniform DoorDash browser-use session prep: open browser → login if needed → work."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -36,7 +37,33 @@ async def _playwright_page_from_browser_use(browser: Any):
         raise
 
 
-async def ensure_doordash_logged_in_browser_use(
+async def warmup_doordash_portal(browser: Any) -> None:
+    """Navigate to Reports (Multilogin / pre-authenticated profiles)."""
+    await browser.start()
+    try:
+        page = await browser.get_current_page()
+        if page is not None:
+            await page.goto(MERCHANT_REPORTS_URL)
+    except Exception as exc:
+        logger.warning("DoorDash portal warmup navigation failed: %s", exc)
+    await asyncio.sleep(3)
+    logger.info("DoorDash portal warmup complete")
+
+
+async def _dismiss_reports_onboarding_modal(page: Any) -> None:
+    """Click 'Got it' on the DoorDash Reports onboarding popup if present."""
+    try:
+        await page.wait_for_timeout(1500)
+        got_it = page.get_by_role("button", name="Got it")
+        if await got_it.count() > 0:
+            await got_it.first.click()
+            logger.info("Dismissed DoorDash Reports onboarding popup")
+            await page.wait_for_timeout(800)
+    except Exception:
+        pass
+
+
+async def prepare_doordash_browser_session(
     browser: Any,
     email: str,
     password: str | None = None,
@@ -44,42 +71,64 @@ async def ensure_doordash_logged_in_browser_use(
     operator_name: str | None = None,
 ) -> bool:
     """
-    Log in via Playwright on the same Chrome session browser-use controls.
+    Uniform pre-agent hook for every DoorDash browser agent.
 
-    Skips credential entry when Multilogin mode is active (pre-authenticated profiles).
+    Multilogin: navigate to Reports (profile already authenticated).
+    Native: always logout whatever DoorDash account is active, then login with
+    the selected operator credentials. This ensures reports are always created
+    for the correct operator regardless of which session cookies are present.
     """
     from shared.browser_settings import multilogin_mode_active
 
-    await browser.start()
-
     if multilogin_mode_active():
-        logger.info("Multilogin mode — skipping credential login, navigating to Reports")
-        page = await browser.get_current_page()
-        if page is not None:
-            await page.goto(MERCHANT_REPORTS_URL)
+        await warmup_doordash_portal(browser)
         return True
 
-    resolved_email, resolved_password = resolve_doordash_credentials(
+    resolved_email, _resolved_password = resolve_doordash_credentials(
         email, password, operator_name=operator_name
     )
+    logger.info(
+        "Preparing DoorDash session for %s (login only if needed)",
+        resolved_email,
+    )
 
+    await browser.start()
     pw = None
     try:
         pw, page = await _playwright_page_from_browser_use(browser)
         ok = await login_doordash_merchant(
             page,
             resolved_email,
-            resolved_password,
+            password,
             operator_name=operator_name,
+            force_relogin=True,
         )
         if ok:
             try:
                 bu_page = await browser.get_current_page()
                 if bu_page is not None:
                     await bu_page.goto(MERCHANT_REPORTS_URL)
+                    await _dismiss_reports_onboarding_modal(bu_page)
             except Exception as nav_err:
                 logger.warning("Post-login navigation to Reports failed: %s", nav_err)
         return ok
     finally:
         if pw is not None:
             await pw.stop()
+
+
+async def ensure_doordash_logged_in_browser_use(
+    browser: Any,
+    email: str,
+    password: str | None = None,
+    *,
+    operator_name: str | None = None,
+    force_relogin: bool = False,
+) -> bool:
+    """Backward-compatible alias — delegates to :func:`prepare_doordash_browser_session`."""
+    return await prepare_doordash_browser_session(
+        browser,
+        email,
+        password,
+        operator_name=operator_name,
+    )

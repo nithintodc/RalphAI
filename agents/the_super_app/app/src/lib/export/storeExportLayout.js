@@ -1,16 +1,153 @@
 /** Store ID / Store Name columns and aligned Combined / DD / UE export rows. */
 
 import { getDominantStorePlatform } from '../utils/storeMeta';
-import { buildDdStoreCatalog, buildUeStoreCatalog } from '../utils/storeCatalog';
+import { buildDdStoreCatalog, buildDdStoreIdToMerchantMap, buildUeStoreCatalog } from '../utils/storeCatalog';
+import { ddMerchantStoreId } from '../utils/storeDisplay';
 
 export { getDominantStorePlatform };
 
 export const EXPORT_NA = 'NA';
 
-export const LEGACY_STORE_HEADERS_PVP = ['Store ID', 'Store Name', 'Pre', 'Post', 'PrevsPost', 'LastYear Pre vs Post', 'Growth%'];
-export const LEGACY_STORE_HEADERS_YOY = ['Store ID', 'Store Name', 'last year-post', 'post', 'YoY', 'YoY%'];
+export const EXPORT_DD_MERCHANT_STORE_ID_HEADER = 'Merchant Store ID';
+export const EXPORT_UE_STORE_ID_HEADER = 'Store ID (UE)';
+export const EXPORT_STORE_ID_HEADERS = [EXPORT_DD_MERCHANT_STORE_ID_HEADER, EXPORT_UE_STORE_ID_HEADER];
 
-/** DoorDash export Store ID column — prefer DD platform ID. */
+const LEGACY_STORE_METRIC_HEADERS_PVP = [
+  'Store Name',
+  'Pre',
+  'Post',
+  'PrevsPost',
+  'LastYear Pre vs Post',
+  'Growth%',
+  'LY Growth%',
+];
+const LEGACY_STORE_METRIC_HEADERS_YOY = [
+  'Store Name',
+  'last year-post',
+  'post',
+  'YoY',
+  'YoY%',
+];
+
+export function exportStoreIdHeaders(platform) {
+  if (platform === 'dd') return [EXPORT_DD_MERCHANT_STORE_ID_HEADER];
+  if (platform === 'ue') return [EXPORT_UE_STORE_ID_HEADER];
+  return EXPORT_STORE_ID_HEADERS;
+}
+
+export function legacyStoreHeadersPvp(platform) {
+  return [...exportStoreIdHeaders(platform), ...LEGACY_STORE_METRIC_HEADERS_PVP];
+}
+
+export function legacyStoreHeadersYoy(platform) {
+  return [...exportStoreIdHeaders(platform), ...LEGACY_STORE_METRIC_HEADERS_YOY];
+}
+
+/** @deprecated Use legacyStoreHeadersPvp(platform) */
+export const LEGACY_STORE_HEADERS_PVP = legacyStoreHeadersPvp('combined');
+/** @deprecated Use legacyStoreHeadersYoy(platform) */
+export const LEGACY_STORE_HEADERS_YOY = legacyStoreHeadersYoy('combined');
+
+function buildUeToDdMap(ddToUeStoreMap = {}) {
+  const out = {};
+  for (const [ddId, ueId] of Object.entries(ddToUeStoreMap)) {
+    const ueKey = String(ueId ?? '').trim();
+    if (ueKey) out[ueKey] = String(ddId).trim();
+  }
+  return out;
+}
+
+/** DoorDash Merchant Store ID for exports (not DD portal Store ID). */
+export function exportDdMerchantStoreId(
+  row,
+  platform,
+  dominantPlatform = 'dd',
+  ueToDdMap = {},
+  ddStoreIdToMerchant = null,
+) {
+  if (!row || row._isNa) return EXPORT_NA;
+  const merchantMap = ddStoreIdToMerchant || new Map();
+
+  if (platform === 'dd') {
+    const id = ddMerchantStoreId(row, merchantMap);
+    return id || EXPORT_NA;
+  }
+
+  if (platform === 'ue') {
+    const ueId = String(row.storeId ?? '').trim();
+    const ddKey = ueId && ueToDdMap[ueId];
+    if (ddKey) {
+      const id = ddMerchantStoreId({ storeId: ddKey, merchantStoreId: row.merchantStoreId }, merchantMap);
+      return id || ddKey;
+    }
+    return EXPORT_NA;
+  }
+
+  const ddKey = String(row._ddStoreKey ?? (dominantPlatform === 'dd' ? row.storeId : '') ?? '').trim();
+  const id = ddMerchantStoreId({ ...row, storeId: ddKey }, merchantMap);
+  return id || ddKey || EXPORT_NA;
+}
+
+/** Uber Eats Store ID for exports. */
+export function exportUeStoreId(row, platform, dominantPlatform = 'dd', ddToUeStoreMap = {}) {
+  if (!row || row._isNa) return EXPORT_NA;
+
+  if (platform === 'ue') {
+    const id = String(row.storeId ?? '').trim();
+    return id || EXPORT_NA;
+  }
+
+  if (platform === 'dd') {
+    const ddKey = String(row.storeId ?? '').trim();
+    const ueId = ddToUeStoreMap[ddKey];
+    return ueId ? String(ueId).trim() : EXPORT_NA;
+  }
+
+  const ddKey = String(row._ddStoreKey ?? (dominantPlatform === 'dd' ? row.storeId : '') ?? '').trim();
+  const ueKey = String(
+    row._ueStoreKey
+    ?? (dominantPlatform === 'ue' ? row.storeId : (ddToUeStoreMap[ddKey] ?? ''))
+    ?? '',
+  ).trim();
+  return ueKey || EXPORT_NA;
+}
+
+/** Platform-aware store ID cells for export tables. */
+export function exportStoreIdCells(
+  row,
+  platform,
+  dominantPlatform = 'dd',
+  ddToUeStoreMap = {},
+  ddStoreIdToMerchant = null,
+) {
+  const ueToDd = buildUeToDdMap(ddToUeStoreMap);
+  return [
+    exportDdMerchantStoreId(row, platform, dominantPlatform, ueToDd, ddStoreIdToMerchant),
+    exportUeStoreId(row, platform, dominantPlatform, ddToUeStoreMap),
+  ];
+}
+
+/** One or two store ID columns matching exportStoreIdHeaders(platform). */
+export function exportStoreIdRowCells(
+  row,
+  platform,
+  dominantPlatform = 'dd',
+  ddToUeStoreMap = {},
+  ddStoreIdToMerchant = null,
+) {
+  const [ddMerchant, ueStore] = exportStoreIdCells(
+    row,
+    platform,
+    dominantPlatform,
+    ddToUeStoreMap,
+    ddStoreIdToMerchant,
+  );
+  if (platform === 'dd') return [ddMerchant];
+  if (platform === 'ue') return [ueStore];
+  return [ddMerchant, ueStore];
+}
+
+/** @deprecated Prefer exportDdMerchantStoreId — legacy single column used DD portal Store ID. */
 export function ddExportStoreId(row) {
   if (!row || row._isNa) return EXPORT_NA;
   return row.ddStoreId || row.storeId || '';
@@ -46,6 +183,7 @@ function emptyMetricRow(base = {}) {
     sales_prevspost: null,
     sales_ly_prevspost: null,
     sales_growth_pct: null,
+    sales_ly_growth_pct: null,
     postLY_sales: null,
     sales_yoy: null,
     sales_yoy_pct: null,
@@ -59,9 +197,15 @@ function emptyMetricRow(base = {}) {
  */
 export function buildAlignedExportStoreTables(storeTables, ddToUeStoreMap = {}) {
   const combined = storeTables?.combined || [];
-  const ddMap = new Map((storeTables?.dd || []).map((r) => [String(r.storeId ?? '').trim(), r]).filter(([k]) => k));
-  const ueMap = new Map((storeTables?.ue || []).map((r) => [String(r.storeId ?? '').trim(), r]).filter(([k]) => k));
+  const ddRows = storeTables?.dd || [];
+  const ueRows = storeTables?.ue || [];
+  const ddMap = new Map(ddRows.map((r) => [String(r.storeId ?? '').trim(), r]).filter(([k]) => k));
+  const ueMap = new Map(ueRows.map((r) => [String(r.storeId ?? '').trim(), r]).filter(([k]) => k));
   const ddPrimary = getDominantStorePlatform(ddMap.size, ueMap.size);
+
+  if (ddRows.length === combined.length && ueRows.length === combined.length && combined.length > 0) {
+    return { combined, dd: ddRows, ue: ueRows, dominantPlatform: ddPrimary ? 'dd' : 'ue' };
+  }
 
   const aligned = { combined, dd: [], ue: [], dominantPlatform: ddPrimary ? 'dd' : 'ue' };
 
@@ -83,16 +227,18 @@ export function buildAlignedExportStoreTables(storeTables, ddToUeStoreMap = {}) 
   return aligned;
 }
 
-export function legacyStoreIdCell(row, platform) {
-  if (platform === 'dd') return ddExportStoreId(row);
-  if (platform === 'ue') return ueExportStoreId(row);
-  return row?.storeId ?? '';
+export function legacyStoreIdCell(row, platform, dominantPlatform = 'dd', ddToUeStoreMap = {}) {
+  const [ddId] = exportStoreIdCells(row, platform, dominantPlatform, ddToUeStoreMap);
+  return ddId;
 }
 
-function catalogDdStoreId(ddCat, ddRow, ddKey) {
-  if (ddCat?.ddStoreId && ddCat.ddStoreId !== '—') return ddCat.ddStoreId;
-  if (ddRow?.ddStoreId) return ddRow.ddStoreId;
-  return ddKey || '';
+function catalogDdMerchantStoreId(ddCat, ddRow, ddKey, ddStoreIdToMerchant) {
+  if (ddCat?.merchantStoreId && ddCat.merchantStoreId !== '—') return ddCat.merchantStoreId;
+  const id = ddMerchantStoreId(
+    { storeId: ddKey, merchantStoreId: ddRow?.merchantStoreId ?? ddCat?.merchantStoreId, ddStoreId: ddRow?.ddStoreId ?? ddCat?.ddStoreId },
+    ddStoreIdToMerchant,
+  );
+  return id || ddKey || '';
 }
 
 function catalogStoreName(catalogName, rowName) {
@@ -108,6 +254,7 @@ export function buildStoreMappingExportRows(data, config) {
   const ddToUe = config?.ddToUeStoreMap || {};
   const ddCatalog = buildDdStoreCatalog(data?.ddFinancial);
   const ueCatalog = buildUeStoreCatalog(data?.ueFinancial);
+  const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(data?.ddFinancial);
   const ddCatById = new Map(ddCatalog.map((d) => [d.id, d]));
   const ueCatById = new Map(ueCatalog.map((u) => [u.id, u]));
 
@@ -123,7 +270,7 @@ export function buildStoreMappingExportRows(data, config) {
     const ddRow = ddKey ? ddMap.get(ddKey) : null;
     const ueRow = ueKey ? ueMap.get(ueKey) : null;
     rows.push([
-      catalogDdStoreId(ddCat, ddRow, ddKey),
+      catalogDdMerchantStoreId(ddCat, ddRow, ddKey, ddStoreIdToMerchant),
       catalogStoreName(ddCat?.name, ddRow?.storeName),
       ueKey || '',
       catalogStoreName(ueCat?.name, ueRow?.storeName),
@@ -151,7 +298,7 @@ export function buildStoreMappingExportBlock(data, config) {
   const dataRows = buildStoreMappingExportRows(data, config);
   return [
     ['Store mapping (DoorDash ↔ Uber Eats)'],
-    ['DD Store ID', 'DD Store Name', 'UE Store ID', 'UE Store Name'],
+    ['Merchant Store ID', 'DD Store Name', 'UE Store ID', 'UE Store Name'],
     ...dataRows,
   ];
 }

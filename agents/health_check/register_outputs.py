@@ -1,5 +1,5 @@
 """
-Health Check register bundle: week1/2 DD+UE registers, WoW registers, HTML, PDF, Drive, Slack.
+Health Check register bundle: DoorDash week1/2 registers, WoW registers, HTML, PDF, Drive, Slack.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from agents.health_check.campaign_wow import campaign_wow_for_html
 from agents.health_check.wow_viz import build_register_wow_report_html
 from shared.register_build import (
     build_wow_register_csv,
-    empty_ue_register_df,
     register_df_to_analysis_rows,
     weekly_csv_to_register_df,
     write_register_csv,
@@ -83,10 +82,7 @@ def drive_pdf_view_link(upload: dict[str, Any]) -> str:
 REGISTER_FILES = {
     "week1_dd": "week1-dd-register.csv",
     "week2_dd": "week2-dd-register.csv",
-    "week1_ue": "week1-ue-register.csv",
-    "week2_ue": "week2-ue-register.csv",
     "wow_dd": "WoW-dd-register.csv",
-    "wow_ue": "WoW-ue-register.csv",
     "html": "register_wow_report.html",
     "pdf": "register_wow_report.pdf",
     "wow_campaigns_promo": "wow_campaigns_promo.csv",
@@ -102,9 +98,8 @@ def build_operator_register_bundle(
     week1_label: str,
     week2_label: str,
     operator_name: str,
-    ue_week1_csv: Path | None = None,
-    ue_week2_csv: Path | None = None,
     campaign_wow_files: dict[str, str | None] | None = None,
+    growth_report: dict | None = None,
     post_slack: bool = True,
 ) -> dict[str, Any]:
     """
@@ -117,7 +112,6 @@ def build_operator_register_bundle(
     # DoorDash registers from weekly health-check CSVs
     dd_w1_df = weekly_csv_to_register_df(week1_weekly_csv, week_label=week1_label)
     dd_w2_df = weekly_csv_to_register_df(week2_weekly_csv, week_label=week2_label)
-    store_ids = sorted(dd_w1_df["Merchant Store ID"].astype(str).unique().tolist())
 
     w1_dd = output_dir / REGISTER_FILES["week1_dd"]
     w2_dd = output_dir / REGISTER_FILES["week2_dd"]
@@ -134,39 +128,10 @@ def build_operator_register_bundle(
         }
     )
 
-    # Uber Eats — from UE weekly CSVs when provided, else zero grid (DD store IDs)
-    if ue_week1_csv and ue_week1_csv.is_file() and ue_week2_csv and ue_week2_csv.is_file():
-        ue_w1_df = weekly_csv_to_register_df(ue_week1_csv, week_label=week1_label)
-        ue_w2_df = weekly_csv_to_register_df(ue_week2_csv, week_label=week2_label)
-        result["platform"] = "dd+ue"
-    else:
-        ue_w1_df = empty_ue_register_df(store_ids, week_label=week1_label)
-        ue_w2_df = empty_ue_register_df(store_ids, week_label=week2_label)
-
-    w1_ue = output_dir / REGISTER_FILES["week1_ue"]
-    w2_ue = output_dir / REGISTER_FILES["week2_ue"]
-    wow_ue = output_dir / REGISTER_FILES["wow_ue"]
-    write_register_csv(ue_w1_df, w1_ue)
-    write_register_csv(ue_w2_df, w2_ue)
-    build_wow_register_csv(w1_ue, w2_ue, wow_ue)
-
-    result["register_files"].update(
-        {
-            "week1_ue_register": str(w1_ue),
-            "week2_ue_register": str(w2_ue),
-            "wow_ue_register": str(wow_ue),
-        }
-    )
-
     labels = {"week1": week1_label, "week2": week2_label}
     dd_analysis = compare_register_slots(
         register_df_to_analysis_rows(dd_w1_df),
         register_df_to_analysis_rows(dd_w2_df),
-        labels=labels,
-    )
-    ue_analysis = compare_register_slots(
-        register_df_to_analysis_rows(ue_w1_df),
-        register_df_to_analysis_rows(ue_w2_df),
         labels=labels,
     )
 
@@ -203,11 +168,10 @@ def build_operator_register_bundle(
 
     html_path = build_register_wow_report_html(
         dd_analysis,
-        ue_analysis=ue_analysis,
         output_path=output_dir / REGISTER_FILES["html"],
         title_suffix=operator_name,
-        ue_has_data=result["platform"] == "dd+ue",
         campaigns_analysis=campaigns_html if campaigns_html else None,
+        growth_report=growth_report,
     )
     if html_path:
         result["wow_viz_html"] = str(html_path)

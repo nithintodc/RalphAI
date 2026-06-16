@@ -31,13 +31,14 @@ def create_browser_use_browser(
     from shared.multilogin_browser import resolve_multilogin_cdp_url, stop_active_profile
 
     downloads_path = str(Path(download_dir).resolve())
+    profile_email = (doordash_email or "").strip() or None
     common = dict(
         downloads_path=downloads_path,
         enable_default_extensions=False,
         keep_alive=keep_alive,
     )
 
-    mlx_cdp = resolve_multilogin_cdp_url(doordash_email) if multilogin_mode_active() else None
+    mlx_cdp = resolve_multilogin_cdp_url(profile_email) if multilogin_mode_active() else None
     if mlx_cdp:
         logger.info("Connecting via Multilogin CDP: %s", mlx_cdp)
         return Browser(
@@ -49,13 +50,29 @@ def create_browser_use_browser(
 
     cdp_url = os.getenv("LOCAL_BROWSER_CDP_URL", "").strip()
     if cdp_url:
-        logger.info("Connecting to remote Chrome via CDP: %s", cdp_url)
+        from shared.local_chrome_cdp import ensure_local_chrome_cdp, resolve_chrome_launch_config
+
+        config = resolve_chrome_launch_config(profile_email)
+        logger.info(
+            "Starting Chrome CDP for agent run (%s) at %s",
+            config.launch_label,
+            cdp_url,
+        )
+        ensure_local_chrome_cdp(cdp_url, doordash_email=profile_email)
         return Browser(cdp_url=cdp_url, **common)
 
-    if os.name == "posix":
-        chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if Path(chrome).exists():
-            return Browser(executable_path=chrome, **common)
+    from shared.local_chrome_cdp import chrome_executable, resolve_user_data_dir
+
+    chrome = chrome_executable()
+    if chrome:
+        profile = resolve_user_data_dir(profile_email)
+        profile.mkdir(parents=True, exist_ok=True)
+        logger.info("Launching local Chrome with profile %s", profile)
+        return Browser(
+            executable_path=chrome,
+            user_data_dir=str(profile),
+            **common,
+        )
 
     return Browser(**common)
 

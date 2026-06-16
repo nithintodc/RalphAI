@@ -87,10 +87,11 @@ export function getSheetSummaryLines(sheetName, data, config) {
 
     case 'Corporate vs TODC':
       return [
-        'DoorDash marketing split between Corporate and TODC campaigns (promotion and sponsored listing).',
+        'DoorDash: Corporate vs TODC from marketing files (Is self serve campaign — false=Corporate, true=TODC).',
+        'Uber Eats: aggregate marketing from financial orders (Sales, Spend, ROAS, Cost/Order, Check after Promo) — no Corp/TODC split.',
         tagClause
-          ? `Post-period performance for ${stores}.`
-          : `Post-period performance across ${combinedStoreCount(data)} mapped stores.`,
+          ? `Pre/Post performance for ${stores}.`
+          : `Pre/Post performance across ${combinedStoreCount(data)} mapped stores.`,
         periods,
       ].filter(Boolean);
 

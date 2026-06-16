@@ -3,7 +3,7 @@
  */
 import { format } from 'date-fns';
 import { filterByDateRange, filterExcludedDates, filterExcludedStores } from './aggregator';
-import { assignBucket, classifyDdOrder, sumDdOrderMarketingSignals } from './buckets';
+import { assignBucket, classifyDdOrder, classifyUeOrder, sumDdOrderMarketingSignals } from './buckets';
 import { getSlot, getSlotTimeRange, SLOT_NAMES, DAY_NAMES } from './slots';
 import { safeDivide, round } from '../utils/safeMath';
 import { exportByKind } from '../utils/formatters';
@@ -31,6 +31,7 @@ function emptyAgg(storeId, date, slot) {
     payouts: 0,
     mktSpend: 0,
     adsSpend: 0,
+    promoSpend: 0,
     discounts: 0,
     organicOrders: 0,
     promoOrders: 0,
@@ -272,12 +273,6 @@ function buildDdOrderRecords(ddFinancial, errorByOrderId) {
   return out;
 }
 
-const UE_OFFER_EPSILON = 0.01;
-
-/** UE register: promo when |offers| > 0; no ads bucket (UE financial has no ad spend). */
-function classifyUeRegisterOrder(offers) {
-  return Math.abs(offers || 0) >= UE_OFFER_EPSILON ? 'promo' : 'organic';
-}
 
 function buildUeOrderRecords(ueFinancial) {
   const byOrder = new Map();
@@ -298,7 +293,9 @@ function buildUeOrderRecords(ueFinancial) {
     const payouts = rs.reduce((s, r) => s + (r.totalPayout || 0), 0);
     const marketplaceFee = rs.reduce((s, r) => s + (r.marketplaceFee || 0), 0);
     const offers = rs.reduce((s, r) => s + Math.abs(r.offers || 0), 0);
-    const orderType = classifyUeRegisterOrder(offers);
+    const deliveryOffers = rs.reduce((s, r) => s + Math.abs(r.deliveryOffers || 0), 0);
+    const adSpend = rs.reduce((s, r) => s + (r.adSpend || 0), 0);
+    const orderType = classifyUeOrder(offers, adSpend, deliveryOffers);
 
     out.push({
       storeId: head.storeId,
@@ -308,7 +305,12 @@ function buildUeOrderRecords(ueFinancial) {
       payouts,
       marketplaceFee,
       offers,
-      discounts: offers,
+      deliveryOffers,
+      adSpend,
+      discounts: offers + deliveryOffers,
+      mktSpend: offers + deliveryOffers + adSpend,
+      adsSpend: adSpend,
+      promoSpend: offers + deliveryOffers,
       orderErrorAdjustments: rs.reduce((s, r) => s + (r.orderErrorAdjustments || 0), 0),
       orderType,
     });
@@ -330,6 +332,7 @@ function aggregateOrders(orders) {
     row.payouts += o.payouts || 0;
     row.mktSpend += o.mktSpend || 0;
     row.adsSpend += o.adsSpend || 0;
+    row.promoSpend += o.promoSpend || 0;
     row.discounts += o.discounts || 0;
 
     if (o.orderType === 'organic') row.organicOrders += 1;
@@ -376,7 +379,7 @@ function sortRegister(rows) {
 }
 
 const REGISTER_SUM_KEYS = [
-  'orders', 'sales', 'payouts', 'mktSpend', 'adsSpend', 'discounts',
+  'orders', 'sales', 'payouts', 'mktSpend', 'adsSpend', 'promoSpend', 'discounts',
   'organicOrders', 'promoOrders', 'adsOrders', 'bothOrders',
   'commission', 'errorCharges', 'adjustments', 'ddMarketingCredit',
   'thirdPartyContribution', 'paymentProcessingFee',
@@ -463,13 +466,18 @@ function collapseRegisterByWeekday(rows) {
     for (const k of REGISTER_SUM_KEYS) {
       row[k] = averageRegisterMetric(k, group.sums[k], n);
     }
-    out.push(finalizeRow(row));
+    const finalized = finalizeRow(row);
+    // Campaign AOV: period totals for this weekday×slot, not sales ÷ rounded order GC.
+    finalized.aov = group.sums.orders > 0
+      ? round(safeDivide(group.sums.sales, group.sums.orders), 2)
+      : 0;
+    out.push(finalized);
   }
   return out;
 }
 
 export const DD_REGISTER_COLUMNS = [
-  { key: 'storeId', label: 'Store ID', kind: 'text' },
+  { key: 'storeId', label: 'Merchant Store ID', kind: 'text' },
   { key: 'dayOfWeek', label: 'Day', kind: 'text' },
   { key: 'slot', label: 'Slot', kind: 'text' },
   { key: 'slotTime', label: 'Slot time', kind: 'text' },
@@ -518,6 +526,8 @@ export const UE_REGISTER_COLUMNS = [
   { key: 'aov', label: 'AOV', kind: 'usd2' },
   { key: 'avgPayout', label: 'Avg Payout', kind: 'usd2' },
   { key: 'profitabilityPct', label: 'Profitability %', kind: 'pct' },
+  { key: 'adsSpend', label: 'Ads Spend', kind: 'usd' },
+  { key: 'promoSpend', label: 'Promo Spend', kind: 'usd' },
   { key: 'marketplaceFee', label: 'Marketplace Fee', kind: 'usd' },
   { key: 'discounts', label: 'Discounts (Offers)', kind: 'usd' },
   { key: 'organicOrders', label: 'Organic Orders', kind: 'int' },
@@ -566,7 +576,11 @@ export function buildDdRegister(data, config = {}) {
   rows = collapseRegisterByWeekday(rows);
   rows = fillRegisterWeekdayGrid(rows, storeIds);
   rows = mergeSalesWeekdayIntoRegister(rows, salesByWeekday);
-  return sortRegister(rows);
+  rows = sortRegister(rows);
+  return rows.map((r) => ({
+    ...r,
+    storeId: resolveDdSalesStoreId(r.storeId, ddStoreIdToMerchant),
+  }));
 }
 
 export function buildUeRegister(data, config = {}) {

@@ -13,6 +13,8 @@
 
 import { format } from 'date-fns';
 import { buildSlotAnalysis } from '../engine/slots';
+import { combinedPayoutPerStore } from '../utils/summaryKpis';
+import { captureOperatorMapScreenshot } from './mapExportCapture.js';
 
 const GOOGLE_SHEETS_EXPORT_URL = import.meta.env.VITE_GOOGLE_SHEETS_EXPORT_URL;
 const GOOGLE_DOC_EXPORT_URL = import.meta.env.VITE_GOOGLE_DOC_EXPORT_URL;
@@ -57,6 +59,11 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function imgTag(src, alt, className) {
+  if (!src) return '';
+  return `<img src="${src}" alt="${escapeHtml(alt)}" class="${className}" />`;
 }
 
 /** A signed delta cell with arrow + pos/neg colour class. */
@@ -229,6 +236,27 @@ function emptyRow(cols) {
   return `<tr><td colspan="${cols}" style="text-align:center;color:var(--text-muted)">No data for this period</td></tr>`;
 }
 
+/** Subsection title + table/chart block that should not split across printed pages. */
+function keepTogether(titleHtml, bodyHtml) {
+  if (!bodyHtml) return '';
+  const title = titleHtml ? `<div class="subsection-title">${titleHtml}</div>` : '';
+  return `<div class="keep-together">${title}${bodyHtml}</div>`;
+}
+
+function tableBlock(title, tableInnerHtml, theadClass = '') {
+  return keepTogether(title, `<div class="table-wrap ${theadClass}">${tableInnerHtml}</div>`);
+}
+
+function mapSectionHtml(mapImageDataUri, operatorName) {
+  if (!mapImageDataUri) return '';
+  return `
+    <div class="section">
+      <div class="section-header gold"><div class="section-title">Store Locations</div><div class="section-num">Map</div></div>
+      ${keepTogether('', `<div class="map-export-wrap">${imgTag(mapImageDataUri, `${operatorName || 'Operator'} store map`, 'map-export-img')}</div>`)}
+      <p class="chart-caption">Operator store locations — Post-period KPIs shown on map pins when analysis data is loaded.</p>
+    </div>`;
+}
+
 /* ── Chart data ──────────────────────────────────────────────────────────── */
 
 function chartData(summaryTables, ddSlot) {
@@ -273,7 +301,20 @@ function reportCss(variant) {
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html{font-size:14px;}
   body{background:var(--bg);color:var(--text);font-family:var(--body);font-weight:400;line-height:1.5;-webkit-font-smoothing:antialiased;}
-  @media print{body{background:#fff;color:#000;}.page-break{page-break-before:always;}.no-print{display:none;}:root{--bg:#fff;--surface:#f8f9fa;--surface2:#f1f3f5;--text:#111;--text-muted:#555;--border:#ddd;}}
+  @media print{
+    body{background:#fff;color:#000;}
+    .page-break{page-break-before:always;break-before:page;}
+    .no-print{display:none;}
+    :root{--bg:#fff;--surface:#f8f9fa;--surface2:#f1f3f5;--text:#111;--text-muted:#555;--border:#ddd;}
+    .keep-together,.table-wrap,.chart-container,.kpi-strip,.meta-grid,.cover,.map-export-wrap{
+      break-inside:avoid;
+      page-break-inside:avoid;
+    }
+    .table-wrap{overflow:visible;}
+    thead{display:table-header-group;}
+    .chart-canvas-wrap canvas{display:none!important;}
+    .chart-print-img{display:block!important;width:100%;height:auto;}
+  }
   .report{max-width:1100px;margin:0 auto;padding:0 24px 60px;}
   .cover{display:flex;align-items:flex-end;justify-content:space-between;padding:48px 0 32px;border-bottom:2px solid var(--gold);margin-bottom:40px;}
   .cover-tag{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--gold);text-transform:uppercase;margin-bottom:10px;}
@@ -320,11 +361,14 @@ function reportCss(variant) {
   td.pos{color:var(--pos);background:var(--pos-bg);}td.neg{color:var(--neg);background:var(--neg-bg);}
   .thead-dd thead tr{background:${variant === 'word' ? '#fdecea' : '#1a0800'};}.thead-dd thead th{color:${variant === 'word' ? '#c0341d' : '#ff6b4a'};border-color:${variant === 'word' ? '#f3cabf' : '#2d1008'};}
   .thead-ue thead tr{background:${variant === 'word' ? '#e8f8ef' : '#001a0d'};}.thead-ue thead th{color:${variant === 'word' ? '#04864a' : '#06e07a'};border-color:${variant === 'word' ? '#c3ead4' : '#002b14'};}
-  .chart-container{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:24px;margin-bottom:16px;}
+  .chart-container{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:24px;margin-bottom:16px;break-inside:avoid;page-break-inside:avoid;}
   .chart-title{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:20px;}
   .chart-canvas-wrap{position:relative;height:240px;}
   canvas{display:block;}
+  .chart-print-img{display:none;width:100%;height:auto;}
   .chart-caption{font-family:var(--mono);font-size:9px;color:var(--text-muted);letter-spacing:.1em;text-align:center;margin-top:12px;font-style:italic;}
+  .map-export-wrap{background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:16px;}
+  .map-export-img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:var(--surface2);}
   .markup-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:4px;overflow:hidden;}
   .markup-cell{background:var(--surface);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;}
   .markup-store{font-family:var(--mono);font-size:11px;color:var(--text-muted);}
@@ -366,7 +410,7 @@ function kpiCard(label, value, deltaPct, hasData) {
   return `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div><div class="kpi-delta ${dir}">${deltaText}</div></div>`;
 }
 
-function buildReportBody(data, config, variant) {
+function buildReportBody(data, config, variant, mapImageDataUri = null) {
   const summaryTables = data.summaryTables || {};
   const storeTables = data.storeTables || {};
   const marketingTables = data.marketingTables || {};
@@ -379,9 +423,7 @@ function buildReportBody(data, config, variant) {
   const cPay = summaryRow(summaryTables.combined, 'payouts');
   const ddStores = activeStoreCount(storeTables, 'dd');
   const ueStores = activeStoreCount(storeTables, 'ue');
-  const payoutLiftPerStore = cPay && (ddStores + ueStores) > 0
-    ? cPay.prevspost / (ddStores + ueStores)
-    : null;
+  const payoutPerStore = combinedPayoutPerStore(summaryTables, storeTables, 'post');
 
   const prePeriod = periodText(config.ddPreStart, config.ddPreEnd);
   const postPeriod = periodText(config.ddPostStart, config.ddPostEnd);
@@ -392,11 +434,17 @@ function buildReportBody(data, config, variant) {
   const chart = chartData(summaryTables, ddSlot);
 
   const chartBlock = (title, id) => includeCharts
-    ? `<div class="chart-container"><div class="chart-title">${title}</div><div class="chart-canvas-wrap"><canvas id="${id}" height="240"></canvas></div></div>`
+    ? `<div class="keep-together"><div class="chart-container"><div class="chart-title">${title}</div><div class="chart-canvas-wrap"><canvas id="${id}" height="240"></canvas></div></div></div>`
     : '';
 
   const platformSection = (key, label, colorClass, badgeClass, badgeLogo, includeMarketing) => {
     const summary = summaryTables[key];
+    const marketingBlock = includeMarketing ? `
+    ${tableBlock('Corporate vs TODC — Promos &amp; Ads', `<table>
+      <thead><tr><th>Campaign</th><th>Orders</th><th>Sales</th><th>Spend</th><th>ROAS</th><th>Cost / Order</th></tr></thead>
+      <tbody>${marketingSourceRows(marketingTables)}</tbody>
+    </table>`, `thead-${badgeClass}`)}
+    ${chartBlock('DoorDash vs Uber Eats — Sales Pre vs Post', 'chart-platform')}` : '';
     return `
   <div class="section">
     <div class="section-header ${colorClass}">
@@ -407,56 +455,44 @@ function buildReportBody(data, config, variant) {
       <div class="platform-badge-name">${label}</div>
       <div class="platform-badge-logo">${badgeLogo}</div>
     </div>
-    <div class="subsection-title">Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
+    ${tableBlock('Pre vs Post', `<table>
       <thead><tr><th>Metric</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th></tr></thead>
       <tbody>${metricPrePostRows(summary) || emptyRow(6)}</tbody>
-    </table></div>
-    <div class="subsection-title">YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
+    </table>`, `thead-${badgeClass}`)}
+    ${tableBlock('YoY', `<table>
       <thead><tr><th>Metric</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
       <tbody>${metricYoyRows(summary) || emptyRow(5)}</tbody>
-    </table></div>
-    ${includeMarketing ? `
-    <div class="subsection-title">Corporate vs TODC — Promos &amp; Ads</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
-      <thead><tr><th>Campaign</th><th>Orders</th><th>Sales</th><th>Spend</th><th>ROAS</th><th>Cost / Order</th></tr></thead>
-      <tbody>${marketingSourceRows(marketingTables)}</tbody>
-    </table></div>
-    ${chartBlock('DoorDash vs Uber Eats — Sales Pre vs Post', 'chart-platform')}` : ''}
+    </table>`, `thead-${badgeClass}`)}
+    ${marketingBlock}
   </div>`;
   };
 
-  const storeLevelBlock = (key, label, badgeClass) => `
-    ${badgeClass ? `<div class="platform-badge ${badgeClass}" style="margin-top:24px;"><div class="platform-badge-name">${label}</div><div class="platform-badge-logo">${badgeClass.toUpperCase()}</div></div>` : ''}
-    <div class="subsection-title">${label} — Pre vs Post</div>
-    <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
+  const storeLevelBlock = (key, label, badgeClass) => {
+    const badge = badgeClass ? `<div class="platform-badge ${badgeClass}" style="margin-top:24px;"><div class="platform-badge-name">${label}</div><div class="platform-badge-logo">${badgeClass.toUpperCase()}</div></div>` : '';
+    return `${badge}
+    ${tableBlock(`${label} — Pre vs Post`, `<table>
       <thead><tr><th>Store ID</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th></tr></thead>
       <tbody>${storePrePostRows(storeTables[key])}</tbody>
-    </table></div>
-    <div class="subsection-title">${label} — YoY</div>
-    <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
+    </table>`, badgeClass ? `thead-${badgeClass}` : '')}
+    ${tableBlock(`${label} — YoY`, `<table>
       <thead><tr><th>Store ID</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
       <tbody>${storeYoyRows(storeTables[key])}</tbody>
-    </table></div>`;
+    </table>`, badgeClass ? `thead-${badgeClass}` : '')}`;
+  };
 
   const daypartBlock = (slot, label, badgeClass, logo) => slot ? `
     <div class="platform-badge ${badgeClass}"><div class="platform-badge-name">${label}</div><div class="platform-badge-logo">${logo}</div></div>
-    <div class="subsection-title">Sales — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
-      <tbody>${slotPrePostRows(slot.salesPrePost)}</tbody></table></div>
-    <div class="subsection-title">Sales — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${slotYoyRows(slot.salesYoY)}</tbody></table></div>
-    <div class="subsection-title">Payouts — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
-      <tbody>${slotPrePostRows(slot.payoutsPrePost)}</tbody></table></div>
-    <div class="subsection-title">Payouts — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${slotYoyRows(slot.payoutsYoY)}</tbody></table></div>` : '';
+    ${tableBlock('Sales — Pre vs Post', `<table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
+      <tbody>${slotPrePostRows(slot.salesPrePost)}</tbody></table>`, `thead-${badgeClass}`)}
+    ${tableBlock('Sales — YoY', `<table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+      <tbody>${slotYoyRows(slot.salesYoY)}</tbody></table>`, `thead-${badgeClass}`)}
+    ${tableBlock('Payouts — Pre vs Post', `<table><thead><tr><th>Daypart</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
+      <tbody>${slotPrePostRows(slot.payoutsPrePost)}</tbody></table>`, `thead-${badgeClass}`)}
+    ${tableBlock('Payouts — YoY', `<table><thead><tr><th>Daypart</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+      <tbody>${slotYoyRows(slot.payoutsYoY)}</tbody></table>`, `thead-${badgeClass}`)}` : '';
 
   const printBar = variant === 'screen'
-    ? `<div class="print-bar no-print"><button class="btn btn-gold" onclick="window.print()">⎙ Print / Save as PDF</button><span class="print-label">TODC Partnership Performance Report</span></div>`
+    ? `<div class="print-bar no-print"><button class="btn btn-gold" id="printBtn" disabled>Preparing charts…</button><span class="print-label" id="printStatus">Rendering charts for PDF export…</span></div>`
     : '';
 
   return `${printBar}
@@ -491,34 +527,33 @@ function buildReportBody(data, config, variant) {
         ${kpiCard('Sales Growth', cSales ? `${num(cSales.growthPct, 1)}%` : '—', cSales?.yoyPct, !!cSales)}
         ${kpiCard('Order Growth', cOrders ? `${num(cOrders.growthPct, 1)}%` : '—', cOrders?.yoyPct, !!cOrders)}
         ${kpiCard('New Customers', '—', null, false)}
-        ${kpiCard('Payout Lift / Store', payoutLiftPerStore != null ? `$${num(payoutLiftPerStore)}` : '—', cPay?.yoyPct, payoutLiftPerStore != null)}
+        ${kpiCard('Payout / Store', payoutPerStore != null ? `$${num(payoutPerStore)}` : '—', cPay?.yoyPct, payoutPerStore != null)}
         ${kpiCard('Avg Markup', '—', null, false)}
       </div>
-      <div class="subsection-title">Pre-TODC YoY Baseline (Sales)</div>
-      <div class="table-wrap"><table>
+      ${tableBlock('Pre-TODC YoY Baseline (Sales)', `<table>
         <thead><tr><th>Platform</th><th>Prior Year</th><th>Current Year</th><th>Δ ($)</th><th>Δ (%)</th></tr></thead>
         <tbody>${baselineRows(summaryTables) || emptyRow(5)}</tbody>
-      </table></div>
+      </table>`)}
     </div>
+
+    ${mapSectionHtml(mapImageDataUri, operatorDisplay)}
 
     <div class="section">
       <div class="section-header gold"><div class="section-title">Store Level Markups</div><div class="section-num">02</div></div>
-      <div class="markup-grid">${markupCells(storeTables)}</div>
+      ${keepTogether('', `<div class="markup-grid">${markupCells(storeTables)}</div>`)}
     </div>
 
     <div class="section">
       <div class="section-header gold"><div class="section-title">Combined Performance</div><div class="section-num">03</div></div>
-      <div class="subsection-title">Pre vs Post</div>
-      <div class="table-wrap"><table>
+      ${tableBlock('Pre vs Post', `<table>
         <thead><tr><th>Metric</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th></tr></thead>
         <tbody>${metricPrePostRows(summaryTables.combined) || emptyRow(6)}</tbody>
-      </table></div>
+      </table>`)}
       ${chartBlock('Sales &amp; Payout — Pre vs Post (Combined)', 'chart-combined-pvp')}
-      <div class="subsection-title">YoY: Post (Last Year) vs Post (Current)</div>
-      <div class="table-wrap"><table>
+      ${tableBlock('YoY: Post (Last Year) vs Post (Current)', `<table>
         <thead><tr><th>Metric</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
         <tbody>${metricYoyRows(summaryTables.combined) || emptyRow(5)}</tbody>
-      </table></div>
+      </table>`)}
       ${chartBlock('YoY Sales — DoorDash / Uber Eats / Combined', 'chart-yoy')}
     </div>
 
@@ -574,6 +609,38 @@ function chartScript(chart) {
   bar('chart-yoy', DATA.yoy.labels, DATA.yoy.pre, DATA.yoy.post, true);
   bar('chart-platform', DATA.platform.labels, DATA.platform.pre, DATA.platform.post, true);
   bar('chart-daypart-dd', DATA.daypart.labels, DATA.daypart.pre, DATA.daypart.post, true);
+
+  function finalizeChartsForPrint() {
+    document.querySelectorAll('.chart-canvas-wrap canvas').forEach(function (canvas) {
+      try {
+        var img = document.createElement('img');
+        img.src = canvas.toDataURL('image/png');
+        img.className = 'chart-print-img';
+        img.alt = canvas.closest('.chart-container')?.querySelector('.chart-title')?.textContent || 'Chart';
+        canvas.parentNode.insertBefore(img, canvas);
+      } catch (err) {
+        console.warn('Chart print image failed', err);
+      }
+    });
+  }
+
+  function markPrintReady() {
+    finalizeChartsForPrint();
+    var btn = document.getElementById('printBtn');
+    var status = document.getElementById('printStatus');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Print / Save as PDF';
+      btn.onclick = function () { window.print(); };
+    }
+    if (status) status.textContent = 'Charts ready — use Print / Save as PDF';
+  }
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { setTimeout(markPrintReady, 350); });
+  } else {
+    window.addEventListener('load', function () { setTimeout(markPrintReady, 500); });
+  }
 </script>`;
 }
 
@@ -754,7 +821,7 @@ function buildWordReportHtml(data, config) {
   const cPay = summaryRow(summaryTables.combined, 'payouts');
   const ddStores = activeStoreCount(storeTables, 'dd');
   const ueStores = activeStoreCount(storeTables, 'ue');
-  const payoutLiftPerStore = cPay && (ddStores + ueStores) > 0 ? cPay.prevspost / (ddStores + ueStores) : null;
+  const payoutPerStore = combinedPayoutPerStore(summaryTables, storeTables, 'post');
 
   const prePeriod = periodText(config.ddPreStart, config.ddPreEnd);
   const postPeriod = periodText(config.ddPostStart, config.ddPostEnd);
@@ -799,7 +866,7 @@ function buildWordReportHtml(data, config) {
       { label: 'Sales Growth', value: cSales ? `${num(cSales.growthPct, 1)}%` : '—', ...salesKpi },
       { label: 'Order Growth', value: cOrders ? `${num(cOrders.growthPct, 1)}%` : '—', ...ordersKpi },
       { label: 'New Customers', value: '—', delta: 'no data', deltaColor: W.muted },
-      { label: 'Payout Lift / Store', value: payoutLiftPerStore != null ? `$${num(payoutLiftPerStore)}` : '—', ...payKpi },
+      { label: 'Payout / Store', value: payoutPerStore != null ? `$${num(payoutPerStore)}` : '—', ...payKpi },
       { label: 'Avg Markup', value: '—', delta: 'combined', deltaColor: W.muted },
     ].map(c => ({ label: c.label, value: c.value, delta: c.delta, deltaColor: c.deltaColor || c.color })))}
     ${wSub('Pre-TODC YoY Baseline (Sales)')}
@@ -871,7 +938,7 @@ ${sections}
  *   - 'screen': dark, print-aware design with Chart.js charts (used for Print → PDF).
  *   - 'word': light, table-based, inline-styled build for Word / Google Docs fidelity.
  */
-export function buildReportHtml(data, config, { variant = 'screen' } = {}) {
+export function buildReportHtml(data, config, { variant = 'screen', mapImageDataUri = null } = {}) {
   if (variant === 'word') return buildWordReportHtml(data, config);
   const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">';
   return `<!DOCTYPE html>
@@ -880,7 +947,7 @@ export function buildReportHtml(data, config, { variant = 'screen' } = {}) {
 ${fonts}
 <style>${reportCss('screen')}</style>
 </head><body>
-${buildReportBody(data, config, 'screen')}
+${buildReportBody(data, config, 'screen', mapImageDataUri)}
 </body></html>`;
 }
 
@@ -910,8 +977,14 @@ export function downloadReportDoc(data, config, baseName) {
 }
 
 /** Open the report (dark/print-aware, with charts) in a new tab for Print → Save as PDF. */
-export function openReportForPdf(data, config) {
-  const html = buildReportHtml(data, config, { variant: 'screen' });
+export async function openReportForPdf(data, config) {
+  let mapImageDataUri = null;
+  try {
+    mapImageDataUri = await captureOperatorMapScreenshot(config, data?.storeTables);
+  } catch (err) {
+    console.warn('Map capture skipped:', err);
+  }
+  const html = buildReportHtml(data, config, { variant: 'screen', mapImageDataUri });
   const win = window.open('', '_blank');
   if (!win) return false;
   win.document.open();

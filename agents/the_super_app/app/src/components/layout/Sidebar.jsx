@@ -16,6 +16,7 @@ import {
   Sun,
   MapPin,
   Database,
+  TrendingUp,
   Table2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -30,6 +31,7 @@ const SIDEBAR_COLLAPSED = '76px';
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { id: 'compare', label: 'Pre vs Post', Icon: GitCompareArrows, badge: 'Hero' },
+  { id: 'wow', label: 'WoW', Icon: TrendingUp },
   { id: 'breakdown', label: 'Breakdown', Icon: Table2 },
   { id: 'diagnostics', label: 'Diagnostics', Icon: Activity },
   { id: 'stores', label: 'Stores', Icon: Store },

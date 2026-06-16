@@ -15,10 +15,25 @@ export function buildSummaryKpis(summary = []) {
   ];
 }
 
-/** Mean total payout across stores (portfolio average payout per store). */
-export function meanPayoutPerStore(stores = [], window = 'post') {
-  if (!stores.length) return null;
-  const key = `${window}_payouts`;
-  const total = stores.reduce((sum, row) => sum + (row[key] || 0), 0);
-  return total / stores.length;
+/** DoorDash store count — denominator for portfolio payout per store. */
+export function ddStoreCount(storeTables) {
+  return storeTables?.dd?.length || 0;
+}
+
+/** Combined payouts ÷ DD store count for a given window (pre | post | prevspost). */
+export function payoutPerStore(payoutsRow, ddCount, window = 'post') {
+  if (!payoutsRow || !ddCount) return null;
+  const key = window === 'pre' ? 'pre' : window === 'prevspost' ? 'prevspost' : 'post';
+  return (payoutsRow[key] ?? 0) / ddCount;
+}
+
+/** Combined summary payouts ÷ DD store count (canonical payout per store). */
+export function combinedPayoutPerStore(summaryTables, storeTables, window = 'post') {
+  const payouts = summaryTables?.combined?.find((r) => r.metric === 'payouts');
+  return payoutPerStore(payouts, ddStoreCount(storeTables), window);
+}
+
+/** @deprecated Use combinedPayoutPerStore. */
+export function meanPayoutPerStore(summaryTables, storeTables, window = 'post') {
+  return combinedPayoutPerStore(summaryTables, storeTables, window);
 }

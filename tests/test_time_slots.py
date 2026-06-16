@@ -54,6 +54,8 @@ class TestTimeSlots:
     def test_normalize_legacy_early_morning(self):
         assert normalize_slot_name("Overnight") == "Overnight"
         assert normalize_slot_name("early morning") == "Overnight"
+        assert normalize_slot_name("Late Night") == "Late night"
+        assert normalize_slot_name("LATE NIGHT") == "Late night"
 
     def test_slot_from_datetime(self):
         assert slot_from_datetime("2026-01-01 04:59:00") == "Overnight"

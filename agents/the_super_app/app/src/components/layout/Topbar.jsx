@@ -5,9 +5,10 @@ import { useDataStore } from '../../stores/dataStore';
 import { STORE_TAG_LABELS } from '../../lib/export/exportSheetSummaries';
 import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
 import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';
-import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
-import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
-import { buildAnalysisScope, applyStoreTableScope, buildScopedExcludedStores } from '../../lib/utils/abStoreFilter';
+import { ddMerchantStoreIdFromKey } from '../../lib/utils/storeDisplay';
+import { runComparisonAnalysis } from '../../lib/engine/comparisonAnalysis';
+import { buildAnalysisScope, buildScopedExcludedStores } from '../../lib/utils/abStoreFilter';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import DateFilterDropdown from './DateFilterDropdown';
 import PlatformLogo from '../ui/PlatformLogo';
 
@@ -38,6 +39,7 @@ function StoreFilterDropdown({
   ueExcludedStores,
   setDdExcludedStores,
   setUeExcludedStores,
+  ddFinancial,
 }) {
   const [search, setSearch] = useState('');
   const [platformTab, setPlatformTab] = useState('dd');
@@ -52,10 +54,21 @@ function StoreFilterDropdown({
     ? (activeTab === 'dd' ? ddExcludedStores : ueExcludedStores)
     : linkedExcludedIds;
 
+  const storeLabel = useCallback((storeId) => {
+    if (ddFinancial?.length && allDdStores.includes(storeId)) {
+      return ddMerchantStoreIdFromKey(storeId, ddFinancial);
+    }
+    return storeId;
+  }, [ddFinancial, allDdStores]);
+
   const filtered = useMemo(() => {
     if (!search) return listStores;
-    return listStores.filter(s => s.toLowerCase().includes(search.toLowerCase()));
-  }, [listStores, search]);
+    const q = search.toLowerCase();
+    return listStores.filter((s) => {
+      const label = storeLabel(s);
+      return s.toLowerCase().includes(q) || String(label).toLowerCase().includes(q);
+    });
+  }, [listStores, search, storeLabel]);
 
   const activeStores = listStores.filter(s => !excludedStores.includes(s));
   const isExcluded = (s) => excludedStores.includes(s);
@@ -213,7 +226,7 @@ function StoreFilterDropdown({
               className="w-3.5 h-3.5 rounded border-[var(--border-strong)] accent-[var(--accent)]"
             />
             <span className={`text-xs ${isExcluded(storeId) ? 'text-[var(--text-subtle)] line-through' : 'text-[var(--text)]'}`}>
-              {storeId}
+              {storeLabel(storeId)}
             </span>
           </label>
         ))}
@@ -279,42 +292,48 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
         const scopeUeExcluded = buildScopedExcludedStores(allUeStores, 'ue', scope);
         const ddExcludedStores = [...new Set([...(latestConfig.ddExcludedStores || []), ...scopeDdExcluded])];
         const ueExcludedStores = [...new Set([...(latestConfig.ueExcludedStores || []), ...scopeUeExcluded])];
+        const isSinglePeriod = isSinglePeriodMode(latestConfig.dateAnalysisMode);
 
         const ddConfig = {
-          preStart: latestConfig.ddPreStart, preEnd: latestConfig.ddPreEnd,
-          postStart: latestConfig.ddPostStart, postEnd: latestConfig.ddPostEnd,
+          preStart: isSinglePeriod ? latestConfig.ddPostStart : latestConfig.ddPreStart,
+          preEnd: isSinglePeriod ? latestConfig.ddPostEnd : latestConfig.ddPreEnd,
+          postStart: latestConfig.ddPostStart,
+          postEnd: latestConfig.ddPostEnd,
           excludedDates: latestConfig.ddExcludedDates,
           excludedStores: ddExcludedStores,
         };
         const ueConfig = {
-          preStart: latestConfig.uePreStart, preEnd: latestConfig.uePreEnd,
-          postStart: latestConfig.uePostStart, postEnd: latestConfig.uePostEnd,
+          preStart: isSinglePeriod ? latestConfig.uePostStart : latestConfig.uePreStart,
+          preEnd: isSinglePeriod ? latestConfig.uePostEnd : latestConfig.uePreEnd,
+          postStart: latestConfig.uePostStart,
+          postEnd: latestConfig.uePostEnd,
           excludedDates: latestConfig.ueExcludedDates,
           excludedStores: ueExcludedStores,
         };
 
-        let ddStore = [];
-        let ueStore = [];
+        const hasDd = !!dataStore.ddFinancial?.length;
+        const hasUe = !!dataStore.ueFinancial?.length;
+        const ddReady = isSinglePeriod ? ddConfig.postStart : ddConfig.preStart;
+        const ueReady = isSinglePeriod ? ueConfig.postStart : ueConfig.preStart;
 
-        if (dataStore.ddFinancial && ddConfig.preStart) {
-          ddStore = buildDdPlatformData(dataStore.ddFinancial, ddConfig);
-          ddStore = addDerivedMetrics(ddStore);
-        }
-        if (dataStore.ueFinancial && ueConfig.preStart) {
-          ueStore = buildUePlatformData(dataStore.ueFinancial, ueConfig);
-          ueStore = addDerivedMetrics(ueStore);
-        }
-
-        let storeTables = {
-          dd: ddStore,
-          ue: ueStore,
-          combined: buildCombinedStoreTables(ddStore, ueStore, latestConfig.ddToUeStoreMap || {}),
-        };
-        storeTables = applyStoreTableScope(storeTables, scope);
-        const summaries = buildSummaryTables(storeTables.dd, storeTables.ue);
+        const { storeTables, summaries, storePeriodAlignment, crossPlatformAlignment } = runComparisonAnalysis({
+          ddFinancial: dataStore.ddFinancial,
+          ueFinancial: dataStore.ueFinancial,
+          ddConfig,
+          ueConfig,
+          hasDd,
+          hasUe,
+          ddReady,
+          ueReady,
+          scope,
+          storeMap: latestConfig.ddToUeStoreMap || {},
+          isSinglePeriod,
+        });
 
         dataStore.setStoreTables(storeTables);
         dataStore.setSummaryTables(summaries);
+        dataStore.setStorePeriodAlignment(storePeriodAlignment);
+        dataStore.setCrossPlatformAlignment(crossPlatformAlignment);
       } catch (err) {
         console.error('Re-analysis error:', err);
       }
@@ -399,6 +418,7 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
             ueExcludedStores={config.ueExcludedStores || []}
             setDdExcludedStores={config.setDdExcludedStores}
             setUeExcludedStores={config.setUeExcludedStores}
+            ddFinancial={dataStore.ddFinancial}
           />
         )}
       </div>

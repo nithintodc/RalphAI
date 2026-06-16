@@ -19,7 +19,7 @@ function isManualOperator(name, operatorList) {
   return !!trimmed && !operatorList.includes(trimmed);
 }
 
-export default function OperatorSelect({ required = false }) {
+export default function OperatorSelect({ required = false, compact = false }) {
   const operatorName = useConfigStore((s) => s.operatorName);
   const setOperatorName = useConfigStore((s) => s.setOperatorName);
   const [operators, setOperators] = useState(readCachedOperators);
@@ -113,9 +113,11 @@ export default function OperatorSelect({ required = false }) {
       {warning && (
         <p className="text-[11px] text-[var(--warning)]">{warning}</p>
       )}
-      <p className="text-[11px] text-[var(--text-subtle)] leading-relaxed">
-        Pick from Airtable or choose <strong>Other</strong> to type a custom name. Reporting and the store map use this operator.
-      </p>
+      {!compact && (
+        <p className="text-[11px] text-[var(--text-subtle)] leading-relaxed">
+          Pick from Airtable or choose <strong>Other</strong> to type a custom name. Reporting and the store map use this operator.
+        </p>
+      )}
     </div>
   );
 }

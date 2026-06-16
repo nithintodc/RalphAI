@@ -1,6 +1,11 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 
+function shouldSkipZipEntry(filename) {
+  const lower = String(filename || '').toLowerCase().replace(/\\/g, '/');
+  return lower.includes('__macosx/') || lower.includes('/._') || lower.startsWith('._');
+}
+
 export function detectFileType(filename) {
   const lower = filename.toLowerCase();
   if (lower.startsWith('financial_') && lower.endsWith('.zip')) return 'dd_financial';
@@ -53,6 +58,7 @@ export async function processUploadedFile(file) {
   const results = {};
   for (const [filename, entry] of Object.entries(zip.files)) {
     if (entry.dir || !filename.toLowerCase().endsWith('.csv')) continue;
+    if (shouldSkipZipEntry(filename)) continue;
     const lower = filename.toLowerCase();
     if (type === 'dd_financial' && !lower.includes('financial_detailed')) {
       continue;

@@ -4,7 +4,7 @@ import { useConfigStore } from '../../stores/configStore';
 import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
 import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
-import { getUniqueStores as getUeStores, getDateRange as getUeRange } from '../../lib/parsers/ueFinancial';
+import { getUniqueStores as getUeStores, getDateRange as getUeRange, summarizeUeFinancialYears } from '../../lib/parsers/ueFinancial';
 import {
   getDdUploadedDateRange,
   getDdSalesStoreIds,
@@ -12,13 +12,28 @@ import {
   suggestPrePostFromBounds,
   suggestSinglePeriodFromBounds,
 } from '../../lib/utils/uploadedDataBounds';
-import { isSinglePeriodMode } from '../../lib/utils/periodMode';
+import { isSinglePeriodMode, isPresetRangeMode } from '../../lib/utils/periodMode';
 import { parseDate, formatDateShort, dateToKey, parseSlashDateRange, formatSlashDateRange } from '../../lib/utils/dateUtils';
-import { buildDdPlatformData, buildUePlatformData } from '../../lib/engine/periodEngine';
-import { addDerivedMetrics, buildSummaryTables, buildCombinedStoreTables } from '../../lib/engine/metrics';
 import { buildDdStoreCatalog, buildUeStoreCatalog, buildSuggestedMapRows, mapRowsToStoreMap, mapRowsToTagMap } from '../../lib/utils/storeCatalog';
-import { buildAnalysisScope, applyStoreTableScope, buildScopedExcludedStores, getIncludedStoreIdsFromMapRows } from '../../lib/utils/abStoreFilter';
+import { buildAnalysisScope, buildScopedExcludedStores, getIncludedStoreIdsFromMapRows } from '../../lib/utils/abStoreFilter';
+import { STORE_PERIOD_LABELS } from '../../lib/utils/storePeriodCounts';
+import {
+  buildStorePeriodAlignment,
+  countActiveStoreIdsByPeriod,
+  getActiveStoreIdsByPeriod,
+} from '../../lib/utils/storePeriodAlignment';
+import {
+  mergeUploadedDataBounds,
+  buildComparePeriodPresetGroups,
+  buildSinglePeriodPresetGroups,
+  buildPeriodsInAnalysisRange,
+} from '../../lib/utils/analysisPeriodSelectors';
+import { WEEK_DEFINITION_OPTIONS, resolveWeekStartsOn } from '../../lib/utils/weekDefinition';
+import { runComparisonAnalysis } from '../../lib/engine/comparisonAnalysis';
+import { resolveMarketingTables } from '../../lib/export/marketingExport';
+import StoreComparisonNotice from '../../components/ui/StoreComparisonNotice';
 import StoreMapEditor from '../../components/config/StoreMapEditor';
+import PeriodPresetPanel from '../../components/config/PeriodPresetPanel';
 import OperatorSelect from '../../components/config/OperatorSelect';
 import PlatformLogo from '../../components/ui/PlatformLogo';
 
@@ -47,6 +62,50 @@ function PeriodKindToggle({ kind, onChange }) {
       >
         Single period
       </button>
+    </div>
+  );
+}
+
+function AnalysisRangeInput({ start, end, onApply, modeLabel = 'Analysis range' }) {
+  const canon = formatSlashDateRange(start, end);
+  const [input, setInput] = useState(canon);
+
+  const getInclusiveDayCount = (range) => {
+    if (!range?.start || !range?.end) return null;
+    const s = Date.UTC(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
+    const e = Date.UTC(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
+    return Math.floor((e - s) / 86400000) + 1;
+  };
+
+  const parsed = parseSlashDateRange(input);
+  const dayCount = getInclusiveDayCount(parsed);
+
+  const commit = () => {
+    const r = parseSlashDateRange(input);
+    if (r) onApply(r.start, r.end);
+    else setInput(canon);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 max-w-full">
+      <label className="text-xs text-[var(--text-muted)]">{modeLabel}</label>
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+        placeholder="1/1/2026-5/31/2026"
+        className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+      />
+      {dayCount != null && (
+        <p className="text-[10px] text-[var(--text-subtle)]">{dayCount} day{dayCount === 1 ? '' : 's'} (inclusive)</p>
+      )}
+      <p className="text-[10px] text-[var(--text-subtle)] leading-snug">
+        All weeks, months, or quarters in this range are included in the analysis — no separate Pre vs Post dates.
+      </p>
     </div>
   );
 }
@@ -160,6 +219,27 @@ function PeriodRangePair({ preStart, preEnd, postStart, postEnd, onApply }) {
           <p className="text-[10px] text-[var(--text-subtle)]">{postCount} day{postCount === 1 ? '' : 's'} (inclusive)</p>
         )}
       </div>
+    </div>
+  );
+}
+
+function StorePeriodSummary({ label, platform, counts, alignment }) {
+  if (!counts) return null;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 space-y-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <PlatformLogo platform={platform} size={14} />
+        <span className="text-xs font-medium text-[var(--text)] truncate">{label}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {Object.entries(STORE_PERIOD_LABELS).map(([key, periodLabel]) => (
+          <div key={key} className="rounded-md bg-[var(--surface)] border border-[var(--border)] px-1.5 py-1 text-center min-w-0">
+            <div className="text-[9px] uppercase tracking-wide text-[var(--text-subtle)] truncate">{periodLabel}</div>
+            <div className="text-sm font-semibold tabular-nums text-[var(--text)]">{counts[key] ?? '—'}</div>
+          </div>
+        ))}
+      </div>
+      <StoreComparisonNotice platform={platform} alignment={alignment} compact />
     </div>
   );
 }
@@ -297,11 +377,14 @@ export default function ConfigScreen() {
     () => (isSinglePeriodMode(dateAnalysisMode) ? 'single' : 'compare'),
   );
   const isSinglePeriod = periodKind === 'single';
+  const isPresetRange = isPresetRangeMode(dateAnalysisMode);
+  const showCustomPrePost = !isSinglePeriod && !isPresetRange;
   const dataStore = useDataStore();
-  const { setScreen } = useUiStore();
+  const { setScreen, setActiveTab } = useUiStore();
   const [analyzeError, setAnalyzeError] = useState('');
 
   const hasDdFinancial = !!dataStore.ddFinancial?.length;
+  const hasUeFinancial = !!dataStore.ueFinancial?.length;
   const hasDdSales = useMemo(() => hasAnyDdSales(dataStore.ddSales), [dataStore.ddSales]);
   const hasDdPeriods = hasDdFinancial || hasDdSales;
 
@@ -316,10 +399,149 @@ export default function ConfigScreen() {
     () => getDdUploadedDateRange(dataStore.ddFinancial, dataStore.ddSales),
     [dataStore.ddFinancial, dataStore.ddSales],
   );
-  const ueRange = useMemo(() => dataStore.ueFinancial ? getUeRange(dataStore.ueFinancial) : {}, [dataStore.ueFinancial]);
+  const ueRange = useMemo(() => (dataStore.ueFinancial ? getUeRange(dataStore.ueFinancial) : {}), [dataStore.ueFinancial]);
+  const ueYearSummary = useMemo(
+    () => (dataStore.ueFinancial ? summarizeUeFinancialYears(dataStore.ueFinancial) : null),
+    [dataStore.ueFinancial],
+  );
+
+  const ddStorePeriodCounts = useMemo(() => {
+    if (isSinglePeriod || isPresetRange || !hasDdFinancial || !config.ddPreStart || !config.ddPreEnd || !config.ddPostStart || !config.ddPostEnd) {
+      return null;
+    }
+    return countActiveStoreIdsByPeriod(dataStore.ddFinancial, {
+      preStart: config.ddPreStart,
+      preEnd: config.ddPreEnd,
+      postStart: config.ddPostStart,
+      postEnd: config.ddPostEnd,
+      excludedDates: config.ddExcludedDates,
+      excludedStores: config.ddExcludedStores,
+    });
+  }, [
+    isSinglePeriod,
+    isPresetRange,
+    hasDdFinancial,
+    dataStore.ddFinancial,
+    config.ddPreStart,
+    config.ddPreEnd,
+    config.ddPostStart,
+    config.ddPostEnd,
+    config.ddExcludedDates,
+    config.ddExcludedStores,
+  ]);
+
+  const ddAlignmentPreview = useMemo(() => {
+    if (isSinglePeriod || isPresetRange || !hasDdFinancial || !config.ddPreStart) return null;
+    const sets = getActiveStoreIdsByPeriod(dataStore.ddFinancial, {
+      preStart: config.ddPreStart,
+      preEnd: config.ddPreEnd,
+      postStart: config.ddPostStart,
+      postEnd: config.ddPostEnd,
+      excludedDates: config.ddExcludedDates,
+      excludedStores: config.ddExcludedStores,
+    });
+    return buildStorePeriodAlignment(sets);
+  }, [
+    isSinglePeriod,
+    isPresetRange,
+    hasDdFinancial,
+    dataStore.ddFinancial,
+    config.ddPreStart,
+    config.ddPreEnd,
+    config.ddPostStart,
+    config.ddPostEnd,
+    config.ddExcludedDates,
+    config.ddExcludedStores,
+  ]);
+
+  const ueStorePeriodCounts = useMemo(() => {
+    if (isSinglePeriod || isPresetRange || !hasUeFinancial) return null;
+    const preStart = config.uePreStart || config.ddPreStart;
+    const preEnd = config.uePreEnd || config.ddPreEnd;
+    const postStart = config.uePostStart || config.ddPostStart;
+    const postEnd = config.uePostEnd || config.ddPostEnd;
+    if (!preStart || !preEnd || !postStart || !postEnd) return null;
+    return countActiveStoreIdsByPeriod(dataStore.ueFinancial, {
+      preStart,
+      preEnd,
+      postStart,
+      postEnd,
+      excludedDates: config.ueExcludedDates,
+      excludedStores: config.ueExcludedStores,
+    }, { salesField: 'sales', orderField: 'orderId' });
+  }, [
+    isSinglePeriod,
+    isPresetRange,
+    hasUeFinancial,
+    dataStore.ueFinancial,
+    config.uePreStart,
+    config.uePreEnd,
+    config.uePostStart,
+    config.uePostEnd,
+    config.ddPreStart,
+    config.ddPreEnd,
+    config.ddPostStart,
+    config.ddPostEnd,
+    config.ueExcludedDates,
+    config.ueExcludedStores,
+  ]);
+
+  const ueAlignmentPreview = useMemo(() => {
+    if (isSinglePeriod || isPresetRange || !hasUeFinancial) return null;
+    const preStart = config.uePreStart || config.ddPreStart;
+    const preEnd = config.uePreEnd || config.ddPreEnd;
+    const postStart = config.uePostStart || config.ddPostStart;
+    const postEnd = config.uePostEnd || config.ddPostEnd;
+    if (!preStart || !preEnd || !postStart || !postEnd) return null;
+    const sets = getActiveStoreIdsByPeriod(dataStore.ueFinancial, {
+      preStart,
+      preEnd,
+      postStart,
+      postEnd,
+      excludedDates: config.ueExcludedDates,
+      excludedStores: config.ueExcludedStores,
+    }, { salesField: 'sales', orderField: 'orderId' });
+    return buildStorePeriodAlignment(sets);
+  }, [
+    isSinglePeriod,
+    isPresetRange,
+    hasUeFinancial,
+    dataStore.ueFinancial,
+    config.uePreStart,
+    config.uePreEnd,
+    config.uePostStart,
+    config.uePostEnd,
+    config.ddPreStart,
+    config.ddPreEnd,
+    config.ddPostStart,
+    config.ddPostEnd,
+    config.ueExcludedDates,
+    config.ueExcludedStores,
+  ]);
+
+  useEffect(() => {
+    if (isSinglePeriod) return;
+    if (ddStorePeriodCounts) {
+      console.log('[Store IDs] DoorDash financial');
+      console.table({
+        Pre: ddStorePeriodCounts.pre,
+        Post: ddStorePeriodCounts.post,
+        'LY Pre': ddStorePeriodCounts.preLY,
+        'LY Post': ddStorePeriodCounts.postLY,
+      });
+    }
+    if (ueStorePeriodCounts) {
+      console.log('[Store IDs] Uber Eats financial');
+      console.table({
+        Pre: ueStorePeriodCounts.pre,
+        Post: ueStorePeriodCounts.post,
+        'LY Pre': ueStorePeriodCounts.preLY,
+        'LY Post': ueStorePeriodCounts.postLY,
+      });
+    }
+  }, [isSinglePeriod, ddStorePeriodCounts, ueStorePeriodCounts]);
 
   const hasDd = hasDdFinancial;
-  const hasUeFinancial = !!dataStore.ueFinancial?.length;
   const hasUe = hasUeFinancial;
   const hasUePeriods = hasUeFinancial;
   const ueOnly = hasUePeriods && !hasDdPeriods;
@@ -353,6 +575,96 @@ export default function ConfigScreen() {
     setDateAnalysisMode('singleRange');
   };
 
+  const mergedBounds = useMemo(
+    () => mergeUploadedDataBounds(dataStore.ddFinancial, dataStore.ueFinancial, dataStore.ddSales),
+    [dataStore.ddFinancial, dataStore.ueFinancial, dataStore.ddSales],
+  );
+
+  const weekStartsOn = resolveWeekStartsOn(config.weekDefinitionId);
+
+  const comparePresetGroups = useMemo(
+    () => buildComparePeriodPresetGroups(mergedBounds, { weekStartsOn }),
+    [mergedBounds, weekStartsOn],
+  );
+
+  const singlePresetGroups = useMemo(
+    () => buildSinglePeriodPresetGroups(mergedBounds),
+    [mergedBounds],
+  );
+
+  const analysisRangeStart = hasDdPeriods ? config.ddPostStart : config.uePostStart;
+  const analysisRangeEnd = hasDdPeriods ? config.ddPostEnd : config.uePostEnd;
+
+  const periodsInRange = useMemo(() => {
+    if (!isPresetRange || !analysisRangeStart || !analysisRangeEnd) return [];
+    return buildPeriodsInAnalysisRange(
+      dateAnalysisMode,
+      analysisRangeStart,
+      analysisRangeEnd,
+      mergedBounds,
+      weekStartsOn,
+    );
+  }, [isPresetRange, dateAnalysisMode, analysisRangeStart, analysisRangeEnd, mergedBounds, weekStartsOn]);
+
+  const applyAnalysisRange = useCallback((setter) => (start, end) => {
+    setter(null, null, start, end);
+  }, []);
+
+  const applyCustomCompareDates = useCallback((setter) => (preStart, preEnd, postStart, postEnd) => {
+    setter(preStart, preEnd, postStart, postEnd);
+    setDateAnalysisMode('pvp');
+  }, [setDateAnalysisMode]);
+
+  const applyCompareMode = useCallback((mode) => {
+    setDateAnalysisMode(mode);
+    if (isPresetRangeMode(mode)) {
+      const rangeStart = analysisRangeStart;
+      const rangeEnd = analysisRangeEnd;
+      const setter = hasDdPeriods ? setDdDates : setUeDates;
+      if (!rangeStart || !rangeEnd) {
+        const bounds = hasDdPeriods ? ddRange : ueRange;
+        const suggested = suggestSinglePeriodFromBounds(bounds);
+        if (suggested) {
+          setter(null, null, suggested.start, suggested.end);
+        }
+      } else {
+        setter(null, null, rangeStart, rangeEnd);
+      }
+      if (mode === 'wow') {
+        setActiveTab('wow');
+      }
+    }
+  }, [
+    setDateAnalysisMode,
+    analysisRangeStart,
+    analysisRangeEnd,
+    hasDdPeriods,
+    setDdDates,
+    setUeDates,
+    ddRange,
+    ueRange,
+    setActiveTab,
+  ]);
+
+  const applyComparePreset = useCallback((preset) => {
+    const setter = hasDdPeriods ? setDdDates : setUeDates;
+    setter(preset.preStart, preset.preEnd, preset.postStart, preset.postEnd);
+    setDateAnalysisMode(preset.mode || 'pvp');
+  }, [hasDdPeriods, setDdDates, setUeDates, setDateAnalysisMode]);
+
+  const applySinglePreset = useCallback((preset) => {
+    const setter = hasDdPeriods ? setDdDates : setUeDates;
+    setter(preset.start, preset.end, preset.start, preset.end);
+    setDateAnalysisMode(preset.mode);
+  }, [hasDdPeriods, setDdDates, setUeDates, setDateAnalysisMode]);
+
+  const presetPreStart = hasDdPeriods ? config.ddPreStart : config.uePreStart;
+  const presetPreEnd = hasDdPeriods ? config.ddPreEnd : config.uePreEnd;
+  const presetPostStart = hasDdPeriods ? config.ddPostStart : config.uePostStart;
+  const presetPostEnd = hasDdPeriods ? config.ddPostEnd : config.uePostEnd;
+  const presetSingleStart = hasDdPeriods ? config.ddPostStart : config.uePostStart;
+  const presetSingleEnd = hasDdPeriods ? config.ddPostEnd : config.uePostEnd;
+
   const switchPeriodKind = (kind) => {
     setPeriodKind(kind);
     if (kind === 'single') {
@@ -378,6 +690,13 @@ export default function ConfigScreen() {
       setDateAnalysisMode('singleRange');
       return;
     }
+    if (isPresetRangeMode(dateAnalysisMode)) {
+      if (ddPostStart) return;
+      const suggested = suggestSinglePeriodFromBounds(ddRange);
+      if (!suggested) return;
+      setDdDates(null, null, suggested.start, suggested.end);
+      return;
+    }
     if (ddPreStart) return;
     const suggested = suggestPrePostFromBounds(ddRange);
     if (!suggested) return;
@@ -387,7 +706,7 @@ export default function ConfigScreen() {
       suggested.postStart,
       suggested.postEnd,
     );
-  }, [hasDdPeriods, ddRange, ddPreStart, ddPostStart, isSinglePeriod, setDdDates, setDateAnalysisMode]);
+  }, [hasDdPeriods, ddRange, ddPreStart, ddPostStart, isSinglePeriod, dateAnalysisMode, setDdDates, setDateAnalysisMode]);
 
   useEffect(() => {
     if (!ueOnly || !ueRange.min || !ueRange.max) return;
@@ -399,6 +718,13 @@ export default function ConfigScreen() {
       setDateAnalysisMode('singleRange');
       return;
     }
+    if (isPresetRangeMode(dateAnalysisMode)) {
+      if (uePostStart) return;
+      const suggested = suggestSinglePeriodFromBounds(ueRange);
+      if (!suggested) return;
+      setUeDates(null, null, suggested.start, suggested.end);
+      return;
+    }
     if (uePreStart) return;
     const suggested = suggestPrePostFromBounds(ueRange);
     if (!suggested) return;
@@ -408,7 +734,7 @@ export default function ConfigScreen() {
       suggested.postStart,
       suggested.postEnd,
     );
-  }, [ueOnly, ueRange, uePreStart, uePostStart, isSinglePeriod, setUeDates, setDateAnalysisMode]);
+  }, [ueOnly, ueRange, uePreStart, uePostStart, isSinglePeriod, dateAnalysisMode, setUeDates, setDateAnalysisMode]);
 
   const canRunFullAnalysis = hasDd || hasUe;
   const canAnalyze = config.isConfigured()
@@ -422,7 +748,9 @@ export default function ConfigScreen() {
       setAnalyzeError(
         isSinglePeriod
           ? 'Set a period date range for at least one platform.'
-          : 'Set Pre and Post date ranges for at least one platform.',
+          : isPresetRange
+            ? 'Set an analysis start and end date for at least one platform.'
+            : 'Set Pre and Post date ranges for at least one platform.',
       );
       return;
     }
@@ -446,48 +774,114 @@ export default function ConfigScreen() {
       const ddExcludedStores = [...new Set([...(config.ddExcludedStores || []), ...scopeDdExcluded])];
       const ueExcludedStores = [...new Set([...(config.ueExcludedStores || []), ...scopeUeExcluded])];
 
-      const ddConfig = {
-        preStart: isSinglePeriod ? config.ddPostStart : config.ddPreStart,
-        preEnd: isSinglePeriod ? config.ddPostEnd : config.ddPreEnd,
-        postStart: config.ddPostStart,
-        postEnd: config.ddPostEnd,
-        excludedDates: config.ddExcludedDates,
-        excludedStores: ddExcludedStores,
-      };
-      const ueConfig = {
-        preStart: isSinglePeriod ? config.uePostStart : config.uePreStart,
-        preEnd: isSinglePeriod ? config.uePostEnd : config.uePreEnd,
-        postStart: config.uePostStart,
-        postEnd: config.uePostEnd,
-        excludedDates: config.ueExcludedDates,
-        excludedStores: ueExcludedStores,
-      };
+      const ddConfig = isPresetRange
+        ? (() => {
+          const rangeStart = config.ddPostStart;
+          const rangeEnd = config.ddPostEnd;
+          const periods = buildPeriodsInAnalysisRange(
+            config.dateAnalysisMode,
+            rangeStart,
+            rangeEnd,
+            mergedBounds,
+            weekStartsOn,
+          );
+          const first = periods[0];
+          return {
+            preStart: first?.priorStart || first?.start || rangeStart,
+            preEnd: first?.priorEnd || first?.end || rangeEnd,
+            postStart: rangeStart,
+            postEnd: rangeEnd,
+            excludedDates: config.ddExcludedDates,
+            excludedStores: ddExcludedStores,
+          };
+        })()
+        : {
+          preStart: isSinglePeriod ? config.ddPostStart : config.ddPreStart,
+          preEnd: isSinglePeriod ? config.ddPostEnd : config.ddPreEnd,
+          postStart: config.ddPostStart,
+          postEnd: config.ddPostEnd,
+          excludedDates: config.ddExcludedDates,
+          excludedStores: ddExcludedStores,
+        };
+      const ueConfig = isPresetRange
+        ? (() => {
+          const rangeStart = config.uePostStart || config.ddPostStart;
+          const rangeEnd = config.uePostEnd || config.ddPostEnd;
+          const periods = buildPeriodsInAnalysisRange(
+            config.dateAnalysisMode,
+            rangeStart,
+            rangeEnd,
+            mergedBounds,
+            weekStartsOn,
+          );
+          const first = periods[0];
+          return {
+            preStart: first?.priorStart || first?.start || rangeStart,
+            preEnd: first?.priorEnd || first?.end || rangeEnd,
+            postStart: rangeStart,
+            postEnd: rangeEnd,
+            excludedDates: config.ueExcludedDates,
+            excludedStores: ueExcludedStores,
+          };
+        })()
+        : {
+          preStart: isSinglePeriod ? config.uePostStart : config.uePreStart,
+          preEnd: isSinglePeriod ? config.uePostEnd : config.uePreEnd,
+          postStart: config.uePostStart,
+          postEnd: config.uePostEnd,
+          excludedDates: config.ueExcludedDates,
+          excludedStores: ueExcludedStores,
+        };
 
-      let ddStore = [];
-      let ueStore = [];
+      const ddReady = isSinglePeriod || isPresetRange ? ddConfig.postStart : ddConfig.preStart;
+      const ueReady = isSinglePeriod || isPresetRange ? ueConfig.postStart : ueConfig.preStart;
 
-      const ddReady = isSinglePeriod ? ddConfig.postStart : ddConfig.preStart;
-      const ueReady = isSinglePeriod ? ueConfig.postStart : ueConfig.preStart;
-
-      if (hasDd && ddReady) {
-        ddStore = buildDdPlatformData(dataStore.ddFinancial, ddConfig);
-        ddStore = addDerivedMetrics(ddStore);
-      }
-
-      if (hasUe && ueReady) {
-        ueStore = buildUePlatformData(dataStore.ueFinancial, ueConfig);
-        ueStore = addDerivedMetrics(ueStore);
-      }
-
-      let combined = buildCombinedStoreTables(ddStore, ueStore, storeMap);
-      let storeTables = { dd: ddStore, ue: ueStore, combined };
-      storeTables = applyStoreTableScope(storeTables, scope);
-      const summaries = buildSummaryTables(storeTables.dd, storeTables.ue);
+      const { storeTables, summaries, storePeriodAlignment, crossPlatformAlignment } = runComparisonAnalysis({
+        ddFinancial: dataStore.ddFinancial,
+        ueFinancial: dataStore.ueFinancial,
+        ddConfig,
+        ueConfig,
+        hasDd,
+        hasUe,
+        ddReady,
+        ueReady,
+        scope,
+        storeMap,
+        isSinglePeriod,
+      });
 
       dataStore.setStoreTables(storeTables);
       dataStore.setSummaryTables(summaries);
+      dataStore.setStorePeriodAlignment(storePeriodAlignment);
+      dataStore.setCrossPlatformAlignment(crossPlatformAlignment);
+
+      const marketingTables = resolveMarketingTables(
+        {
+          ddFinancial: dataStore.ddFinancial,
+          ddMarketing: dataStore.ddMarketing,
+          marketingTables: dataStore.marketingTables,
+        },
+        {
+          ...config,
+          storeTagMap: tagMap,
+          ddToUeStoreMap: storeMap,
+          includedStoreIds,
+          ddPreStart: ddConfig.preStart,
+          ddPreEnd: ddConfig.preEnd,
+          ddPostStart: ddConfig.postStart,
+          ddPostEnd: ddConfig.postEnd,
+          ddExcludedDates: ddConfig.excludedDates,
+        },
+      );
+      if (marketingTables) {
+        dataStore.setMarketingTables(marketingTables);
+      }
+
       dataStore.setProcessing(false);
       setScreen('dashboard');
+      if (config.dateAnalysisMode === 'wow') {
+        setActiveTab('wow');
+      }
     } catch (err) {
       console.error('Analysis error:', err);
       setAnalyzeError(err?.message || String(err) || 'Analysis failed. Check the browser console for details.');
@@ -504,12 +898,11 @@ export default function ConfigScreen() {
           <p className="text-sm text-[var(--text-muted)] mt-1">Select operator, set date ranges, and exclusions</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-          <div className="card min-w-0">
-            <h3 className="font-semibold text-[var(--text)] mb-3">Operator</h3>
-            <OperatorSelect required />
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <label htmlFor="account-manager" className="block text-xs text-[var(--text-muted)] mb-1.5">
+        <div className="card min-w-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            <OperatorSelect required compact />
+            <div className="space-y-2">
+              <label htmlFor="account-manager" className="block text-xs text-[var(--text-muted)]">
                 Account Manager
               </label>
               <input
@@ -517,40 +910,82 @@ export default function ConfigScreen() {
                 type="text"
                 value={config.accountManager}
                 onChange={(e) => config.setAccountManager(e.target.value)}
-                placeholder="Name shown on partnership reports"
+                placeholder="Name on reports"
                 className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
+          <p className="text-[11px] text-[var(--text-subtle)] leading-relaxed mt-3 pt-3 border-t border-[var(--border)]">
+            Pick an operator from Airtable or choose <strong>Other</strong> to type a custom name. Reporting and the store map use this operator.
+          </p>
+        </div>
 
-          <div className="card min-w-0">
-            <div className="flex flex-col gap-3 mb-4">
+        <div className="card min-w-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+            <div className="min-w-0">
               <h3 className="font-semibold text-[var(--text)]">Analysis Periods</h3>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-[var(--text-muted)]">Analysis mode</label>
-                <PeriodKindToggle kind={periodKind} onChange={switchPeriodKind} />
-                <p className="text-[10px] text-[var(--text-subtle)] leading-snug">
-                  {isSinglePeriod
-                    ? 'Single block of dates — Register and Post tables only (no Pre comparison).'
-                    : 'Compare two windows — Pre vs Post deltas across the dashboard.'}
-                </p>
-              </div>
+              <p className="text-[10px] text-[var(--text-subtle)] mt-1 leading-snug">
+                {isSinglePeriod
+                  ? 'Single date block — no Pre comparison.'
+                  : isPresetRange
+                    ? 'WoW, MoM, or QoQ: one start–end range. Pre vs Post is for Custom and YoY only.'
+                    : 'Custom Pre vs Post, or pick a YoY preset from your uploaded data.'}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:items-end shrink-0">
+              <PeriodKindToggle kind={periodKind} onChange={switchPeriodKind} />
               <SyncToggle
                 synced={config.syncDates}
                 onToggle={() => config.setSyncDates(!config.syncDates)}
                 label="Same dates for all platforms"
               />
+              {dateAnalysisMode === 'wow' && (
+              <label className="flex flex-col gap-1 w-full sm:w-auto sm:min-w-[160px]">
+                <span className="text-[10px] font-medium text-[var(--text-subtle)]">Business week</span>
+                <select
+                  value={config.weekDefinitionId || 'mon-sun'}
+                  onChange={(e) => config.setWeekDefinitionId(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--text)] cursor-pointer focus:outline-none focus:border-[var(--accent)]"
+                >
+                  {WEEK_DEFINITION_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              )}
             </div>
+          </div>
 
-            {!hasDdPeriods && !hasUePeriods && (
-              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                Upload DoorDash financial/sales or Uber Eats financial CSV to set analysis periods.
-              </p>
-            )}
+          {!hasDdPeriods && !hasUePeriods && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Upload DoorDash financial/sales or Uber Eats financial CSV to set analysis periods.
+            </p>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(hasDdPeriods || hasUePeriods) && (
+            <div className="grid grid-cols-1 lg:grid-cols-[min(260px,32%)_minmax(0,1fr)] gap-4 items-start">
+              <PeriodPresetPanel
+                isSinglePeriod={isSinglePeriod}
+                dateAnalysisMode={dateAnalysisMode}
+                compareGroups={comparePresetGroups}
+                singleGroups={singlePresetGroups}
+                periodsInRange={periodsInRange}
+                rangeStart={analysisRangeStart}
+                rangeEnd={analysisRangeEnd}
+                preStart={presetPreStart}
+                preEnd={presetPreEnd}
+                postStart={presetPostStart}
+                postEnd={presetPostEnd}
+                singleStart={presetSingleStart}
+                singleEnd={presetSingleEnd}
+                onSelectCompareMode={applyCompareMode}
+                onSelectComparePreset={applyComparePreset}
+                onSelectSinglePreset={applySinglePreset}
+              />
+
+              <div className="min-w-0 space-y-4">
               {showCombinedPeriodEditor && (
-                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0 md:col-span-2">
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0 border border-[var(--border)]">
                   <div className="flex flex-col gap-1 mb-3">
                     <div className="flex flex-wrap items-center gap-2">
                       {hasDdPeriods && <PlatformLogo platform="dd" size={18} />}
@@ -589,21 +1024,35 @@ export default function ConfigScreen() {
                       end={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
                       onApply={hasDdPeriods ? applySinglePeriod(config.setDdDates) : applySinglePeriod(setUeDates)}
                     />
-                  ) : (
+                  ) : isPresetRange ? (
+                    <AnalysisRangeInput
+                      key={`combined-range-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}-${dateAnalysisMode}`}
+                      start={hasDdPeriods ? config.ddPostStart : config.uePostStart}
+                      end={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
+                      modeLabel={dateAnalysisMode === 'wow' ? 'Analysis range (WoW)' : dateAnalysisMode === 'mom' ? 'Analysis range (MoM)' : 'Analysis range (QoQ)'}
+                      onApply={hasDdPeriods ? applyAnalysisRange(config.setDdDates) : applyAnalysisRange(setUeDates)}
+                    />
+                  ) : showCustomPrePost ? (
                     <PeriodRangePair
                       key={`combined-${config.ddPreStart || config.uePreStart || ''}-${config.ddPreEnd || config.uePreEnd || ''}-${config.ddPostStart || config.uePostStart || ''}-${config.ddPostEnd || config.uePostEnd || ''}`}
                       preStart={hasDdPeriods ? config.ddPreStart : config.uePreStart}
                       preEnd={hasDdPeriods ? config.ddPreEnd : config.uePreEnd}
                       postStart={hasDdPeriods ? config.ddPostStart : config.uePostStart}
                       postEnd={hasDdPeriods ? config.ddPostEnd : config.uePostEnd}
-                      onApply={hasDdPeriods ? config.setDdDates : setUeDates}
+                      onApply={
+                        hasDdPeriods
+                          ? applyCustomCompareDates(config.setDdDates)
+                          : applyCustomCompareDates(setUeDates)
+                      }
                     />
-                  )}
+                  ) : null}
                 </div>
               )}
 
+              {(showDdPeriodEditor || showUePeriodEditor) && (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {showDdPeriodEditor && (
-                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0">
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0 border border-[var(--border)]">
                   <div className="flex flex-col gap-1 mb-3">
                     <div className="flex items-center gap-2">
                       <PlatformLogo platform="dd" size={18} />
@@ -628,21 +1077,29 @@ export default function ConfigScreen() {
                       end={config.ddPostEnd}
                       onApply={applySinglePeriod(config.setDdDates)}
                     />
-                  ) : (
+                  ) : isPresetRange ? (
+                    <AnalysisRangeInput
+                      key={`dd-range-${config.ddPostStart || ''}-${config.ddPostEnd || ''}-${dateAnalysisMode}`}
+                      start={config.ddPostStart}
+                      end={config.ddPostEnd}
+                      modeLabel={dateAnalysisMode === 'wow' ? 'Analysis range (WoW)' : dateAnalysisMode === 'mom' ? 'Analysis range (MoM)' : 'Analysis range (QoQ)'}
+                      onApply={applyAnalysisRange(config.setDdDates)}
+                    />
+                  ) : showCustomPrePost ? (
                     <PeriodRangePair
                       key={`dd-${config.ddPreStart || ''}-${config.ddPreEnd || ''}-${config.ddPostStart || ''}-${config.ddPostEnd || ''}`}
                       preStart={config.ddPreStart}
                       preEnd={config.ddPreEnd}
                       postStart={config.ddPostStart}
                       postEnd={config.ddPostEnd}
-                      onApply={config.setDdDates}
+                      onApply={applyCustomCompareDates(config.setDdDates)}
                     />
-                  )}
+                  ) : null}
                 </div>
               )}
 
               {showUePeriodEditor && (
-                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0">
+                <div className="p-4 rounded-lg bg-[var(--surface-2)] min-w-0 border border-[var(--border)]">
                   <div className="flex flex-col gap-1 mb-3">
                     <div className="flex items-center gap-2">
                       <PlatformLogo platform="ue" size={18} />
@@ -651,6 +1108,9 @@ export default function ConfigScreen() {
                     {ueRange.min && (
                       <span className="text-[10px] text-[var(--text-subtle)]">
                         Data: {formatDateShort(ueRange.min)} — {formatDateShort(ueRange.max)}
+                        {ueYearSummary?.sortedYears?.length > 0 && (
+                          <> · {ueYearSummary.sortedYears.map((y) => `${y}: ${ueYearSummary.years[y]?.toLocaleString()}`).join(', ')}</>
+                        )}
                       </span>
                     )}
                   </div>
@@ -661,27 +1121,67 @@ export default function ConfigScreen() {
                       end={config.uePostEnd}
                       onApply={applySinglePeriod(setUeDates)}
                     />
-                  ) : (
+                  ) : isPresetRange ? (
+                    <AnalysisRangeInput
+                      key={`ue-range-${config.uePostStart || ''}-${config.uePostEnd || ''}-${dateAnalysisMode}`}
+                      start={config.uePostStart}
+                      end={config.uePostEnd}
+                      modeLabel={dateAnalysisMode === 'wow' ? 'Analysis range (WoW)' : dateAnalysisMode === 'mom' ? 'Analysis range (MoM)' : 'Analysis range (QoQ)'}
+                      onApply={applyAnalysisRange(setUeDates)}
+                    />
+                  ) : showCustomPrePost ? (
                     <PeriodRangePair
                       key={`ue-${config.uePreStart || ''}-${config.uePreEnd || ''}-${config.uePostStart || ''}-${config.uePostEnd || ''}`}
                       preStart={config.uePreStart}
                       preEnd={config.uePreEnd}
                       postStart={config.uePostStart}
                       postEnd={config.uePostEnd}
-                      onApply={setUeDates}
+                      onApply={applyCustomCompareDates(setUeDates)}
                     />
-                  )}
+                  ) : null}
+                </div>
+              )}
                 </div>
               )}
 
               {hasUePeriods && !ueRange.min && (
-                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 md:col-span-2">
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   Uber Eats file is in memory but no order dates were parsed. Use the standard UE financial CSV (header on row 2: Store Name, Order date, …).
                 </p>
               )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {!isSinglePeriod && (ddStorePeriodCounts || ueStorePeriodCounts) && (
+          <div className="card min-w-0">
+            <div className="mb-3">
+              <h3 className="font-semibold text-[var(--text)]">Store coverage</h3>
+              <p className="text-[10px] text-[var(--text-subtle)] mt-1">
+                Active stores per window. Comparisons use only stores with activity in both sides.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {ddStorePeriodCounts && (
+                <StorePeriodSummary
+                  label="DoorDash"
+                  platform="dd"
+                  counts={ddStorePeriodCounts}
+                  alignment={ddAlignmentPreview}
+                />
+              )}
+              {ueStorePeriodCounts && (
+                <StorePeriodSummary
+                  label="Uber Eats"
+                  platform="ue"
+                  counts={ueStorePeriodCounts}
+                  alignment={ueAlignmentPreview}
+                />
+              )}
             </div>
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           <div className="card min-w-0">
@@ -771,6 +1271,7 @@ export default function ConfigScreen() {
               ueFinancial={dataStore.ueFinancial}
               rows={mapRows}
               setRows={setMapRows}
+              operatorName={config.operatorName}
             />
           </div>
         )}

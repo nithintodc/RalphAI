@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from api.static_cache import DevFriendlyStaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -89,12 +89,26 @@ def register_internal_apps(app: FastAPI) -> None:
             ),
         }
 
+    @app.get("/internal-apps/{slug}/health", include_in_schema=False)
+    def internal_app_health(slug: str) -> dict:
+        directory = INTERNAL_APPS.get(slug)
+        if not directory:
+            raise HTTPException(404, "Unknown internal app")
+        index = directory / "index.html"
+        build_version = int(index.stat().st_mtime) if index.is_file() else 0
+        return {
+            "slug": slug,
+            "ready": directory.is_dir(),
+            "path": str(directory),
+            "buildVersion": build_version,
+        }
+
     for slug, directory in INTERNAL_APPS.items():
         mount_path = f"/internal-apps/{slug}"
         if directory.is_dir():
             app.mount(
                 mount_path,
-                StaticFiles(directory=str(directory), html=True),
+                DevFriendlyStaticFiles(directory=str(directory), html=True),
                 name=f"internal-app-{slug}",
             )
         else:
@@ -109,10 +123,3 @@ def register_internal_apps(app: FastAPI) -> None:
                 return missing_internal_app
 
             _make_missing_handler(slug, directory, mount_path)
-
-    @app.get("/internal-apps/{slug}/health", include_in_schema=False)
-    def internal_app_health(slug: str) -> dict:
-        directory = INTERNAL_APPS.get(slug)
-        if not directory:
-            raise HTTPException(404, "Unknown internal app")
-        return {"slug": slug, "ready": directory.is_dir(), "path": str(directory)}

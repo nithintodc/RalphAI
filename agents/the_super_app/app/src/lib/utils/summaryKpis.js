@@ -1,24 +1,88 @@
 /** Hero KPI cards from combined summary table rows (Overview / App 2.0 drawer). */
-export function buildSummaryKpis(summary = []) {
+function rowToKpi(row, { id, label, format, deltaFormat }) {
+  if (!row) return null;
+  return {
+    id: id || row.metric,
+    label,
+    value: row.prevspost,
+    pre: row.pre,
+    post: row.post,
+    format: deltaFormat || format,
+    rangeFormat: format,
+    delta: row.growthPct,
+    yoy: row.yoyPct,
+  };
+}
+
+/** Active DoorDash store count (exclusions already applied in storeTables). */
+export function ddStoreCount(storeTables) {
+  return storeTables?.dd?.length || 0;
+}
+
+/** Active Uber Eats store count (exclusions already applied in storeTables). */
+export function ueStoreCount(storeTables) {
+  return storeTables?.ue?.length || 0;
+}
+
+/** Denominator for Payout Δ/Store — DD stores for combined & DD, UE stores for UE. */
+export function storeCountForPayoutKpi(sectionKey, storeTables) {
+  if (sectionKey === 'ue') return ueStoreCount(storeTables);
+  if (sectionKey === 'combined' || sectionKey === 'dd') return ddStoreCount(storeTables);
+  return 0;
+}
+
+/** Payout delta (Post − Pre) ÷ store count. */
+export function payoutDeltaPerStore(payoutsRow, storeCount) {
+  if (!payoutsRow || !storeCount) return null;
+  return (payoutsRow.prevspost ?? 0) / storeCount;
+}
+
+/** Per-section payout Δ/store using the correct platform store count. */
+export function payoutDeltaPerStoreForSection(summaryTables, storeTables, sectionKey) {
+  const payouts = summaryTables?.[sectionKey]?.find((r) => r.metric === 'payouts');
+  return payoutDeltaPerStore(payouts, storeCountForPayoutKpi(sectionKey, storeTables));
+}
+
+/** @deprecated Use payoutDeltaPerStoreForSection(..., 'combined'). */
+export function combinedPayoutPerStore(summaryTables, storeTables) {
+  return payoutDeltaPerStoreForSection(summaryTables, storeTables, 'combined');
+}
+
+export function buildSummaryKpis(summary = [], { sectionKey, storeTables } = {}) {
   const get = (m) => summary.find((r) => r.metric === m);
   const s = get('sales');
   const p = get('payouts');
   const o = get('orders');
   const prof = get('profitability');
   const aov = get('aov');
-  return [
-    { id: 'sales', label: 'Sales', value: s?.post, format: 'usd', delta: s?.growthPct, yoy: s?.yoyPct },
-    { id: 'payouts', label: 'Payouts', value: p?.post, format: 'usd', delta: p?.growthPct, yoy: p?.yoyPct },
-    { id: 'orders', label: 'Orders', value: o?.post, format: 'int', delta: o?.growthPct, yoy: o?.yoyPct },
-    { id: 'aov', label: 'AOV', value: aov?.post, format: 'usd2', delta: aov?.growthPct, yoy: aov?.yoyPct },
-    { id: 'prof', label: 'Profitability', value: prof?.post, format: 'pct', delta: prof?.growthPct, yoy: prof?.yoyPct },
-  ];
+
+  const kpis = [
+    rowToKpi(s, { label: 'Sales', format: 'usd' }),
+    rowToKpi(p, { label: 'Payouts', format: 'usd' }),
+    rowToKpi(o, { label: 'Orders', format: 'int' }),
+    rowToKpi(aov, { label: 'AOV', format: 'usd2' }),
+    rowToKpi(prof, { id: 'prof', label: 'Profitability', format: 'pct', deltaFormat: 'pp' }),
+  ].filter(Boolean);
+
+  const storeCount = storeCountForPayoutKpi(sectionKey, storeTables);
+  if (['combined', 'dd', 'ue'].includes(sectionKey) && p && storeCount > 0) {
+    kpis.push({
+      id: 'payoutsPerStore',
+      label: 'Payout Δ/Store',
+      value: p.prevspost / storeCount,
+      pre: p.pre / storeCount,
+      post: p.post / storeCount,
+      format: 'usd2',
+      rangeFormat: 'usd2',
+      delta: p.growthPct,
+      yoy: p.yoyPct,
+    });
+  }
+
+  return kpis;
 }
 
-/** Mean total payout across stores (portfolio average payout per store). */
-export function meanPayoutPerStore(stores = [], window = 'post') {
-  if (!stores.length) return null;
-  const key = `${window}_payouts`;
-  const total = stores.reduce((sum, row) => sum + (row[key] || 0), 0);
-  return total / stores.length;
+/** @deprecated Use payoutDeltaPerStoreForSection — kept for import compatibility. */
+export function meanPayoutPerStore(summaryTables, storeTables) {
+  return combinedPayoutPerStore(summaryTables, storeTables);
 }

@@ -132,13 +132,14 @@ export function classifyOrder(marketingFees, customerDiscounts) {
 }
 
 /**
- * Uber Eats: Marketplace Fee is standard commission on most orders, not ad spend.
- * Promo = Offers on items; Ads = Marketing Adjustment (when present).
+ * Uber Eats order origin:
+ * - Promo = Offers on items (incl. tax) and/or Delivery Offer Redemptions (incl. tax)
+ * - Ads = Other payments where description is Ad Spend (not Marketplace Fee commission)
  */
-export function classifyUeOrder(offers, marketingAdjustment) {
+export function classifyUeOrder(offers, adSpend, deliveryOffers = 0) {
   const EPSILON = 0.01;
-  const hasPromo = Math.abs(offers || 0) >= EPSILON;
-  const hasAds = Math.abs(marketingAdjustment || 0) >= EPSILON;
+  const hasPromo = Math.abs(offers || 0) >= EPSILON || Math.abs(deliveryOffers || 0) >= EPSILON;
+  const hasAds = Math.abs(adSpend || 0) >= EPSILON;
   if (hasPromo && hasAds) return 'promo_ads';
   if (hasPromo) return 'promo';
   if (hasAds) return 'ads';
@@ -161,13 +162,17 @@ function buildOrderLevel(records, platform = 'dd') {
       ? rows.reduce((s, r) => s + (r.marketplaceFee || 0), 0)
       : rows.reduce((s, r) => s + (r.marketingFees || 0), 0);
     const customerDiscounts = platform === 'ue'
-      ? rows.reduce((s, r) => s + Math.abs(r.offers || 0), 0)
+      ? rows.reduce((s, r) => s + Math.abs(r.offers || 0) + Math.abs(r.deliveryOffers || 0), 0)
       : sumPromoDiscountsFromRows(rows);
-    const marketingAdjustment = platform === 'ue'
-      ? rows.reduce((s, r) => s + Math.abs(r.marketingAdjustment || 0), 0)
+    const adSpend = platform === 'ue'
+      ? rows.reduce((s, r) => s + (r.adSpend || 0), 0)
       : 0;
     const orderType = platform === 'ue'
-      ? classifyUeOrder(customerDiscounts, marketingAdjustment)
+      ? classifyUeOrder(
+          rows.reduce((s, r) => s + Math.abs(r.offers || 0), 0),
+          adSpend,
+          rows.reduce((s, r) => s + Math.abs(r.deliveryOffers || 0), 0),
+        )
       : classifyDdOrder(sumDdOrderMarketingSignals(rows));
     out.push({
       orderId,
@@ -177,7 +182,7 @@ function buildOrderLevel(records, platform = 'dd') {
       payouts,
       marketingFees,
       customerDiscounts,
-      marketingAdjustment,
+      adSpend,
       bucket: assignBucket(sales),
       orderType,
     });

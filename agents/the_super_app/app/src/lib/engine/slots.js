@@ -1,5 +1,6 @@
 import { differenceInCalendarDays } from 'date-fns';
-import { filterByDateRange, filterExcludedDates, groupBy } from './aggregator';
+import { filterByDateRange, filterExcludedDates, filterExcludedStores, groupBy } from './aggregator';
+import { getLastYearDates } from '../utils/dateUtils';
 import { safeDivide, round } from '../utils/safeMath';
 import { assignBucket, BUCKET_RANGES, classifyDdOrder, classifyUeOrder, sumDdOrderMarketingSignals } from './buckets';
 import { isPresentTimeValue } from '../constants/orderTimeColumns';
@@ -41,23 +42,23 @@ export function getSlotTimeRange(slotName) {
   return '';
 }
 
-export const SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%'];
+export const SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%', 'LY Pre vs Post', 'LY Growth%'];
 export const SLOT_EXPORT_HEADERS_YOY = ['Slot', 'Slot time', 'LY Post', 'Post', 'YoY', 'YoY%'];
-export const LEGACY_SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%'];
+export const LEGACY_SLOT_EXPORT_HEADERS_PVP = ['Slot', 'Slot time', 'Pre', 'Post', 'Pre vs Post', 'Growth%', 'LY Pre vs Post', 'LY Growth%'];
 export const LEGACY_SLOT_EXPORT_HEADERS_YOY = ['Slot', 'Slot time', 'Last year post', 'Post', 'YoY', 'Growth%'];
 
-/** Primary slot tables — daily avg for $ metrics; AOV and profitability are ratios. */
+/** Primary slot tables — period totals for $ metrics; AOV and profitability are ratios. */
 export const SLOT_DISPLAY_METRICS = [
-  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: true },
-  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: true },
+  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: false },
+  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: false },
   { key: 'aov', label: 'AOV', valueKind: 'usd2', dailyAvg: false },
   { key: 'profitability', label: 'Profitability %', valueKind: 'pct', dailyAvg: false },
 ];
 
 /** Slots screen — Pre/Post and YoY growth tables only. */
 export const SLOT_CORE_METRICS = [
-  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: true },
-  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: true },
+  { key: 'sales', label: 'Sales', valueKind: 'usd', dailyAvg: false },
+  { key: 'payouts', label: 'Payouts', valueKind: 'usd', dailyAvg: false },
   { key: 'aov', label: 'AOV', valueKind: 'usd2', dailyAvg: false },
   { key: 'orders', label: 'Orders', valueKind: 'int', dailyAvg: false },
 ];
@@ -77,11 +78,15 @@ export const SLOT_METRIC_TABLES = [
 export function parseTimeToMinutes(timeStr) {
   if (!timeStr) return -1;
   const str = String(timeStr).trim();
-  const parts = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  const parts = str.match(/(\d{1,2}):(\d{2})(?:[.:](\d{1,2}))?\s*(AM|PM)?/i);
   if (!parts) return -1;
   let hours = parseInt(parts[1], 10);
   const mins = parseInt(parts[2], 10);
   const ampm = parts[4];
+  // DD exports sometimes encode minutes-from-midnight as MM:SS.s (e.g. "51:57.7" ≠ 51:00).
+  if (!ampm && hours >= 24) {
+    return Math.min(hours, 1439);
+  }
   if (ampm) {
     if (ampm.toUpperCase() === 'PM' && hours !== 12) hours += 12;
     if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
@@ -97,13 +102,53 @@ export function getSlot(timeStr, platform = 'dd') {
   return slot ? slot.name : 'Unknown';
 }
 
+/** Leading date inside a full timestamp: ISO "2026-05-31 23:17:33" or US "5/31/2026 23:17". */
+const EMBEDDED_ISO_DATE_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T]\d/;
+const EMBEDDED_US_DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T]\d/;
+
+/**
+ * Date used for slot windowing: the date embedded in the order-received timestamp when
+ * present (keeps late-night orders that settle after midnight on the day they were placed),
+ * else the row's financial date (Timestamp local date).
+ */
+function slotRowDate(row, timeField) {
+  const s = String(row[timeField] || '').trim();
+  let y;
+  let mo;
+  let day;
+  let m = EMBEDDED_ISO_DATE_RE.exec(s);
+  if (m) {
+    [, y, mo, day] = m;
+  } else {
+    m = EMBEDDED_US_DATE_RE.exec(s);
+    if (!m) return row.date;
+    [, mo, day, y] = m;
+  }
+  const d = new Date(Number(y), Number(mo) - 1, Number(day));
+  return Number.isNaN(d.getTime()) ? row.date : d;
+}
+
+/** Scope rows to included stores and re-date them to the order-received date for slotting. */
+function prepareSlotRows(rawData, excludedStores, timeField) {
+  const scoped = filterExcludedStores(rawData || [], 'storeId', excludedStores);
+  return scoped.map((r) => {
+    const d = slotRowDate(r, timeField);
+    return d === r.date ? r : { ...r, date: d };
+  });
+}
+
+/** True when DD financial rows can drive slot tables (order ID + received/local time present). */
+export function hasDdFinancialForSlots(ddFinancial) {
+  return (ddFinancial || []).some((r) => r.orderId && isPresentTimeValue(r.time));
+}
+
+/** DoorDash slots from FINANCIAL rows — Order received local time; subtotal/payouts/marketing summed per order. */
 function buildDdOrdersWithSlots(rawData, timeField) {
-  const rows = rawData;
-  const byOrder = groupBy(rows, 'orderId');
+  const byOrder = groupBy(rawData, 'orderId');
   const out = [];
   for (const [orderId, rs] of byOrder) {
     if (!orderId) continue;
-    const t = rs[0][timeField];
+    const t = rs.map((r) => r[timeField]).find(isPresentTimeValue);
     if (!isPresentTimeValue(t)) continue;
     const slot = getSlot(t, 'dd');
     if (!SLOT_NAMES.includes(slot)) continue;
@@ -117,13 +162,12 @@ function buildDdOrdersWithSlots(rawData, timeField) {
     const adsSpend = mktFees;
     const mktSpend = Math.abs(mktFees) + Math.abs(cd) + Math.abs(cdDd) + Math.abs(cd3p);
     const orderType = classifyDdOrder(mktSignals);
-    const bucket = assignBucket(sales);
     out.push({
       orderId,
       date: rs[0].date,
       slot,
       sales,
-      bucket,
+      bucket: assignBucket(sales),
       payouts,
       adsSpend,
       mktSpend,
@@ -144,10 +188,11 @@ function buildUeOrdersWithSlots(rawData, timeField) {
     const sales = rs.reduce((s, r) => s + (r.sales || 0), 0);
     const payouts = rs.reduce((s, r) => s + (r.totalPayout || 0), 0);
     const off = rs.reduce((s, r) => s + Math.abs(r.offers || 0), 0);
-    const mktAdj = rs.reduce((s, r) => s + Math.abs(r.marketingAdjustment || 0), 0);
-    const adsSpend = mktAdj;
-    const mktSpend = Math.abs(off) + Math.abs(mktAdj);
-    const orderType = classifyUeOrder(off, mktAdj);
+    const del = rs.reduce((s, r) => s + Math.abs(r.deliveryOffers || 0), 0);
+    const ads = rs.reduce((s, r) => s + (r.adSpend || 0), 0);
+    const adsSpend = ads;
+    const mktSpend = off + del + ads;
+    const orderType = classifyUeOrder(off, ads, del);
     const bucket = assignBucket(sales);
     out.push({
       orderId,
@@ -169,10 +214,60 @@ function inclusiveDayCount(start, end) {
   return Math.max(1, differenceInCalendarDays(end, start) + 1);
 }
 
-function shiftYear(date, years = -1) {
-  const d = new Date(date);
-  d.setFullYear(d.getFullYear() + years);
-  return d;
+function slottableRowsInWindow(rawData, start, end, excludedDates) {
+  if (!rawData?.length) return [];
+  let rows = filterByDateRange(rawData, 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  return rows.filter((r) => r.orderId);
+}
+
+/** True when excluded dates remove all LY slot rows but raw LY windows still have data. */
+export function lyBlankDueToExclusions(
+  rawData,
+  preStart,
+  preEnd,
+  postStart,
+  postEnd,
+  excludedDates = [],
+) {
+  if (!excludedDates?.length) return false;
+  const withEx = computeSlotLyCoverage(rawData, preStart, preEnd, postStart, postEnd, excludedDates);
+  if (withEx.hasAny) return false;
+  const withoutEx = computeSlotLyCoverage(rawData, preStart, preEnd, postStart, postEnd, []);
+  return withoutEx.hasAny;
+}
+
+/** Whether financial data has slottable rows in last-year Pre and/or Post windows. */
+export function computeSlotLyCoverage(
+  rawData,
+  preStart,
+  preEnd,
+  postStart,
+  postEnd,
+  excludedDates = [],
+) {
+  const lyPre = getLastYearDates(preStart, preEnd);
+  const lyPost = getLastYearDates(postStart, postEnd);
+  const preLy = slottableRowsInWindow(rawData, lyPre.start, lyPre.end, excludedDates).length > 0;
+  const postLy = slottableRowsInWindow(rawData, lyPost.start, lyPost.end, excludedDates).length > 0;
+  return { preLy, postLy, hasAny: preLy || postLy };
+}
+
+function slotMetricLyHasData(preLYAgg, postLYAgg, metricKey) {
+  if (metricKey === 'orders' || metricKey.endsWith('Orders')) {
+    return (preLYAgg.orders || 0) > 0 || (postLYAgg.orders || 0) > 0;
+  }
+  if (metricKey === 'aov' || metricKey === 'profitability') {
+    return (preLYAgg.orders || 0) > 0 || (postLYAgg.orders || 0) > 0;
+  }
+  const preV = preLYAgg[metricKey] || 0;
+  const postV = postLYAgg[metricKey] || 0;
+  return preV !== 0 || postV !== 0;
+}
+
+function growthPctOrNull(diff, base) {
+  if (!base) return null;
+  return round(safeDivide(diff, base) * 100);
 }
 
 function emptySlotAgg() {
@@ -191,10 +286,23 @@ function emptySlotAgg() {
   };
 }
 
-function buildWindowFromOrders(orderList, start, end, excludedDates) {
-  let filtered = filterByDateRange(orderList, 'date', start, end);
-  filtered = filterExcludedDates(filtered, 'date', excludedDates);
-  const bySlot = groupBy(filtered, 'slot');
+function ordersForWindow({
+  start,
+  end,
+  excludedDates,
+  platform,
+  timeField,
+  rawData,
+}) {
+  let rows = filterByDateRange(rawData, 'date', start, end);
+  rows = filterExcludedDates(rows, 'date', excludedDates);
+  return platform === 'dd'
+    ? buildDdOrdersWithSlots(rows, timeField)
+    : buildUeOrdersWithSlots(rows, timeField);
+}
+
+function buildWindowFromOrders(orderList) {
+  const bySlot = groupBy(orderList, 'slot');
   const slotData = {};
   for (const name of SLOT_NAMES) {
     const ords = bySlot.get(name) || [];
@@ -254,14 +362,15 @@ function mapPrePost(metricKey, pre, post, preLY, postLY, dayCounts, dailyAvg) {
     const lyPost = slotMetricValue(postLY[s], metricKey, postLyDays, dailyAvg);
     const diff = roundMetric(metricKey, b - a);
     const lyDiff = roundMetric(metricKey, lyPost - lyPre);
+    const lyHasData = slotMetricLyHasData(preLY[s], postLY[s], metricKey);
     return {
       slot: s,
       pre: a,
       post: b,
       prevspost: diff,
-      lyPrevspost: lyDiff,
-      growthPct: round(safeDivide(diff, a) * 100),
-      lyGrowthPct: round(safeDivide(lyDiff, lyPre) * 100),
+      lyPrevspost: lyHasData ? lyDiff : null,
+      growthPct: growthPctOrNull(diff, a),
+      lyGrowthPct: lyHasData ? growthPctOrNull(lyDiff, lyPre) : null,
     };
   });
 }
@@ -272,12 +381,13 @@ function mapYoY(metricKey, postLY, post, dayCounts, dailyAvg) {
     const ly = slotMetricValue(postLY[s], metricKey, postLyDays, dailyAvg);
     const b = slotMetricValue(post[s], metricKey, postDays, dailyAvg);
     const diff = roundMetric(metricKey, b - ly);
+    const lyHasData = slotMetricLyHasData(postLY[s], postLY[s], metricKey);
     return {
       slot: s,
-      postLY: ly,
+      postLY: lyHasData ? ly : null,
       post: b,
-      yoy: diff,
-      yoyPct: round(safeDivide(diff, ly) * 100),
+      yoy: lyHasData ? diff : null,
+      yoyPct: lyHasData ? growthPctOrNull(diff, ly) : null,
     };
   });
 }
@@ -288,25 +398,47 @@ const DISPLAY_METRIC_CONFIG = Object.fromEntries(
 );
 
 export function buildSlotAnalysis(rawData, config) {
-  const { preStart, preEnd, postStart, postEnd, excludedDates = [], platform = 'dd', timeField = 'time' } = config;
+  const {
+    preStart,
+    preEnd,
+    postStart,
+    postEnd,
+    excludedDates = [],
+    excludedStores = [],
+    platform = 'dd',
+    timeField = 'time',
+  } = config;
 
-  const orderList = platform === 'ue'
-    ? buildUeOrdersWithSlots(rawData, timeField)
-    : buildDdOrdersWithSlots(rawData, timeField);
+  const slotRows = prepareSlotRows(rawData, excludedStores, timeField);
+  if (!slotRows.length) return null;
 
-  const pre = buildWindowFromOrders(orderList, preStart, preEnd, excludedDates);
-  const post = buildWindowFromOrders(orderList, postStart, postEnd, excludedDates);
-  const preLY = buildWindowFromOrders(orderList, shiftYear(preStart), shiftYear(preEnd), excludedDates);
-  const postLY = buildWindowFromOrders(orderList, shiftYear(postStart), shiftYear(postEnd), excludedDates);
+  const windowOpts = (start, end) => ({
+    start,
+    end,
+    excludedDates,
+    platform,
+    timeField,
+    rawData: slotRows,
+  });
+
+  const lyPreRange = getLastYearDates(preStart, preEnd);
+  const lyPostRange = getLastYearDates(postStart, postEnd);
+
+  const pre = buildWindowFromOrders(ordersForWindow(windowOpts(preStart, preEnd)));
+  const post = buildWindowFromOrders(ordersForWindow(windowOpts(postStart, postEnd)));
+  const preLY = buildWindowFromOrders(ordersForWindow(windowOpts(lyPreRange.start, lyPreRange.end)));
+  const postLY = buildWindowFromOrders(ordersForWindow(windowOpts(lyPostRange.start, lyPostRange.end)));
 
   const dayCounts = {
     preDays: inclusiveDayCount(preStart, preEnd),
     postDays: inclusiveDayCount(postStart, postEnd),
-    preLyDays: inclusiveDayCount(shiftYear(preStart), shiftYear(preEnd)),
-    postLyDays: inclusiveDayCount(shiftYear(postStart), shiftYear(postEnd)),
+    preLyDays: inclusiveDayCount(lyPreRange.start, lyPreRange.end),
+    postLyDays: inclusiveDayCount(lyPostRange.start, lyPostRange.end),
   };
 
-  const out = {};
+  const out = {
+    lyCoverage: computeSlotLyCoverage(slotRows, preStart, preEnd, postStart, postEnd, excludedDates),
+  };
   for (const k of METRIC_KEYS) {
     const dailyAvg = DISPLAY_METRIC_CONFIG[k]?.dailyAvg ?? false;
     out[`${k}PrePost`] = mapPrePost(k, pre, post, preLY, postLY, dayCounts, dailyAvg);
@@ -349,11 +481,23 @@ function classifyTicketMixShift(preCountsByIdx, postCountsByIdx) {
  * plus a summary of which slots show mix shifting downscale vs upscale.
  */
 export function buildSlotTicketBucketAnalysis(rawData, config) {
-  const { preStart, preEnd, postStart, postEnd, excludedDates = [], platform = 'dd', timeField = 'time' } = config;
+  const {
+    preStart,
+    preEnd,
+    postStart,
+    postEnd,
+    excludedDates = [],
+    excludedStores = [],
+    platform = 'dd',
+    timeField = 'time',
+  } = config;
 
-  const orderList = platform === 'ue'
-    ? buildUeOrdersWithSlots(rawData, timeField)
-    : buildDdOrdersWithSlots(rawData, timeField);
+  const slotRows = prepareSlotRows(rawData, excludedStores, timeField);
+  if (!slotRows.length) return null;
+
+  const orderList = platform === 'dd'
+    ? buildDdOrdersWithSlots(slotRows, timeField)
+    : buildUeOrdersWithSlots(slotRows, timeField);
 
   let preOrders = filterByDateRange(orderList, 'date', preStart, preEnd);
   preOrders = filterExcludedDates(preOrders, 'date', excludedDates);
@@ -400,14 +544,20 @@ export function buildSlotTicketBucketAnalysis(rawData, config) {
 }
 
 export function buildHeatmapData(rawData, config) {
-  const { postStart, postEnd, excludedDates = [], platform = 'dd', timeField = 'time' } = config;
-  const salesField = platform === 'dd' ? 'subtotal' : 'sales';
-  let data = filterByDateRange(rawData, 'date', postStart, postEnd);
-  data = filterExcludedDates(data, 'date', excludedDates);
+  const {
+    postStart,
+    postEnd,
+    excludedDates = [],
+    platform = 'dd',
+    timeField = 'time',
+  } = config;
 
   const matrix = Array.from({ length: 7 }, () => Array(6).fill(0));
   let maxVal = 0;
 
+  const salesField = platform === 'dd' ? 'subtotal' : 'sales';
+  let data = filterByDateRange(prepareSlotRows(rawData, [], timeField), 'date', postStart, postEnd);
+  data = filterExcludedDates(data, 'date', excludedDates);
   for (const r of data) {
     const dayIdx = r.date ? ((r.date.getDay() + 6) % 7) : -1;
     const slot = getSlot(r[timeField], platform);

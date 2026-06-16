@@ -37,9 +37,9 @@ export function buildSlotPvpColumns(spec) {
     { key: 'pre', label: preLabel, align: 'right', wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
     { key: 'post', label: postLabel, align: 'right', wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
     { key: 'prevspost', label: 'PvP Δ', align: 'right', delta: true, wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
-    { key: 'growthPct', label: 'PvP %', align: 'right', delta: true, wrap: true, render: (v) => fmt.delta(v) },
-    { key: 'lyPrevspost', label: 'LY PvP Δ', align: 'right', delta: true, wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
-    { key: 'lyGrowthPct', label: 'LY PvP %', align: 'right', delta: true, wrap: true, render: (v) => fmt.delta(v) },
+    { key: 'growthPct', label: 'PvP %', align: 'right', delta: true, wrap: true, render: (v) => (v == null ? '—' : fmt.delta(v)) },
+    { key: 'lyPrevspost', label: 'LY Pre vs Post Δ', align: 'right', delta: true, wrap: true, render: (v) => (v == null ? '—' : renderSlotValue(spec.valueKind, v)) },
+    { key: 'lyGrowthPct', label: 'LY Growth%', align: 'right', delta: true, wrap: true, render: (v) => (v == null ? '—' : fmt.delta(v)) },
   ];
 }
 
@@ -56,9 +56,9 @@ export function buildSlotYoyColumns(spec) {
       render: (v) => <span className="font-medium">{v}</span>,
     },
     buildSlotTimeColumn('slot'),
-    { key: 'postLY', label: lyLabel, align: 'right', wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
+    { key: 'postLY', label: lyLabel, align: 'right', wrap: true, render: (v) => (v == null ? '—' : renderSlotValue(spec.valueKind, v)) },
     { key: 'post', label: postLabel, align: 'right', wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
-    { key: 'yoy', label: 'YoY Δ', align: 'right', delta: true, wrap: true, render: (v) => renderSlotValue(spec.valueKind, v) },
-    { key: 'yoyPct', label: 'YoY %', align: 'right', delta: true, wrap: true, render: (v) => fmt.delta(v) },
+    { key: 'yoy', label: 'YoY Δ', align: 'right', delta: true, wrap: true, render: (v) => (v == null ? '—' : renderSlotValue(spec.valueKind, v)) },
+    { key: 'yoyPct', label: 'YoY %', align: 'right', delta: true, wrap: true, render: (v) => (v == null ? '—' : fmt.delta(v)) },
   ];
 }

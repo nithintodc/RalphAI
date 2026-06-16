@@ -4,7 +4,7 @@ import { useDataStore } from '../../stores/dataStore';
 import DataTable from '../../components/ui/DataTable';
 import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
 import { fmt } from '../../lib/utils/formatters';
-import { meanPayoutPerStore } from '../../lib/utils/summaryKpis';
+import { combinedPayoutPerStore } from '../../lib/utils/summaryKpis';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import { getTopMovers } from '../../lib/engine/diagnostics';
 
@@ -61,12 +61,12 @@ export default function OverviewScreen() {
 
   const movers = useMemo(() => getTopMovers(stores, 5), [stores]);
 
-  const meanPayout = useMemo(
+  const payoutPerStoreSummary = useMemo(
     () => ({
-      pre: meanPayoutPerStore(stores, 'pre'),
-      post: meanPayoutPerStore(stores, 'post'),
+      pre: combinedPayoutPerStore(summaryTables, storeTables, 'pre'),
+      post: combinedPayoutPerStore(summaryTables, storeTables, 'post'),
     }),
-    [stores],
+    [summaryTables, storeTables],
   );
 
   const prePostBars = useMemo(() => {
@@ -153,10 +153,10 @@ export default function OverviewScreen() {
             <h3 className="text-sm font-semibold text-[var(--text)]">Payouts by store</h3>
             <p className="text-xs text-[var(--text-subtle)] mt-0.5">
               Combined view (DoorDash + Uber Eats when store IDs are mapped). Same Pre / Post windows as the period selector.
-              {meanPayout.post != null && (
+              {payoutPerStoreSummary.post != null && (
                 <>
                   {' '}
-                  Mean payout per store — Pre: {fmt.usd(meanPayout.pre)} · Post: {fmt.usd(meanPayout.post)}.
+                  Payout per store — Pre: {fmt.usd(payoutPerStoreSummary.pre)} · Post: {fmt.usd(payoutPerStoreSummary.post)}.
                 </>
               )}
             </p>

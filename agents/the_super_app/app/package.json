@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "validate-register": "vite-node scripts/validate-register.mjs",
+    "storewise-pre-post": "vite-node scripts/storewise-pre-post.mjs",
     "streamlit": "streamlit run ../streamlit_app/streamlit_app.py"
   },
   "dependencies": {

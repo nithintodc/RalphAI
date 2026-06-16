@@ -3,7 +3,8 @@ Strategist agent: sequential browser-use login per operator from Airtable,
 download financial + marketing reports for the last 3 calendar months, run them
 through the full Reporting analysis pipeline, and produce
 a campaigns Excel with two sheets — Offers Campaigns and Ads Campaigns (store-wise,
-slot-tagged). Output saved to data/Strategist/<operatorName>/<timestamp>/.
+slot-tagged), plus slot_info.csv (per-store slot → campaign assignment).
+Output saved to data/Strategist/<operatorName>/<timestamp>/.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Any, Literal
 
 from shared.config.settings import data_root, marketingreco_reporting_root
 from shared.utils.account_directory import load_account_operators
+from agents.strategist.register_reco import ADS_MIN_BID, ADS_WEEKLY_BUDGET
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +34,6 @@ REPORTING_ROOT = marketingreco_reporting_root()
 #   Overnight Mon = 1, Breakfast Mon = 8, ... Late night Sun = 42.
 _GRID_SLOTS = ["Overnight", "Breakfast", "Lunch", "Afternoon", "Dinner", "Late night"]
 _GRID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-# Below which average-order-value a slot gets an Ads campaign instead of an Offer.
-ADS_AOV_THRESHOLD = 10.0
-# Fixed minimum bid for every Ads campaign (per spec).
-ADS_MIN_BID = 3
 
 
 def _slot_tag(day_full: str, slot_name: str) -> int | None:
@@ -252,6 +250,7 @@ async def _main():
     end_date = os.environ["STRATEGIST_END_DATE"]
     email = os.environ["DOORDASH_EMAIL"]
     password = os.environ["DOORDASH_PASSWORD"]
+    operator_name = os.environ.get("STRATEGIST_OPERATOR_NAME", "").strip() or None
 
     _log("=" * 60)
     _log("PHASE 1: BROWSER LOGIN + REPORT DOWNLOAD")
@@ -273,13 +272,14 @@ async def _main():
     )
 
     llm = _get_llm()
-    browser = _get_browser(download_dir, keep_alive=True)
+    browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
     phase1_start = time.time()
 
     try:
         task = get_task_description_reports_only(
             email=email, password=password,
             start_date=start_date, end_date=end_date,
+            session_prepared=False,
         )
         _log("Starting browser-use agent for reports...")
         agent = Agent(task=task, llm=llm, browser=browser)
@@ -521,97 +521,26 @@ def _build_campaign_excel(
     operator_dir: Path,
     combined_path: Path,
     financial_csv: Path | None,
-) -> Path | None:
-    """Write the spec campaign workbook (exactly two sheets) to operator_dir.
-
-    Reads the per-store ``Day-Slot - {store_id}`` sheets from the combined analysis
-    and routes each populated slot:
-      * AOV >= 10  → Offers Campaigns (grouped per store + Min.Subtotal, slot tags)
-      * AOV  < 10  → Ads Campaigns    (TODC-ADS-<storeID>, fixed $3 min bid)
-      * Orders == 0 and Sales == 0 → blank (slot has no row, so naturally skipped)
-    """
-    try:
-        import openpyxl
-        from openpyxl.styles import Font
-    except ImportError:
-        logger.warning("openpyxl not installed — skipping campaign Excel")
-        return None
+) -> tuple[Path | None, Path | None]:
+    """Append Campaign Mappings to combined_analysis and write slot_info.csv (auto mode)."""
+    from agents.strategist.campaign_workbook import write_campaigns_workbook_from_per_store
 
     per_store = _read_day_slots_per_store(combined_path)
     store_names = _read_store_names(combined_path, financial_csv)
-
-    # offers[store_id][min_subtotal] = sorted set of tags (AOV >= threshold)
-    offers: dict[str, dict[int, set[int]]] = {}
-    # ads[store_id] = set of tags (AOV < threshold)
-    ads: dict[str, set[int]] = {}
-
-    for store_id, rows in per_store.items():
-        for r in rows:
-            # Blank slot: no orders and no sales → no campaign.
-            if r["orders"] == 0 and (r["sales"] or 0) == 0:
-                continue
-            tag = _slot_tag(r["day"], r["slot"])
-            if tag is None:
-                continue
-            aov = r["aov"]
-            if aov is not None and aov < ADS_AOV_THRESHOLD:
-                ads.setdefault(store_id, set()).add(tag)
-            else:
-                min_sub = r["min_subtotal"]
-                if min_sub <= 0:
-                    continue
-                offers.setdefault(store_id, {}).setdefault(min_sub, set()).add(tag)
-
-    out_path = operator_dir / "campaigns.xlsx"
-    wb = openpyxl.Workbook()
-
-    def _tags_str(tags) -> str:
-        return ",".join(str(t) for t in sorted(tags))
-
-    # Sheet 1: Offers Campaigns
-    ws = wb.active
-    ws.title = "Offers Campaigns"
-    offer_headers = ["Store ID", "Store Name", "Minimum Subtotal", "Slot Tags", "Campaign Name", "Status"]
-    for idx, h in enumerate(offer_headers, start=1):
-        ws.cell(row=1, column=idx, value=h).font = Font(bold=True)
-    r = 2
-    for store_id in sorted(offers):
-        for min_sub in sorted(offers[store_id]):
-            tags = offers[store_id][min_sub]
-            ws.cell(row=r, column=1, value=store_id)
-            ws.cell(row=r, column=2, value=store_names.get(store_id, ""))
-            ws.cell(row=r, column=3, value=min_sub)
-            ws.cell(row=r, column=4, value=_tags_str(tags))
-            ws.cell(row=r, column=5, value=f"TODC-{store_id}-${min_sub}")
-            ws.cell(row=r, column=6, value="Pending")
-            r += 1
-    offers_count = r - 2
-
-    # Sheet 2: Ads Campaigns
-    wsa = wb.create_sheet("Ads Campaigns")
-    ads_headers = ["Store ID", "Store Name", "Minimum Bid", "Slot Tags", "Campaign Name", "Status"]
-    for idx, h in enumerate(ads_headers, start=1):
-        wsa.cell(row=1, column=idx, value=h).font = Font(bold=True)
-    r = 2
-    for store_id in sorted(ads):
-        tags = ads[store_id]
-        if not tags:
-            continue
-        wsa.cell(row=r, column=1, value=store_id)
-        wsa.cell(row=r, column=2, value=store_names.get(store_id, ""))
-        wsa.cell(row=r, column=3, value=ADS_MIN_BID)
-        wsa.cell(row=r, column=4, value=_tags_str(tags))
-        wsa.cell(row=r, column=5, value=f"TODC-ADS-{store_id}")
-        wsa.cell(row=r, column=6, value="Pending")
-        r += 1
-    ads_count = r - 2
-
-    wb.save(out_path)
-    logger.info(
-        "Wrote campaigns.xlsx (%d offer rows, %d ads rows) to %s",
-        offers_count, ads_count, out_path,
-    )
-    return out_path
+    if not per_store:
+        return None, None
+    try:
+        return write_campaigns_workbook_from_per_store(
+            operator_dir,
+            per_store,
+            store_names,
+            ads_min_bid=ADS_MIN_BID,
+            ads_weekly_budget=ADS_WEEKLY_BUDGET,
+            source_combined_path=Path(combined_path),
+        )
+    except RuntimeError as exc:
+        logger.warning("Campaign workbook skipped: %s", exc)
+        return None, None
 
 
 def _extract_failure_reason(output: str | None, *, max_chars: int = 500) -> str:
@@ -675,6 +604,7 @@ def _run_for_operator(
     env = reporting_subprocess_env(REPORTING_ROOT)
     env["DOORDASH_EMAIL"] = operator.email
     env["DOORDASH_PASSWORD"] = operator.password
+    env["STRATEGIST_OPERATOR_NAME"] = operator.business_name
     env["STRATEGIST_START_DATE"] = start_date
     env["STRATEGIST_END_DATE"] = end_date
     env["STRATEGIST_DOWNLOAD_DIR"] = str(download_dir)
@@ -717,14 +647,16 @@ def _run_for_operator(
     financial_csv = parsed.get("financial_csv", "").strip()
     combined_path = parsed.get("combined_path", "").strip()
 
-    campaigns_xlsx = None
+    combined_workbook = None
+    slot_info_csv = None
     if combined_path:
         fc = Path(financial_csv) if financial_csv else None
         try:
-            campaigns_xlsx = _build_campaign_excel(operator_dir, Path(combined_path), fc)
+            combined_workbook, slot_info_csv = _build_campaign_excel(operator_dir, Path(combined_path), fc)
         except Exception as e:
             logger.warning("Campaign Excel generation failed for %s: %s", operator.email, e)
 
+    combined_path_out = str(combined_workbook) if combined_workbook else (combined_path or None)
     return {
         "operator_id": operator.operator_id,
         "business_name": operator.business_name,
@@ -733,8 +665,9 @@ def _run_for_operator(
         "output_dir": str(operator_dir),
         "financial_path": financial_path or None,
         "marketing_path": marketing_path or None,
-        "combined_analysis": combined_path or None,
-        "campaigns_xlsx": str(campaigns_xlsx) if campaigns_xlsx else None,
+        "combined_analysis": combined_path_out,
+        "campaigns_xlsx": combined_path_out,
+        "slot_info_csv": str(slot_info_csv) if slot_info_csv else None,
     }
 
 
@@ -757,9 +690,13 @@ def run_manual_from_register(
     *,
     register_report_path: str | Path,
     business_name: str | None = None,
+    financial_zip_path: str | Path | None = None,
+    report_start_date: str | None = None,
+    report_end_date: str | None = None,
+    excluded_dates: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build a marketing plan from an uploaded DoorDash register file (no browser login)."""
-    from .campaigns_excel import write_campaigns_excel
+    """Build a marketing plan from register and/or FINANCIAL_DETAILED upload (no browser login)."""
+    from .campaign_workbook import write_campaigns_workbook_from_per_store
     from .plan_builder import build_marketing_plan
     from .register_reco import build_recommendations_from_register
 
@@ -771,7 +708,15 @@ def run_manual_from_register(
         raise FileNotFoundError(f"register file not found: {register_path}")
 
     slots_csv = REPORTING_ROOT / "slots.csv"
-    built = build_recommendations_from_register(register_path, slots_csv=slots_csv)
+    financial_path = Path(financial_zip_path) if financial_zip_path else None
+    built = build_recommendations_from_register(
+        register_path,
+        slots_csv=slots_csv if slots_csv.is_file() else None,
+        financial_path=financial_path if financial_path and financial_path.is_file() else None,
+        start_date=report_start_date,
+        end_date=report_end_date,
+        excluded_dates=excluded_dates,
+    )
     mappings = built.get("campaign_mappings") or []
     ads_plan = built.get("ads_plan")
     plan = build_marketing_plan(oid, mappings=mappings, ads_plan=ads_plan)
@@ -799,9 +744,19 @@ def run_manual_from_register(
         "ads_plan": ads_plan,
     }
 
-    campaigns_xlsx = operator_dir / "marketing_plan.xlsx"
-    write_campaigns_excel(campaigns_xlsx, out)
+    per_store = built.get("per_store") or {}
+    store_names = built.get("store_names") or {}
+    campaigns_xlsx, slot_info_path = write_campaigns_workbook_from_per_store(
+        operator_dir,
+        per_store,
+        store_names,
+        ads_min_bid=ADS_MIN_BID,
+        ads_weekly_budget=ADS_WEEKLY_BUDGET,
+    )
+    out["combined_analysis"] = str(campaigns_xlsx)
     out["campaigns_xlsx"] = str(campaigns_xlsx)
+    out["slot_info_csv"] = str(slot_info_path)
+
     (operator_dir / "result.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     return out
 

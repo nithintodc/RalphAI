@@ -1,6 +1,40 @@
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 
+/** V8/Chrome cannot build strings much above ~512MB; leave headroom for parsing. */
+const MAX_CSV_UNCOMPRESSED_BYTES = 450 * 1024 * 1024;
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function csvTooLargeMessage(filename, uncompressedBytes) {
+  return (
+    `${filename} is too large to parse in the browser (${formatBytes(uncompressedBytes)} uncompressed; ` +
+    `limit ~${formatBytes(MAX_CSV_UNCOMPRESSED_BYTES)}). ` +
+    'Export a shorter date range from DoorDash (e.g. 3 months at a time), or use a smaller operator export.'
+  );
+}
+
+function entryUncompressedSize(entry) {
+  if (typeof entry.uncompressedSize === 'number') return entry.uncompressedSize;
+  return entry?._data?.uncompressedSize ?? 0;
+}
+
+/** Skip AppleDouble / resource-fork junk that macOS adds inside ZIPs. */
+function shouldSkipZipEntry(filename) {
+  const lower = String(filename || '').toLowerCase().replace(/\\/g, '/');
+  return lower.includes('__macosx/') || lower.includes('/._') || lower.startsWith('._');
+}
+
 export function detectFileType(filename) {
   const lower = filename.toLowerCase();
   if (lower.startsWith('financial_') && lower.endsWith('.zip')) return 'dd_financial';
@@ -90,8 +124,23 @@ export function parseUeFinancialCsv(csvString) {
   return { data, columns };
 }
 
+/** DD financial detailed signature — works for renamed / re-saved CSVs inside arbitrary zips. */
+function looksLikeDdFinancialColumns(columns) {
+  const norms = new Set((columns || []).map((c) => String(c ?? '').replace(/\uFEFF/g, '').trim().toLowerCase()));
+  return (
+    norms.has('transaction type')
+    && norms.has('doordash order id')
+    && norms.has('subtotal')
+    && norms.has('timestamp local date')
+  );
+}
+
 export async function processUploadedFile(file) {
-  const type = detectFileType(file.name);
+  let type = detectFileType(file.name);
+  // Zips with non-standard names (e.g. edited exports re-zipped by hand): treat as a
+  // DD financial candidate and confirm below by CSV header signature.
+  const isHeaderSniffedZip = type === 'unknown' && file.name.toLowerCase().endsWith('.zip');
+  if (isHeaderSniffedZip) type = 'dd_financial';
   if (type === 'unknown') return { type, error: 'Unrecognized file format' };
 
   if (type === 'ue_financial') {
@@ -102,13 +151,31 @@ export async function processUploadedFile(file) {
 
   const zip = await JSZip.loadAsync(file);
   const results = {};
+  const unmatchedCsvs = [];
   for (const [filename, entry] of Object.entries(zip.files)) {
     if (entry.dir || !filename.toLowerCase().endsWith('.csv')) continue;
+    if (shouldSkipZipEntry(filename)) continue;
     const lower = filename.toLowerCase();
     if (type === 'dd_financial' && lower.includes('financial_simplified')) {
       continue;
     }
-    const content = await entry.async('string');
+    const uncompressed = entryUncompressedSize(entry);
+    if (uncompressed > MAX_CSV_UNCOMPRESSED_BYTES) {
+      return { type, error: csvTooLargeMessage(filename, uncompressed) };
+    }
+    let content;
+    try {
+      content = await entry.async('string');
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      if (msg.includes('Invalid string length')) {
+        return {
+          type,
+          error: csvTooLargeMessage(filename, uncompressed || file.size * 4),
+        };
+      }
+      throw err;
+    }
     const parsed = parseCsv(content);
 
     if (type === 'dd_financial') {
@@ -116,6 +183,7 @@ export async function processUploadedFile(file) {
       else if (lower.includes('financial_simplified')) results.simplified = parsed;
       else if (lower.includes('error_charges')) results.errorCharges = parsed;
       else if (lower.includes('payout_summary')) results.payoutSummary = parsed;
+      else unmatchedCsvs.push(parsed);
     } else if (type === 'dd_marketing') {
       if (lower.includes('promotion')) results.promotion = parsed;
       if (lower.includes('sponsored')) results.sponsored = parsed;
@@ -144,6 +212,21 @@ export async function processUploadedFile(file) {
     if (results.byOrder) return { type: 'dd_sales_by_order', data: results.byOrder };
     if (results.byTime) return { type: 'dd_sales_by_time', data: results.byTime };
     if (results.byStore) return { type: 'dd_sales_by_store', data: results.byStore };
+  }
+
+  if (type === 'dd_financial' && !results.detailed?.data?.length) {
+    // Renamed CSV inside the zip — accept it when the header matches DD financial detailed.
+    const fallback = unmatchedCsvs.find((p) => p?.data?.length && looksLikeDdFinancialColumns(p.columns));
+    if (fallback) {
+      results.detailed = fallback;
+    } else if (isHeaderSniffedZip) {
+      return { type: 'unknown', error: 'Unrecognized file format' };
+    } else {
+      return {
+        type,
+        error: 'No FINANCIAL_DETAILED_TRANSACTIONS rows found in ZIP (check export or re-download without macOS resource forks).',
+      };
+    }
   }
 
   return { type, data: results };

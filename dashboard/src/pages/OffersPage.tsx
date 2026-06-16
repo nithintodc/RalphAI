@@ -2,34 +2,55 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
 import { OperatorAccountPicker } from "../components/OperatorAccountPicker";
+import { AgentRunLogPanel } from "../components/AgentRunLogPanel";
+import { appendAgentLogLines, pollAgentRun } from "../lib/agentRunPolling";
+
+type OffersMode = "manual" | "auto";
 
 export function OffersPage() {
   const [operatorId, setOperatorId] = useState("");
+  const [mode, setMode] = useState<OffersMode>("auto");
+  const [offersSheetFile, setOffersSheetFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setRunId(null);
+    setRunStatus(null);
+    setQueuePosition(null);
+    setLogLines([]);
 
     if (!operatorId.trim()) {
       setError("Enter an Operator ID.");
       return;
     }
     if (!email.trim() || !password) {
-      setError("DoorDash email and password are required.");
+      setError("DoorDash email and password are required for browser login.");
+      return;
+    }
+    if (mode === "manual" && !offersSheetFile) {
+      setError("Upload an offers plan sheet (.csv or .xlsx) in Manual mode.");
       return;
     }
 
     const formData = new FormData();
     formData.append("operator_id", operatorId.trim());
-    formData.append("mode", "auto");
+    formData.append("mode", mode);
     formData.append("doordash_email", email.trim());
     formData.append("doordash_password", password);
+    if (mode === "manual" && offersSheetFile) {
+      formData.append("offers_sheet_file", offersSheetFile);
+    }
 
     setLoading(true);
     try {
@@ -38,7 +59,27 @@ export function OffersPage() {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      setResult(await res.json());
+      const started = (await res.json()) as Record<string, unknown>;
+      const id = String(started.run_id || "");
+      if (!id) throw new Error("No run_id returned from API.");
+      setRunId(id);
+      setRunStatus(String(started.status || "queued"));
+      if (typeof started.queue_position === "number") {
+        setQueuePosition(started.queue_position);
+      }
+
+      const final = await pollAgentRun("offers", id, {
+        onStatus: (status, payload) => {
+          setRunStatus(status);
+          if (typeof payload.queue_position === "number") {
+            setQueuePosition(payload.queue_position);
+          }
+        },
+        onLogLines: (lines) => {
+          setLogLines((prev) => appendAgentLogLines(prev, lines));
+        },
+      });
+      setResult(final);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -56,15 +97,15 @@ export function OffersPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to agents
         </Link>
-        <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI - Offers</h2>
+        <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI — Offers</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          Select an operator, then Ralph loads the latest Strategist <strong>Offers Campaigns</strong> sheet from{" "}
-          <code>data/Strategist/</code> and creates discount promotions in the Merchant Portal via browser-use (
-          <code>agents/reporting_browser_use</code>). Progress posts to Slack.
+          <strong>Auto</strong> (default): loads the latest Strategist <strong>Offers Campaigns</strong> sheet from{" "}
+          <code>data/Strategist/</code>, then runs discount promo browser automation with Slack updates.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">
-          Run Strategist first so <code>campaigns.xlsx</code> exists for this operator. Skips rows already marked
-          Successful.
+          <strong>Manual</strong>: upload CSV/Excel (sheet <strong>Offers</strong>). Columns: Merchant store ID, Slots
+          (tags 1–42), Minimum subtotal, Campaign name. Portal flow: Marketing → Run a campaign → discount promotions
+          with custom schedule. Skips rows already marked Successful.
         </p>
       </div>
 
@@ -79,6 +120,30 @@ export function OffersPage() {
           showDoorDashCredentials
         />
 
+        <label className="flex flex-col gap-1 sm:col-span-2 max-w-md">
+          <span className="text-sm font-medium text-ink-700">Mode</span>
+          <select
+            className="rounded-xl border border-brand-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as OffersMode)}
+          >
+            <option value="auto">Auto (latest Strategist Offers sheet)</option>
+            <option value="manual">Manual (upload Offers sheet)</option>
+          </select>
+        </label>
+
+        {mode === "manual" ? (
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-sm font-medium text-ink-700">CSV/Excel (Excel uses sheet named "Offers")</span>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,.xlsm,.xltx,.xltm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+              className="rounded-xl border border-brand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              onChange={(e) => setOffersSheetFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : null}
+
         {error ? (
           <div className="sm:col-span-2 rounded-xl bg-red-50 p-4 text-sm text-red-700 border border-red-200">{error}</div>
         ) : null}
@@ -90,15 +155,36 @@ export function OffersPage() {
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-ink-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-ink-700 disabled:opacity-50 dark:bg-brand-500 dark:text-ink-900 dark:hover:bg-brand-400"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {loading ? "Creating Offers campaigns..." : "Run RalphAI - Offers"}
+            {loading
+              ? mode === "manual"
+                ? "Running Offers setup..."
+                : "Creating Offers campaigns..."
+              : "Run RalphAI — Offers"}
           </button>
         </div>
       </form>
 
+      {runId ? (
+        <AgentRunLogPanel
+          agent="offers"
+          runId={runId}
+          status={runStatus}
+          queuePosition={queuePosition}
+          lines={logLines}
+        />
+      ) : null}
+
       {result ? (
         <div className="brand-card rounded-[24px] p-5">
           <h3 className="font-display text-lg font-semibold text-ink-900">Run result</h3>
-          <p className="mt-2 text-sm text-ink-700">Status: {result.status ?? "unknown"}</p>
+          <p className="mt-2 text-sm text-ink-700">Status: {String(result.status ?? "unknown")}</p>
+          {result.mode != null ? <p className="mt-1 text-sm text-ink-600">Mode: {String(result.mode)}</p> : null}
+          {result.run_id ? (
+            <p className="mt-1 text-sm text-ink-600">Run ID: {String(result.run_id)}</p>
+          ) : null}
+          {result.campaigns_source ? (
+            <p className="mt-1 text-sm text-ink-600">Sheet: {String(result.campaigns_source)}</p>
+          ) : null}
         </div>
       ) : null}
     </div>

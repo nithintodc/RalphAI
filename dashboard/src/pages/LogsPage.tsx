@@ -3,6 +3,8 @@ type LogLine = {
   ts: string;
   level: string;
   msg: string;
+  agent?: string;
+  run_id?: string;
 };
 
 const levelStyle: Record<string, string> = {
@@ -52,7 +54,7 @@ export function LogsPage() {
           Logs
         </h2>
         <p className="mt-1 text-ink-600 dark:text-white/65">
-          Live pipeline activity from your backend run history.
+          Live log stream from active browser-agent runs (Offers, Ads, Strategist). Falls back to run summaries when idle.
         </p>
       </div>
 
@@ -82,6 +84,11 @@ export function LogsPage() {
                 >
                   {line.level}
                 </span>
+                {line.agent ? (
+                  <span className="shrink-0 rounded bg-brand-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-brand-800">
+                    {line.agent}
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 break-all text-ink-900">{line.msg}</span>
               </div>
             ))

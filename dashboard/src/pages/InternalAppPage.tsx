@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
@@ -11,11 +12,38 @@ const APP_PATHS: Record<string, string> = {
   "/agents/markup-app": "/internal-apps/markup-app/",
 };
 
+const APP_SLUGS: Record<string, string> = {
+  "/agents/the-super-app": "the-super-app",
+  "/agents/markup-app": "markup-app",
+};
+
 export function InternalAppPage() {
   const { pathname, search } = useLocation();
   const title = TITLES[pathname] ?? "Agent App";
   const appPath = APP_PATHS[pathname];
-  const iframeSrc = appPath ? `${appPath}${search || ""}` : null;
+  const slug = APP_SLUGS[pathname];
+  const [buildVersion, setBuildVersion] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    fetch(`/internal-apps/${slug}/health`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data.buildVersion === "number") {
+          setBuildVersion(data.buildVersion);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  const versionQuery = buildVersion ? `v=${buildVersion}` : "";
+  const iframeSrc = appPath
+    ? `${appPath}${search ? `${search}&${versionQuery}` : versionQuery ? `?${versionQuery}` : ""}`
+    : null;
 
   if (!iframeSrc) {
     return (

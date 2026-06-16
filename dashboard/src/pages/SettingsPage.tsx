@@ -4,10 +4,25 @@ import { Link2, ChevronRight, Globe, Monitor } from "lucide-react";
 
 type BrowserMode = "multilogin" | "native";
 
+type ChromeProfileStatus = {
+  cdp_url: string | null;
+  cdp_port: number | null;
+  cdp_running: boolean;
+  configured_profile: string;
+  configured_profile_name?: string | null;
+  active_cdp_profile: string | null;
+  active_profile_name?: string | null;
+  profile_mismatch: boolean;
+  profile_in_use_elsewhere?: boolean;
+  warning: string | null;
+  hint: string | null;
+};
+
 type BrowserSettings = {
   mode: BrowserMode;
   multilogin: boolean;
   native: boolean;
+  chrome?: ChromeProfileStatus;
 };
 
 export function SettingsPage() {
@@ -17,6 +32,7 @@ export function SettingsPage() {
   const [browserSaving, setBrowserSaving] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [chromeStatus, setChromeStatus] = useState<ChromeProfileStatus | null>(null);
 
   const hasUnsavedChanges = selectedMode !== savedMode;
 
@@ -29,6 +45,7 @@ export function SettingsPage() {
       const data: BrowserSettings = await res.json();
       setSavedMode(data.mode);
       setSelectedMode(data.mode);
+      setChromeStatus(data.chrome ?? null);
     } catch (err) {
       setBrowserError(err instanceof Error ? err.message : "Failed to load browser settings");
     } finally {
@@ -57,6 +74,7 @@ export function SettingsPage() {
       const data: BrowserSettings = await res.json();
       setSavedMode(data.mode);
       setSelectedMode(data.mode);
+      setChromeStatus(data.chrome ?? null);
       setSaveSuccess(true);
     } catch (err) {
       setBrowserError(err instanceof Error ? err.message : "Failed to save");
@@ -189,6 +207,75 @@ export function SettingsPage() {
             {browserSaving ? "Saving…" : "Save browser mode"}
           </button>
         </div>
+
+        {(selectedMode === "native" || savedMode === "native") && chromeStatus && (
+          <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/50 p-4 dark:border-white/10 dark:bg-white/5">
+            <p className="text-sm font-medium text-ink-900 dark:text-white">
+              Chrome profile (native mode)
+            </p>
+            <dl className="mt-2 space-y-1 text-xs text-ink-600 dark:text-white/60">
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="font-medium">CDP</dt>
+                <dd>
+                  {chromeStatus.cdp_running ? (
+                    <span className="text-emerald-700 dark:text-emerald-300">
+                      running{chromeStatus.cdp_url ? ` at ${chromeStatus.cdp_url}` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 dark:text-amber-300">not running</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="font-medium">Configured</dt>
+                <dd className="break-all">
+                  {chromeStatus.configured_profile_name ? (
+                    <span>
+                      {chromeStatus.configured_profile_name}
+                      <span className="ml-1 font-mono text-ink-500 dark:text-white/45">
+                        ({chromeStatus.configured_profile})
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="font-mono">{chromeStatus.configured_profile}</span>
+                  )}
+                </dd>
+              </div>
+              {chromeStatus.active_cdp_profile && (
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="font-medium">Active CDP</dt>
+                  <dd className="break-all">
+                    {chromeStatus.active_profile_name ? (
+                      <span>
+                        {chromeStatus.active_profile_name}
+                        <span className="ml-1 font-mono text-ink-500 dark:text-white/45">
+                          ({chromeStatus.active_cdp_profile})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="font-mono">{chromeStatus.active_cdp_profile}</span>
+                    )}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {chromeStatus.warning && (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {chromeStatus.warning}
+              </p>
+            )}
+            {chromeStatus.hint && !chromeStatus.warning && (
+              <p className="mt-3 text-sm text-ink-500 dark:text-white/55 whitespace-pre-line">
+                {chromeStatus.hint}
+              </p>
+            )}
+            {chromeStatus.hint && chromeStatus.warning && (
+              <p className="mt-2 text-xs text-ink-500 dark:text-white/50 whitespace-pre-line">
+                {chromeStatus.hint}
+              </p>
+            )}
+          </div>
+        )}
 
         <Link
           to="/settings/operator-mapping"

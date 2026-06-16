@@ -71,6 +71,7 @@ from shared.utils.airtable_directory import (  # noqa: E402
     load_account_operators_airtable,
 )
 from shared.utils.airtable_locations import get_locations as airtable_get_locations  # noqa: E402
+from shared.ralph_slack_messages import export_ready, run_finished
 from shared.utils.slack_client import notify as slack_notify  # noqa: E402
 
 RUNS_BASE = ROOT / "data" / "runs" / "monthly_reporter"
@@ -184,9 +185,11 @@ def get_super_app_locations(operator: str = "", refresh: bool = False):
 @app.on_event("startup")
 def _prefetch_airtable_directory() -> None:
     """Fetch the Airtable Enterprise DB once at app start (non-fatal on failure)."""
+    from shared.browser_agent_jobs import reconcile_stale_browser_jobs
     from shared.health_check_run_jobs import reconcile_stale_running_jobs
 
     reconcile_stale_running_jobs()
+    reconcile_stale_browser_jobs()
 
     def _fetch() -> None:
         try:
@@ -201,38 +204,19 @@ def _prefetch_airtable_directory() -> None:
     threading.Thread(target=_fetch, name="airtable-prefetch", daemon=True).start()
 
 
-def _slack_status_emoji(status: str) -> str:
-    s = (status or "").strip().lower()
-    if s in ("success", "completed"):
-        return ":white_check_mark:"
-    if s in ("failed", "error"):
-        return ":x:"
-    if s in ("running", "pending"):
-        return ":hourglass_flowing_sand:"
-    return ":information_source:"
-
-
 def _notify_run(rec: dict) -> None:
     """Send a Slack webhook update summarizing a run/operation from its index record."""
     try:
-        agent = _friendly_agent_name(str(rec.get("agent") or ""))
-        operator = str(rec.get("operator") or "—")
-        status = str(rec.get("status") or "unknown")
-        duration = str(rec.get("duration") or "").strip()
-        run_id = str(rec.get("id") or "")
-        parts = [
-            f"{_slack_status_emoji(status)} *RalphAI · {agent}*",
-            f"Status: *{status}*",
-            f"Operator: {operator}",
-        ]
-        if duration:
-            parts.append(f"Duration: {duration}")
-        if run_id:
-            parts.append(f"Run: `{run_id}`")
-        error = str(rec.get("error") or "").strip()
-        if error:
-            parts.append(f"Error: {error[:300]}")
-        slack_notify(" · ".join(parts))
+        agent_key = str(rec.get("agent") or "")
+        slack_notify(
+            run_finished(
+                agent=agent_key,
+                operator=str(rec.get("operator") or "—"),
+                status=str(rec.get("status") or "unknown"),
+                duration=str(rec.get("duration") or "").strip(),
+                error=str(rec.get("error") or "").strip(),
+            )
+        )
     except Exception:
         # Notifications are best-effort and must never break a run.
         pass
@@ -240,10 +224,9 @@ def _notify_run(rec: dict) -> None:
 
 def _notify_export(kind: str, run_id: str, filename: str) -> None:
     """Send a Slack webhook update when an export/report file is downloaded."""
+    del run_id  # never expose internal run IDs in Slack
     try:
-        slack_notify(
-            f":outbox_tray: *RalphAI · Export* · {kind} · `{filename}` · Run: `{run_id}`"
-        )
+        slack_notify(export_ready(kind=kind, filename=filename))
     except Exception:
         pass
 
@@ -282,9 +265,19 @@ def _prepare_ads_rows_file(input_path: Path, work_dir: Path) -> Path:
     except Exception as exc:
         raise HTTPException(400, f"Failed to read Excel file: {exc}") from exc
 
-    ads_sheet_name = next((s for s in xl.sheet_names if s.strip().lower() == "ads"), None)
+    ads_sheet_name = next(
+        (
+            s
+            for s in xl.sheet_names
+            if s.strip().lower() in ("ads campaign mappings", "ads", "ads campaigns")
+        ),
+        None,
+    )
     if not ads_sheet_name:
-        raise HTTPException(400, 'Excel file must contain a sheet named "Ads".')
+        raise HTTPException(
+            400,
+            'Excel file must contain a sheet named "Ads Campaign Mappings" (or legacy "Ads").',
+        )
 
     try:
         ads_df = pd.read_excel(xl, sheet_name=ads_sheet_name)
@@ -294,6 +287,55 @@ def _prepare_ads_rows_file(input_path: Path, work_dir: Path) -> Path:
     out_csv = work_dir / f"{input_path.stem}__ads_sheet.csv"
     ads_df.to_csv(out_csv, index=False)
     return out_csv
+
+
+def _prepare_offers_rows_file(input_path: Path, work_dir: Path) -> Path:
+    """
+    Normalize Offers manual upload into a CSV consumed by browser automation.
+
+    - CSV: returned as-is.
+    - Excel: reads sheet named "Offers" (case-insensitive), writes extracted CSV.
+    """
+    suffix = input_path.suffix.lower()
+    if suffix == ".csv":
+        return input_path
+
+    if suffix not in (".xlsx", ".xls", ".xlsm", ".xltx", ".xltm"):
+        raise HTTPException(400, "offers_sheet_file must be .csv or an Excel file.")
+
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise HTTPException(500, "pandas is required to read Excel offers_sheet_file.") from exc
+
+    try:
+        xl = pd.ExcelFile(input_path)
+    except Exception as exc:
+        raise HTTPException(400, f"Failed to read Excel file: {exc}") from exc
+
+    offers_sheet_name = next(
+        (
+            s
+            for s in xl.sheet_names
+            if s.strip().lower() in ("campaign mappings", "offers", "offers campaigns")
+        ),
+        None,
+    )
+    if not offers_sheet_name:
+        raise HTTPException(
+            400,
+            'Excel file must contain a sheet named "Campaign Mappings" (or legacy "Offers").',
+        )
+
+    try:
+        offers_df = pd.read_excel(xl, sheet_name=offers_sheet_name)
+    except Exception as exc:
+        raise HTTPException(400, f'Failed to read "Offers" sheet: {exc}') from exc
+
+    out_csv = work_dir / f"{input_path.stem}__offers_sheet.csv"
+    offers_df.to_csv(out_csv, index=False)
+    return out_csv
+
 
 def _read_all_runs(limit: int = 200) -> list[dict]:
     if not INDEX_PATH.is_file():
@@ -327,16 +369,23 @@ def _friendly_agent_name(agent: str) -> str:
 
 @app.get("/api/logs/live")
 def get_live_logs(limit: int = 100) -> list[dict]:
+    from shared.agent_run_logging import recent_live_logs
+
+    cap = max(1, min(limit, 500))
+    stream = recent_live_logs(limit=cap)
+    if stream:
+        return stream[-cap:]
+
     runs = _read_all_runs(limit=max(1, min(limit * 2, 500)))
     lines: list[dict] = []
     for run in runs:
         status = (run.get("status") or "").strip().lower()
-        if status == "failed":
+        if status in ("failed", "error"):
             level = "ERROR"
             status_text = "failed"
-        elif status == "running":
+        elif status in ("running", "queued"):
             level = "WARN"
-            status_text = "is running"
+            status_text = "is running" if status == "running" else "is queued"
         else:
             level = "INFO"
             status_text = "completed"
@@ -350,9 +399,11 @@ def get_live_logs(limit: int = 100) -> list[dict]:
                 "ts": str(run.get("started") or ""),
                 "level": level,
                 "msg": f"{agent}: run {status_text} for operator {operator}{duration_suffix}.",
+                "agent": str(run.get("agent") or ""),
+                "run_id": str(run.get("id") or ""),
             }
         )
-        if len(lines) >= limit:
+        if len(lines) >= cap:
             break
     return lines
 
@@ -692,38 +743,84 @@ def post_reporting_browser_use_fork(
 def post_offers(
     operator_id: str = Form(...),
     mode: str = Form("auto"),
+    offers_sheet_file: Optional[UploadFile] = File(None),
     campaign_mappings_file: Optional[UploadFile] = File(None),
     doordash_email: str = Form(""),
     doordash_password: str = Form(""),
 ):
-    """Load latest Strategist Offers sheet for operator → browser-use promo campaigns."""
-    from agents.offers.agent import run as run_offers_agent
+    """
+    Discount/promo automation from Strategist Offers sheet (auto) or uploaded sheet (manual).
+
+    Returns immediately with ``run_id``; poll ``GET /api/runs/offers/{run_id}`` and tail logs at
+    ``GET /api/runs/offers/{run_id}/logs``.
+    """
+    from api.browser_agent_runs import agent_run_dir, run_offers_worker, start_queued_browser_job
 
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
-    _ = campaign_mappings_file, mode
+    upload_file = offers_sheet_file or campaign_mappings_file
     try:
+        mode_norm = mode.strip().lower()
+        if mode_norm not in ("manual", "auto"):
+            raise HTTPException(400, "mode must be 'manual' or 'auto'")
         if not doordash_email.strip() or not doordash_password:
-            raise HTTPException(400, "Offers requires doordash_email and doordash_password.")
+            raise HTTPException(400, "DoorDash email and password are required (browser login).")
 
-        result = run_offers_agent(
-            operator_id.strip(),
-            doordash_email=doordash_email.strip(),
-            doordash_password=doordash_password,
+        oid = operator_id.strip()
+        run_dir = agent_run_dir("offers", run_id)
+        uploads_dir = run_dir / "uploads"
+        sheet_path_str: str | None = None
+        if mode_norm == "manual":
+            if not upload_file or not upload_file.filename:
+                raise HTTPException(400, "Manual mode requires an offers sheet (.csv or Excel).")
+            fn = upload_file.filename.lower()
+            if not (
+                fn.endswith(".csv")
+                or fn.endswith(".xlsx")
+                or fn.endswith(".xls")
+                or fn.endswith(".xlsm")
+                or fn.endswith(".xltx")
+                or fn.endswith(".xltm")
+            ):
+                raise HTTPException(400, "offers_sheet_file must be .csv or an Excel file")
+
+            raw = _read_upload_file(upload_file.file)
+            if not raw:
+                raise HTTPException(400, "offers_sheet_file is empty.")
+
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            sheet_path = uploads_dir / Path(upload_file.filename).name
+            sheet_path.write_bytes(raw)
+            if sheet_path.suffix.lower() != ".csv":
+                sheet_path = _prepare_offers_rows_file(sheet_path, uploads_dir)
+            sheet_path_str = str(sheet_path)
+
+        queue_position = start_queued_browser_job(
+            run_id=run_id,
+            agent="offers",
+            operator_label=oid or "—",
+            mode=mode_norm,
+            work=lambda: run_offers_worker(
+                run_id=run_id,
+                t0=t0,
+                operator_id=oid,
+                operator_label=oid or "—",
+                doordash_email=doordash_email.strip(),
+                doordash_password=doordash_password,
+                offers_sheet_path=sheet_path_str,
+                mode=mode_norm,
+                append_index=_append_index,
+            ),
         )
-
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        _append_index(
+        return JSONResponse(
             {
-                "id": run_id,
-                "agent": "offers",
-                "operator": operator_id.strip() or "—",
-                "status": result.get("status", "success"),
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
+                "run_id": run_id,
+                "status": "queued",
+                "queue_position": queue_position,
+                "mode": mode_norm,
+            },
+            status_code=202,
         )
-        return JSONResponse({"run_id": run_id, **result})
     except HTTPException:
         raise
     except FileNotFoundError as e:
@@ -732,6 +829,32 @@ def post_offers(
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(500, str(e)) from e
+
+
+@app.get("/api/runs/offers/{run_id}")
+def get_offers_run(run_id: str):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import get_agent_job_payload
+
+    job = get_agent_job_payload(run_id)
+    if not job or job.get("agent") not in (None, "offers"):
+        raise HTTPException(404, "Offers run not found.")
+    payload: dict = {"run_id": run_id, "status": job.get("status", "unknown")}
+    if job.get("queue_position") is not None:
+        payload["queue_position"] = job["queue_position"]
+    if job.get("error"):
+        payload["error"] = job["error"]
+    if job.get("result") is not None:
+        payload.update(job["result"])
+    return JSONResponse(payload)
+
+
+@app.get("/api/runs/offers/{run_id}/logs")
+def get_offers_run_logs(run_id: str, after: int = 0):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import tail_agent_logs
+
+    return JSONResponse(tail_agent_logs("offers", run_id, after_line=max(0, after)))
 
 
 @app.post("/api/runs/ads")
@@ -745,14 +868,13 @@ def post_ads(
     """
     Sponsored listing automation from Strategist Ads sheet (auto) or uploaded sheet (manual).
 
-    Auto: latest data/Strategist/<operator>/<timestamp>/campaigns.xlsx → Ads Campaigns sheet.
-    Manual: upload CSV/Excel with Ads sheet (Merchant store ID | Slots | Bid strategy | Budget | Campaign name).
+    Returns immediately with ``run_id``; poll ``GET /api/runs/ads/{run_id}`` and tail logs at
+    ``GET /api/runs/ads/{run_id}/logs``.
     """
-    from agents.ads.agent import run as run_ads_agent
+    from api.browser_agent_runs import run_ads_worker, start_queued_browser_job
 
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
-    work = Path(tempfile.mkdtemp(prefix=f"ads_{run_id[:8]}_"))
     try:
         mode_norm = mode.strip().lower()
         if mode_norm not in ("manual", "auto"):
@@ -760,7 +882,12 @@ def post_ads(
         if not doordash_email.strip() or not doordash_password:
             raise HTTPException(400, "DoorDash email and password are required (browser login).")
 
-        sheet_path: Path | None = None
+        oid = operator_id.strip()
+        from api.browser_agent_runs import agent_run_dir
+
+        run_dir = agent_run_dir("ads", run_id)
+        uploads_dir = run_dir / "uploads"
+        sheet_path_str: str | None = None
         if mode_norm == "manual":
             if not ads_sheet_file or not ads_sheet_file.filename:
                 raise HTTPException(400, "Manual mode requires an ads sheet (.csv or Excel).")
@@ -779,30 +906,39 @@ def post_ads(
             if not raw:
                 raise HTTPException(400, "ads_sheet_file is empty.")
 
-            sheet_path = work / Path(ads_sheet_file.filename).name
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            sheet_path = uploads_dir / Path(ads_sheet_file.filename).name
             sheet_path.write_bytes(raw)
             if sheet_path.suffix.lower() != ".csv":
-                sheet_path = _prepare_ads_rows_file(sheet_path, work)
+                sheet_path = _prepare_ads_rows_file(sheet_path, uploads_dir)
+            sheet_path_str = str(sheet_path)
 
-        result = run_ads_agent(
-            operator_id.strip(),
-            doordash_email=doordash_email.strip(),
-            doordash_password=doordash_password,
-            ads_sheet_path=str(sheet_path) if sheet_path else None,
+        queue_position = start_queued_browser_job(
+            run_id=run_id,
+            agent="ads",
+            operator_label=oid or "—",
+            mode=mode_norm,
+            work=lambda: run_ads_worker(
+                run_id=run_id,
+                t0=t0,
+                operator_id=oid,
+                operator_label=oid or "—",
+                doordash_email=doordash_email.strip(),
+                doordash_password=doordash_password,
+                ads_sheet_path=sheet_path_str,
+                mode=mode_norm,
+                append_index=_append_index,
+            ),
         )
-
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        _append_index(
+        return JSONResponse(
             {
-                "id": run_id,
-                "agent": "ads",
-                "operator": operator_id.strip() or "—",
-                "status": result.get("status", "success"),
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
+                "run_id": run_id,
+                "status": "queued",
+                "queue_position": queue_position,
+                "mode": mode_norm,
+            },
+            status_code=202,
         )
-        return JSONResponse({"run_id": run_id, "mode": mode_norm, **result})
     except HTTPException:
         raise
     except FileNotFoundError as e:
@@ -811,22 +947,69 @@ def post_ads(
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(500, str(e)) from e
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+
+
+@app.get("/api/runs/ads/{run_id}")
+def get_ads_run(run_id: str):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import get_agent_job_payload
+
+    job = get_agent_job_payload(run_id)
+    if not job or job.get("agent") not in (None, "ads"):
+        raise HTTPException(404, "Ads run not found.")
+    payload: dict = {"run_id": run_id, "status": job.get("status", "unknown")}
+    if job.get("queue_position") is not None:
+        payload["queue_position"] = job["queue_position"]
+    if job.get("error"):
+        payload["error"] = job["error"]
+    if job.get("result") is not None:
+        payload.update(job["result"])
+    return JSONResponse(payload)
+
+
+@app.get("/api/runs/ads/{run_id}/logs")
+def get_ads_run_logs(run_id: str, after: int = 0):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import tail_agent_logs
+
+    return JSONResponse(tail_agent_logs("ads", run_id, after_line=max(0, after)))
 
 
 @app.get("/api/runs/strategist/{run_id}/download/campaigns")
 def download_strategist_campaigns(run_id: str):
     _validate_run_id(run_id)
-    path = STRATEGIST_RUNS_BASE / run_id / "marketing_plan.xlsx"
+    run_dir = STRATEGIST_RUNS_BASE / run_id
+    combined_files = sorted(run_dir.glob("combined_analysis_*.xlsx"), reverse=True)
+    if not combined_files:
+        combined_files = sorted((run_dir / "downloads").glob("combined_analysis_*.xlsx"), reverse=True)
+    if combined_files:
+        path = combined_files[0]
+        _notify_export("Strategist — Campaign mappings", run_id, path.name)
+        return FileResponse(
+            path,
+            filename=path.name,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    for name in ("campaigns.xlsx", "marketing_plan.xlsx"):
+        path = run_dir / name
+        if path.is_file():
+            _notify_export("Strategist — Campaigns Excel", run_id, path.name)
+            return FileResponse(
+                path,
+                filename=path.name,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+    raise HTTPException(404, "Campaign mappings workbook not found")
+
+
+@app.get("/api/runs/strategist/{run_id}/download/slot-info")
+def download_strategist_slot_info(run_id: str):
+    _validate_run_id(run_id)
+    path = STRATEGIST_RUNS_BASE / run_id / "slot_info.csv"
     if not path.is_file():
-        raise HTTPException(404, "Campaign table not found")
-    _notify_export("Strategist — Marketing Plan Excel", run_id, path.name)
-    return FileResponse(
-        path,
-        filename=path.name,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+        raise HTTPException(404, "slot_info.csv not found")
+    _notify_export("Strategist — Slot info CSV", run_id, path.name)
+    return FileResponse(path, filename=path.name, media_type="text/csv")
 
 
 @app.post("/api/runs/health-check/campaign-review")
@@ -1017,11 +1200,26 @@ def post_strategist(
     operator_id: str = Form("", description="Single operator ID (manual mode)"),
     register_file: Optional[UploadFile] = File(None),
 ):
+    """
+    Strategist planning. Auto mode uses the browser queue (lower priority than Offers/Ads).
+    Manual mode runs in a background thread (no browser). Poll ``GET /api/runs/strategist/{run_id}``.
+    """
+    from api.browser_agent_runs import (
+        agent_run_dir,
+        run_strategist_auto_worker,
+        run_strategist_manual_worker,
+        start_queued_browser_job,
+    )
+    from shared.agent_run_logging import write_run_meta
+    from shared.browser_agent_jobs import set_browser_agent_job
+
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
-    work = Path(tempfile.mkdtemp(prefix=f"stg_{run_id[:8]}_"))
     try:
         mode_norm = (mode or "auto").strip().lower()
+        out_dir = agent_run_dir("strategist", run_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
         if mode_norm == "manual":
             oid = (operator_id or "").strip()
             if not oid:
@@ -1034,7 +1232,9 @@ def post_strategist(
             raw_bytes = _read_upload_file(register_file.file)
             if not raw_bytes:
                 raise HTTPException(400, "register_file is empty.")
-            in_path = work / Path(register_file.filename).name
+            uploads_dir = out_dir / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            in_path = uploads_dir / Path(register_file.filename).name
             in_path.write_bytes(raw_bytes)
 
             business_name = oid
@@ -1046,78 +1246,120 @@ def post_strategist(
             except Exception:
                 pass
 
-            result = run_strategist(
-                mode="manual",
-                operator_id=oid,
-                register_report_path=str(in_path),
-                business_name=business_name,
+            set_browser_agent_job(
+                run_id,
+                {
+                    "run_id": run_id,
+                    "agent": "strategist",
+                    "status": "running",
+                    "started": t0.isoformat(),
+                    "result": None,
+                    "error": None,
+                    "mode": "manual",
+                    "log_path": str(out_dir / "run.log"),
+                },
             )
-            operator_label = business_name
-            selected_count = 1
+            write_run_meta(
+                out_dir,
+                {
+                    "run_id": run_id,
+                    "agent": "strategist",
+                    "status": "running",
+                    "started": t0.isoformat(),
+                    "operator": business_name,
+                    "mode": "manual",
+                },
+            )
+            threading.Thread(
+                target=run_strategist_manual_worker,
+                name=f"strategist-manual-{run_id[:8]}",
+                daemon=True,
+                kwargs={
+                    "run_id": run_id,
+                    "t0": t0,
+                    "operator_id": oid,
+                    "business_name": business_name,
+                    "register_path": in_path,
+                    "append_index": _append_index,
+                    "ralph_ads_upload_rows": ralph_ads_upload_rows,
+                },
+            ).start()
+            return JSONResponse(
+                {"run_id": run_id, "status": "running", "mode": "manual"},
+                status_code=202,
+            )
+
+        raw = (operator_ids or "").strip()
+        if not raw:
+            raise HTTPException(400, "Auto mode: select at least one operator.")
+        parsed_ids: list[str]
+        if raw.startswith("["):
+            try:
+                as_json = json.loads(raw)
+                if not isinstance(as_json, list):
+                    raise ValueError
+                parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
+            except Exception as exc:
+                raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
         else:
-            raw = (operator_ids or "").strip()
-            if not raw:
-                raise HTTPException(400, "Auto mode: select at least one operator.")
-            parsed_ids: list[str]
-            if raw.startswith("["):
-                try:
-                    as_json = json.loads(raw)
-                    if not isinstance(as_json, list):
-                        raise ValueError
-                    parsed_ids = [str(v).strip() for v in as_json if str(v).strip()]
-                except Exception as exc:
-                    raise HTTPException(400, "operator_ids JSON must be an array of operator IDs") from exc
-            else:
-                parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
-            if not parsed_ids:
-                raise HTTPException(400, "Auto mode: select at least one operator.")
-            result = run_strategist(mode="auto", operator_ids=parsed_ids)
-            operator_label = f"{len(parsed_ids)} selected"
-            selected_count = len(parsed_ids)
+            parsed_ids = [s.strip() for s in raw.split(",") if s.strip()]
+        if not parsed_ids:
+            raise HTTPException(400, "Auto mode: select at least one operator.")
 
-        duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
-        out_dir = STRATEGIST_RUNS_BASE / run_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-
-        response: dict = {
-            "status": "success",
-            "run_id": run_id,
-            "mode": mode_norm,
-            "selected_operator_count": selected_count,
-            **result,
-        }
-
-        if mode_norm == "manual":
-            first = (result.get("results") or [{}])[0]
-            ads_plan_payload = first.get("ads_plan") or {}
-            campaigns_src = Path(first.get("campaigns_xlsx") or "")
-            if campaigns_src.is_file():
-                dest = out_dir / "marketing_plan.xlsx"
-                shutil.copy2(campaigns_src, dest)
-                response["downloads"] = {
-                    "campaigns_excel": f"/api/runs/strategist/{run_id}/download/campaigns",
-                }
-            response["ads_upload_rows"] = ralph_ads_upload_rows(ads_plan_payload)
-            response.update({k: v for k, v in first.items() if k not in response})
-
-        _append_index(
-            {
-                "id": run_id,
-                "agent": "strategist",
-                "operator": operator_label,
-                "status": "success",
-                "started": t0.isoformat().replace("+00:00", "Z")[:19].replace("T", " "),
-                "duration": f"{int(duration_s // 60)}m {int(duration_s % 60):02d}s",
-            }
+        operator_label = f"{len(parsed_ids)} selected"
+        queue_position = start_queued_browser_job(
+            run_id=run_id,
+            agent="strategist",
+            operator_label=operator_label,
+            mode="auto",
+            work=lambda: run_strategist_auto_worker(
+                run_id=run_id,
+                t0=t0,
+                operator_ids=parsed_ids,
+                operator_label=operator_label,
+                append_index=_append_index,
+            ),
         )
-        return JSONResponse(response)
+        return JSONResponse(
+            {
+                "run_id": run_id,
+                "status": "queued",
+                "queue_position": queue_position,
+                "mode": "auto",
+                "selected_operator_count": len(parsed_ids),
+            },
+            status_code=202,
+        )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+        raise HTTPException(500, str(e)) from e
+
+
+@app.get("/api/runs/strategist/{run_id}")
+def get_strategist_run(run_id: str):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import get_agent_job_payload
+
+    job = get_agent_job_payload(run_id)
+    if not job or job.get("agent") not in (None, "strategist"):
+        raise HTTPException(404, "Strategist run not found.")
+    payload: dict = {"run_id": run_id, "status": job.get("status", "unknown")}
+    if job.get("queue_position") is not None:
+        payload["queue_position"] = job["queue_position"]
+    if job.get("error"):
+        payload["error"] = job["error"]
+    if job.get("result") is not None:
+        payload.update(job["result"])
+    return JSONResponse(payload)
+
+
+@app.get("/api/runs/strategist/{run_id}/logs")
+def get_strategist_run_logs(run_id: str, after: int = 0):
+    _validate_run_id(run_id)
+    from api.browser_agent_runs import tail_agent_logs
+
+    return JSONResponse(tail_agent_logs("strategist", run_id, after_line=max(0, after)))
 
 
 def _parse_health_check_form(
@@ -1126,13 +1368,22 @@ def _parse_health_check_form(
     operator: str,
     skip_download: str,
     reference_date: str,
-) -> tuple[int, bool, list[str] | None, str | None, date_type | None]:
+    growth_threshold_pct: str,
+) -> tuple[int, bool, list[str] | None, str | None, date_type | None, float | None]:
     ref: date_type | None = None
     raw = (reference_date or "").strip()
     if raw:
         ref = datetime.strptime(raw, "%Y-%m-%d").date()
     wb = max(2, int(weeks or 2))
     skip_dl = (skip_download or "").strip().lower() in ("1", "true", "yes", "on")
+
+    growth_pct: float | None = None
+    raw_growth = (growth_threshold_pct or "").strip()
+    if raw_growth:
+        try:
+            growth_pct = float(raw_growth)
+        except ValueError as exc:
+            raise HTTPException(400, "growth_threshold_pct must be a number.") from exc
 
     emails_arg: list[str] | None = None
     filter_arg: str | None = None
@@ -1149,7 +1400,7 @@ def _parse_health_check_form(
             raise HTTPException(400, "Select at least one operator (operator_emails is empty).")
     else:
         filter_arg = (operator or "").strip() or None
-    return wb, skip_dl, emails_arg, filter_arg, ref
+    return wb, skip_dl, emails_arg, filter_arg, ref, growth_pct
 
 
 def _health_check_op_label(emails_arg: list[str] | None, operator: str, result: dict) -> str:
@@ -1168,6 +1419,7 @@ def _run_health_check_worker(
     reference_date: date_type | None,
     skip_download: bool,
     op_label: str,
+    growth_threshold_pct: float | None = None,
 ) -> None:
     from shared.health_check_run_control import begin_run
 
@@ -1180,6 +1432,7 @@ def _run_health_check_worker(
             reference_date=reference_date,
             skip_download=skip_download,
             run_id=run_id,
+            growth_threshold_pct=growth_threshold_pct,
         )
         duration_s = (datetime.now(timezone.utc) - t0).total_seconds()
         status = result.get("status", "unknown")
@@ -1232,6 +1485,10 @@ def post_health_check(
     operator: str = Form("", description="Optional substring filter when operator_emails is empty."),
     skip_download: str = Form("false", description="true to use existing operator-level weekly CSVs only."),
     reference_date: str = Form("", description="Optional YYYY-MM-DD for testing (defaults to today)."),
+    growth_threshold_pct: str = Form(
+        "",
+        description="Minimum WoW % growth for sales/payouts/orders/AOV/new customers (default 2).",
+    ),
 ):
     """
     Weekly health check: one combined browser download per operator (last two Mon–Sun),
@@ -1243,8 +1500,8 @@ def post_health_check(
     run_id = str(uuid.uuid4())
     t0 = datetime.now(timezone.utc)
     try:
-        wb, skip_dl, emails_arg, filter_arg, ref = _parse_health_check_form(
-            operator_emails, weeks, operator, skip_download, reference_date
+        wb, skip_dl, emails_arg, filter_arg, ref, growth_pct = _parse_health_check_form(
+            operator_emails, weeks, operator, skip_download, reference_date, growth_threshold_pct
         )
         if emails_arg is not None:
             op_label = f"{len(emails_arg)} selected"
@@ -1277,6 +1534,7 @@ def post_health_check(
                 "reference_date": ref,
                 "skip_download": skip_dl,
                 "op_label": op_label,
+                "growth_threshold_pct": growth_pct,
             },
         ).start()
 
@@ -1799,5 +2057,10 @@ if DASHBOARD_DIR.is_dir():
         dashboard_root = DASHBOARD_DIR.resolve()
         file_path = (dashboard_root / full_path).resolve()
         if dashboard_root in file_path.parents and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(DASHBOARD_DIR / "index.html")
+            response = FileResponse(file_path)
+            if file_path.suffix.lower() == ".html":
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
+        response = FileResponse(DASHBOARD_DIR / "index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response

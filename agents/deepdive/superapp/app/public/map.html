@@ -155,6 +155,23 @@
   .pop-row .v{color:var(--ink)}
   .pop-row .v.mono{font-family:"JetBrains Mono",monospace;font-weight:600;font-size:12px}
   .pop-addr{font-size:13px;color:#433c33;padding:2px 0 11px;border-bottom:1px solid var(--line2);margin-bottom:7px;line-height:1.45}
+  .pop-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin:0 0 10px;padding-bottom:10px;border-bottom:1px solid var(--line2)}
+  .pop-kpi{display:flex;flex-direction:column;gap:2px}
+  .pop-kpi .k{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .pop-kpi .v{font-size:13px;color:var(--ink)}
+  .leaflet-tooltip.r-card-tip{background:#fff;border:1px solid var(--line2);border-radius:12px;box-shadow:0 8px 24px -6px rgba(0,0,0,.28);padding:12px 14px;color:#1f1a14;font:500 13px/1.35 system-ui,sans-serif;white-space:normal;pointer-events:none;min-width:240px;max-width:min(340px,92vw)}
+  .leaflet-tooltip.r-card-tip:before{border-top-color:var(--line2)}
+  .r-card-tip .rc-head{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line2)}
+  .r-card-tip .rc-meta{flex:1;min-width:0}
+  .r-card-tip .rc-title{font-weight:700;font-size:13px;line-height:1.35;color:var(--ink);white-space:normal;word-break:break-word}
+  .r-card-tip .rc-id{margin-top:4px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;font-weight:600;color:var(--faint);letter-spacing:.02em}
+  .r-card-tip .rc-id b{color:var(--ink);font-weight:700}
+  .r-card-tip .rc-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;margin-top:3px}
+  .r-card-tip .rc-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 8px}
+  .r-card-tip .rc-kpis span{display:flex;flex-direction:column;gap:2px}
+  .r-card-tip .rc-kpis b{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .r-card-tip .rc-kpis i{font-size:9px;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .r-card-tip .rc-empty{font-size:11px;color:var(--faint);padding:4px 0}
   .pill{display:inline-block;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11.5px;color:#433c33;margin:1px 3px 1px 0;font-weight:500}
   .approx-tag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--amber);font-weight:700;margin-top:9px;letter-spacing:.02em}
   .approx-tag svg{width:12px;height:12px}
@@ -234,6 +251,14 @@
   .legend-row .sw{width:11px;height:11px;border-radius:50%;flex:none;box-shadow:0 0 0 2px rgba(0,0,0,.05)}
   .legend-row .lc{margin-left:auto;font-family:"JetBrains Mono",monospace;color:var(--faint);font-size:11px}
   @media(max-width:760px){.legend{display:none}}
+  html.embed header.top{padding:11px 14px;gap:10px}
+  html.embed .statchips{display:none}
+  html.capture header.top,
+  html.capture aside.sidebar,
+  html.capture .scrim{display:none!important}
+  html.capture .body{height:100%;min-height:100%}
+  html.capture .map-wrap{height:100%!important;min-height:100%!important}
+  html.capture .app{height:100vh;height:100dvh}
 </style>
 </head>
 <body>
@@ -404,10 +429,18 @@ function optionList(def){
 }
 
 // ---- matching ----
+function normOperator(value){
+  return String(value||'').trim().toLowerCase().replace(/\s+/g,' ');
+}
 function passes(p){
   if(state.q){
     const hay = (p.n+" "+(p.b||"")+" "+(p.s||"")+" "+(p.a||"")).toLowerCase();
     if(!hay.includes(state.q)) return false;
+  }
+  if(OPERATOR_FILTER){
+    const op = normOperator(OPERATOR_FILTER);
+    const business = normOperator(p.b);
+    if(business !== op && !business.includes(op) && !op.includes(business)) return false;
   }
   for(const d of FILTER_DEFS){
     const sel = state.sel[d.key];
@@ -453,9 +486,74 @@ function dotIcon(color){
 }
 
 const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const API_PARAMS = new URLSearchParams(location.search);
+const CAPTURE_MODE = API_PARAMS.get('capture') === '1';
+if (API_PARAMS.get('embed') === '1' || window.self !== window.top) {
+  document.documentElement.classList.add('embed');
+}
+if (CAPTURE_MODE) {
+  document.documentElement.classList.add('capture');
+}
+const API_PORT = API_PARAMS.get('apiPort') || '8765';
+const API_BASE = API_PARAMS.get('api') || `${location.protocol}//${location.hostname}:${API_PORT}`;
+const LOCATIONS_API = API_PARAMS.get('locationsApi') || (API_BASE + '/locations');
+const OPERATOR_FILTER = API_PARAMS.get('operator') || '';
+const METRICS_KEY = API_PARAMS.get('metricsKey') || 'superapp_store_metrics';
+if (OPERATOR_FILTER) { RAW = []; }
+function loadMetricsMap(){
+  try { return JSON.parse(sessionStorage.getItem(METRICS_KEY) || '{}'); }
+  catch { return {}; }
+}
+let STORE_METRICS = loadMetricsMap();
+
+function fmtUsd(v){
+  if(v==null || !Number.isFinite(Number(v))) return '—';
+  return '$' + Math.round(Number(v)).toLocaleString('en-US');
+}
+function fmtUsd2(v){
+  if(v==null || !Number.isFinite(Number(v))) return '—';
+  return '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPct(v){
+  if(v==null || !Number.isFinite(Number(v))) return '—';
+  return Number(v).toFixed(1) + '%';
+}
+function storeIdKeys(id){
+  const s = String(id ?? '').trim();
+  if(!s || /^null$/i.test(s)) return [];
+  const keys = new Set([s]);
+  const num = Number(s);
+  if(Number.isFinite(num) && !Number.isNaN(num)){
+    keys.add(String(num));
+    keys.add(String(Math.round(num)));
+  }
+  return [...keys];
+}
+function metricsForPoint(p){
+  const seen = new Set();
+  const ids = [p.s, ...(p.storeIds||[])].filter(Boolean);
+  for(const raw of ids){
+    for(const id of storeIdKeys(raw)){
+      if(seen.has(id)) continue;
+      seen.add(id);
+      if(STORE_METRICS[id]) return STORE_METRICS[id];
+    }
+  }
+  return null;
+}
+
 function popupHtml(p){
   const col = colorFor(p.f);
   const chips = v => splitMulti(v).map(x=>`<span class="pill">${esc(x)}</span>`).join("") || '<span class="v" style="color:#b3a999">—</span>';
+  const m = metricsForPoint(p);
+  const kpiBlock = m ? `
+      <div class="pop-kpis">
+        <div class="pop-kpi"><span class="k">Sales (Post)</span><span class="v mono">${fmtUsd(m.sales)}</span></div>
+        <div class="pop-kpi"><span class="k">Payouts (Post)</span><span class="v mono">${fmtUsd(m.payouts)}</span></div>
+        <div class="pop-kpi"><span class="k">AOV (Post)</span><span class="v mono">${fmtUsd2(m.aov)}</span></div>
+        <div class="pop-kpi"><span class="k">Profitability</span><span class="v mono">${fmtPct(m.profitability)}</span></div>
+      </div>` : '';
   return `
     <div class="pop-head">
       <span class="pop-brand" style="background:${col}"><span class="bd"></span>${esc(p.f||"—")}</span>
@@ -468,17 +566,36 @@ function popupHtml(p){
       <div class="pop-row"><span class="k">Bus. Unit</span><span class="v">${chips(p.bu)}</span></div>
       <div class="pop-row"><span class="k">Affiliation</span><span class="v">${chips(p.af)}</span></div>
       <div class="pop-row"><span class="k">Status</span><span class="v">${chips(p.stat)}</span></div>
+      ${kpiBlock}
       ${p.ap? `<div class="approx-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>Approx. location (ZIP/city centroid)</div>`:""}
     </div>`;
 }
 
 // precreate markers (rebuilt when live data arrives)
 let markers = [];
+function miniCardHtml(p){
+  STORE_METRICS = loadMetricsMap();
+  const m = metricsForPoint(p);
+  const title = esc(p.n || p.f || 'Store');
+  const storeId = esc(p.s || '—');
+  const kpis = m
+    ? `<div class="rc-kpis">
+         <span><b>${fmtUsd(m.sales)}</b><i>Sales</i></span>
+         <span><b>${fmtUsd(m.payouts)}</b><i>Payouts</i></span>
+         <span><b>${fmtPct(m.profitability)}</b><i>Prof.</i></span>
+       </div>`
+    : `<div class="rc-empty">Run analysis for KPIs</div>`;
+  return `<div class="rc-head"><span class="rc-dot" style="background:${colorFor(p.f)}"></span><div class="rc-meta"><div class="rc-title">${title}</div><div class="rc-id">Store ID · <b>${storeId}</b></div></div></div>${kpis}`;
+}
+const SHOW_CARDS = !!OPERATOR_FILTER;
 function buildMarkers(){
   markers = RAW.map(p=>{
     const m = L.marker([p.lat,p.lng],{icon:dotIcon(colorFor(p.f))});
     m._p = p;
-    m.bindPopup(()=>popupHtml(p),{closeButton:true,maxWidth:300});
+    m.bindPopup(()=>{ STORE_METRICS = loadMetricsMap(); return popupHtml(p); },{closeButton:true,maxWidth:300});
+    if(SHOW_CARDS){
+      m.bindTooltip(()=>miniCardHtml(p),{permanent:true,direction:'top',offset:[0,-12],interactive:false,opacity:1,className:'r-card-tip'});
+    }
     return m;
   });
 }
@@ -497,7 +614,7 @@ function apply(fit){
   renderActiveChips();
   if(fit && shown.length){
     const b = L.latLngBounds(shown.map(m=>m.getLatLng()));
-    map.fitBounds(b.pad(0.15),{maxZoom:12});
+    map.fitBounds(b.pad(0.15),{maxZoom: OPERATOR_FILTER ? 15 : 12});
   }
 }
 
@@ -652,9 +769,7 @@ window.addEventListener('keydown',e=>{
 });
 
 // ---- live data (Airtable via export API) ----
-const API_PARAMS = new URLSearchParams(location.search);
-const API_PORT = API_PARAMS.get('apiPort') || '8765';
-const API_BASE = API_PARAMS.get('api') || `${location.protocol}//${location.hostname}:${API_PORT}`;
+let liveDataSettled = false;
 
 function rebuild(){
   state.q=""; if(si){ si.value=""; if(sc) sc.style.display='none'; }
@@ -662,29 +777,39 @@ function rebuild(){
   buildMarkers();
   buildLegend();
   renderFilters();
-  apply(false);
+  apply(true);
 }
 
 async function loadLive(force){
   const pill = document.getElementById('srcPill');
   if(pill){ pill.textContent='loading…'; pill.className='src-pill loading'; }
   try{
-    const res = await fetch(API_BASE+'/locations'+(force?'?refresh=1':''),{cache:'no-store'});
+    const qp = new URLSearchParams();
+    if(OPERATOR_FILTER) qp.set('operator', OPERATOR_FILTER);
+    if(force) qp.set('refresh', '1');
+    const qs = qp.toString();
+    const url = LOCATIONS_API + (qs ? '?' + qs : '');
+    const res = await fetch(url,{cache:'no-store'});
     if(!res.ok) throw new Error('HTTP '+res.status);
     const json = await res.json();
     const locs = json.locations || [];
-    if(!locs.length) throw new Error('no records');
+    if(!locs.length && !OPERATOR_FILTER) throw new Error('no records');
     RAW = locs;
+    STORE_METRICS = loadMetricsMap();
     rebuild();
     const m = json.meta||{};
     if(pill){
-      pill.textContent = (m.cached?'cached':'live')+' · '+fmt(RAW.length);
-      pill.className='src-pill live';
-      pill.title = `Airtable · ${fmt(m.matched||0)} precise · ${fmt(m.approx||0)} approx · ${fmt(m.unplaced||0)} unplaced`;
+      const opLabel = m.operator || OPERATOR_FILTER || 'all';
+      pill.textContent = RAW.length ? ((m.cached?'cached':'live')+' · '+fmt(RAW.length)) : 'no stores';
+      pill.className = RAW.length ? 'src-pill live' : 'src-pill off';
+      pill.title = `${opLabel} · ${fmt(m.matched||0)} precise · ${fmt(m.approx||0)} approx · ${fmt(m.unplaced||0)} unplaced`;
     }
   }catch(err){
     if(pill){ pill.textContent='snapshot'; pill.className='src-pill off';
       pill.title='Live fetch failed — showing bundled snapshot ('+err.message+')'; }
+  }finally{
+    liveDataSettled = true;
+    window.dispatchEvent(new Event('superapp-map-ready'));
   }
 }
 
@@ -693,9 +818,72 @@ renderFilters();
 buildLegend();
 apply(false);
 setTimeout(()=>map.invalidateSize(),200);
+const mapWrapEl = document.querySelector('.map-wrap');
+if (mapWrapEl && typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => map.invalidateSize()).observe(mapWrapEl);
+}
+window.addEventListener('resize', () => map.invalidateSize());
 const refreshBtn = document.getElementById('refreshBtn');
 if(refreshBtn) refreshBtn.addEventListener('click',()=>loadLive(true));
 loadLive(false);
+
+async function captureMapScreenshot(){
+  const target = document.querySelector('.map-wrap') || document.getElementById('map');
+  if(!target) return null;
+  await new Promise(r=>{
+    if(map && typeof map.whenReady === 'function') map.whenReady(r);
+    else r();
+  });
+  map.invalidateSize();
+  await new Promise(r=>setTimeout(r, 900));
+  await new Promise(r=>{
+    let pending = 0;
+    let done = false;
+    const finish = ()=>{ if(!done){ done=true; r(); } };
+    map.eachLayer(layer=>{
+      if(layer.on){
+        pending++;
+        layer.once('load', ()=>{ pending--; if(pending<=0) finish(); });
+      }
+    });
+    setTimeout(finish, 2200);
+    if(pending===0) finish();
+  });
+  if(typeof html2canvas !== 'function'){
+    await new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  const canvas = await html2canvas(target, {
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#C8E0D6',
+    scale: Math.min(2, window.devicePixelRatio || 1),
+    logging: false,
+  });
+  return canvas.toDataURL('image/png');
+}
+
+if(CAPTURE_MODE){
+  window.addEventListener('message', async (event)=>{
+    if(!event.data || event.data.type !== 'superapp-map-capture') return;
+    if(!liveDataSettled){
+      await new Promise(r=>window.addEventListener('superapp-map-ready', r, { once:true }));
+    }
+    await new Promise(r=>setTimeout(r, 500));
+    let dataUrl = null;
+    try{
+      dataUrl = await captureMapScreenshot();
+    }catch(err){
+      console.warn('Map capture failed', err);
+    }
+    event.source?.postMessage({ type:'superapp-map-capture-result', dataUrl }, event.origin || '*');
+  });
+}
 </script>
 </body>
 </html>

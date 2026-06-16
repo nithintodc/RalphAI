@@ -13,6 +13,9 @@ import {
 import { useDataStore } from '../../stores/dataStore';
 import { useConfigStore } from '../../stores/configStore';
 import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
+import StoreComparisonNotice from '../../components/ui/StoreComparisonNotice';
+import CrossPlatformStoreNotice from '../../components/ui/CrossPlatformStoreNotice';
+import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
 import PlatformLogo from '../../components/ui/PlatformLogo';
@@ -23,6 +26,10 @@ import {
   getSlotSpotlight,
   getWeekdaySpotlight,
 } from '../../lib/engine/diagnostics';
+import {
+  buildDdStoreIdToMerchantMapFromFinancial,
+  displayStoreId,
+} from '../../lib/utils/storeDisplay';
 
 const MOVEMENT_METRICS = [
   { key: 'sales', label: 'Sales' },
@@ -258,8 +265,9 @@ function MetricMovementSection({ label, logo, movementRows, suffix }) {
 }
 
 export default function OverviewScreen() {
-  const { summaryTables, storeTables, ddFinancial, ueFinancial } = useDataStore();
+  const { summaryTables, storeTables, storePeriodAlignment, crossPlatformAlignment, ddFinancial, ueFinancial } = useDataStore();
   const config = useConfigStore();
+  const isSingleMode = isSinglePeriodMode(config.dateAnalysisMode);
 
   const summarySections = useMemo(
     () => PLATFORM_SECTIONS
@@ -279,6 +287,9 @@ export default function OverviewScreen() {
   ), [combinedSummary]);
 
   const platformInsights = useMemo(() => {
+    const ddStoreIdToMerchant = buildDdStoreIdToMerchantMapFromFinancial(ddFinancial);
+    const storeLabel = (row, platformKey) => displayStoreId(row, platformKey, ddStoreIdToMerchant);
+
     return PLATFORM_VIEWS.map((pv) => {
       const summary = summaryTables?.[pv.key] || [];
       const order = MOVEMENT_METRICS.map((m) => m.key);
@@ -336,6 +347,7 @@ export default function OverviewScreen() {
         ...pv,
         movementRows,
         storeSpotlight,
+        storeLabel: (row) => storeLabel(row, pv.platform),
         preExtremes,
         postExtremes,
         slotSpotlight,
@@ -349,6 +361,21 @@ export default function OverviewScreen() {
 
   return (
     <div className="space-y-6 min-w-0">
+      {!isSingleMode && crossPlatformAlignment && (
+        <CrossPlatformStoreNotice crossPlatform={crossPlatformAlignment} />
+      )}
+
+      {!isSingleMode && (storePeriodAlignment?.dd || storePeriodAlignment?.ue) && (
+        <div className="space-y-2">
+          {storePeriodAlignment?.dd && (
+            <StoreComparisonNotice platform="dd" alignment={storePeriodAlignment.dd} />
+          )}
+          {storePeriodAlignment?.ue && (
+            <StoreComparisonNotice platform="ue" alignment={storePeriodAlignment.ue} />
+          )}
+        </div>
+      )}
+
       <div className="space-y-5">
         {summarySections.map((section) => (
           <section key={section.key} className="space-y-2 min-w-0">
@@ -357,7 +384,11 @@ export default function OverviewScreen() {
               {section.key === 'ue' && <PlatformLogo platform="ue" size={18} />}
               <h2 className="text-sm font-semibold text-[var(--text)]">{section.label}</h2>
             </div>
-            <SummaryKpiStrip summary={section.summary} />
+            <SummaryKpiStrip
+              summary={section.summary}
+              sectionKey={section.key}
+              storeTables={storeTables}
+            />
           </section>
         ))}
       </div>
@@ -393,7 +424,7 @@ export default function OverviewScreen() {
                 title={`Store Spotlight — ${p.label}`}
                 subtitle={`Top & low ${p.storeSpotlight.count || 0} store${p.storeSpotlight.count === 1 ? '' : 's'} by Pre→Post sales growth.`}
                 data={[...p.storeSpotlight.stars, ...p.storeSpotlight.declining].map((s) => ({
-                  label: s.storeId,
+                  label: p.storeLabel(s),
                   value: s.sales_growth_pct,
                 }))}
                 valueFormatter={fmt.delta}

@@ -29,14 +29,12 @@ def test_ralph_ads_upload_rows_two_stores():
                 "day_of_week": "Monday",
                 "daypart": "Breakfast",
                 "ad_placement": "Yes",
-                "budget_estimate": 60.0,
             },
             {
                 "store_id": 222,
                 "day_of_week": "Tuesday",
                 "daypart": "Breakfast",
                 "ad_placement": "Yes",
-                "budget_estimate": 24.0,
             },
         ],
     }
@@ -47,6 +45,7 @@ def test_ralph_ads_upload_rows_two_stores():
     assert by_id[222]["slots"] == "9"
     assert by_id[111]["campaign_name"] == "TODC-111-Ads"
     assert by_id[222]["campaign_name"] == "TODC-222-Ads"
+    assert "budget" not in by_id[111]
 
 
 def test_ralph_ads_upload_rows_one_store_yes_no():
@@ -58,14 +57,12 @@ def test_ralph_ads_upload_rows_one_store_yes_no():
                 "day_of_week": "Monday",
                 "daypart": "Breakfast",
                 "ad_placement": "Yes",
-                "budget_estimate": 120.0,
             },
             {
                 "store_id": 999,
                 "day_of_week": "Tuesday",
                 "daypart": "Breakfast",
                 "ad_placement": "No",
-                "budget_estimate": 999.0,
             },
         ],
     }
@@ -74,5 +71,4 @@ def test_ralph_ads_upload_rows_one_store_yes_no():
     assert rows[0]["store_id"] == "999"
     assert rows[0]["slots"] == "8"
     assert rows[0]["bid_strategy"] == 3
-    assert rows[0]["budget"] == round(120.0 / 12.0, 2)
     assert rows[0]["campaign_name"] == "TODC-999-Ads"

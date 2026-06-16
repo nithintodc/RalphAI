@@ -101,6 +101,7 @@ export function normalizeDdSalesByOrder(parsed) {
     'is dashpass',
   ]);
   const errorChargeCol = findCol(columns, ['Error charge', 'Error Charge', 'error charge']);
+  const subtotalCol = findCol(columns, ['Subtotal', 'subtotal', 'Gross sales', 'Gross Sales']);
   const storeCol = findCol(columns, [
     'Merchant supplied store ID',
     'Merchant Supplied Store ID',
@@ -114,7 +115,9 @@ export function normalizeDdSalesByOrder(parsed) {
   const out = [];
   for (const row of rows) {
     if (!row) continue;
-    if (cancelledCol && String(row[cancelledCol] || '').trim().toLowerCase() === 'true') continue;
+    const isCancelled = cancelledCol
+      ? String(row[cancelledCol] || '').trim().toLowerCase() === 'true'
+      : false;
 
     const date = dateCol ? parseDate(row[dateCol]) : null;
     const time = timeCol ? row[timeCol] : null;
@@ -136,9 +139,16 @@ export function normalizeDdSalesByOrder(parsed) {
       day,
       customerType: customerCol ? normalizeCustomerType(row[customerCol]) : 'unknown',
       itemCount: itemCol ? toNum(row[itemCol]) : 0,
+      subtotal: subtotalCol ? toNum(row[subtotalCol]) : 0,
       isDashPass: dashPassCol ? normalizeDashPass(row[dashPassCol]) : null,
       errorCharge: errorChargeCol ? Math.abs(toNum(row[errorChargeCol])) : 0,
+      isCancelled,
     });
   }
   return out;
+}
+
+/** True when SALES_BY_ORDER is uploaded and at least one order row parses for slot analytics. */
+export function hasDdSalesByOrderForSlots(ddSales) {
+  return normalizeDdSalesByOrder(ddSales?.byOrder).length > 0;
 }

@@ -30,6 +30,31 @@ export function formatValue(v, format) {
   return fmt[format]?.(v) ?? String(v);
 }
 
+/** Signed absolute change (Pre vs Post delta) for KPI cards. */
+export function formatSignedDelta(value, format) {
+  if (value == null || Number.isNaN(value)) return '—';
+  const n = Number(value);
+  const abs = Math.abs(n);
+  const sign = n > 0 ? '+' : n < 0 ? '-' : '';
+  switch (format) {
+    case 'usd':
+      return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+    case 'usd2':
+      return `${sign}$${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    case 'int':
+      return (n > 0 ? '+' : '') + Math.round(n).toLocaleString('en-US');
+    case 'pp':
+      return `${sign || '+'}${abs.toFixed(1)} pp`;
+    default:
+      return String(n);
+  }
+}
+
+export function formatPrePostRange(pre, post, format) {
+  const kind = format === 'pp' ? 'pct' : format;
+  return `${formatValue(pre, kind)} → ${formatValue(post, kind)}`;
+}
+
 export function formatMetricValue(value, metric) {
   if (value == null || isNaN(value)) return '-';
   switch (metric) {

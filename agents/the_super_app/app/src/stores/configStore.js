@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { subYears } from 'date-fns';
-import { isSinglePeriodMode } from '../lib/utils/periodMode';
+import { isSinglePeriodMode, isPresetRangeMode } from '../lib/utils/periodMode';
 
 export const useConfigStore = create((set, get) => ({
   ddPreStart: null,
@@ -23,6 +23,10 @@ export const useConfigStore = create((set, get) => ({
 
   // Last choice in Analysis periods dropdown: pvp | qoq | mom | wow | singleRange | singleWeek | …
   dateAnalysisMode: 'pvp',
+
+  // Business week: Mon–Sun default (see weekDefinition.js).
+  weekDefinitionId: 'mon-sun',
+  setWeekDefinitionId: (weekDefinitionId) => set({ weekDefinitionId: String(weekDefinitionId || 'mon-sun') }),
 
   // Operator/client name shown across exported reports (cover, meta, footer).
   operatorName: '',
@@ -137,6 +141,11 @@ export const useConfigStore = create((set, get) => ({
   isConfigured: () => {
     const s = get();
     if (isSinglePeriodMode(s.dateAnalysisMode)) {
+      const ddReady = s.ddPostStart && s.ddPostEnd;
+      const ueReady = s.uePostStart && s.uePostEnd;
+      return !!(ddReady || ueReady);
+    }
+    if (isPresetRangeMode(s.dateAnalysisMode)) {
       const ddReady = s.ddPostStart && s.ddPostEnd;
       const ueReady = s.uePostStart && s.uePostEnd;
       return !!(ddReady || ueReady);

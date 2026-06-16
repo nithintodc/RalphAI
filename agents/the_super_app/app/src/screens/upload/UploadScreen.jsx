@@ -4,7 +4,7 @@ import { useDataStore } from '../../stores/dataStore';
 import { useUiStore } from '../../stores/uiStore';
 import { processUploadedFile, ALL_FILE_TYPES } from '../../lib/parsers/zipHandler';
 import { normalizeDdFinancial, normalizeDdErrorCharges } from '../../lib/parsers/ddFinancial';
-import { normalizeUeFinancial } from '../../lib/parsers/ueFinancial';
+import { normalizeUeFinancial, summarizeUeFinancialYears } from '../../lib/parsers/ueFinancial';
 import { normalizeDdPromotion, normalizeDdSponsored } from '../../lib/parsers/ddMarketing';
 
 const CATEGORY_INFO = {
@@ -81,8 +81,19 @@ export default function UploadScreen() {
           store.setUploadedFile('dd_ops_time', { name: file.name, status: 'done' });
         } else if (type === 'ue_financial') {
           const normalized = normalizeUeFinancial(data);
+          const { years, sortedYears } = summarizeUeFinancialYears(normalized);
           store.setUeFinancial(normalized);
-          store.setUploadedFile('ue_financial', { name: file.name, rows: normalized.length, status: 'done' });
+          store.setUploadedFile('ue_financial', {
+            name: file.name,
+            rows: normalized.length,
+            years,
+            sortedYears,
+            status: 'done',
+          });
+        } else if (type === 'dd_financial') {
+          newErrors.push(`${file.name}: ZIP recognized as DoorDash Financial but no transaction rows were parsed.`);
+        } else if (type.startsWith('dd_')) {
+          newErrors.push(`${file.name}: ZIP recognized as DoorDash (${type}) but expected CSV tables were missing or empty.`);
         }
       } catch (err) {
         newErrors.push(`${file.name}: ${err.message}`);
@@ -227,6 +238,15 @@ export default function UploadScreen() {
               <FileSpreadsheet size={11} />
               <span className="truncate">Financial Export (CSV)</span>
             </div>
+            {uploadedFiles['ue_financial']?.sortedYears?.length > 0 && (
+              <p className="mt-1.5 text-[10px] text-[var(--text-subtle)] leading-snug">
+                {uploadedFiles['ue_financial'].rows?.toLocaleString()} rows ·{' '}
+                {uploadedFiles['ue_financial'].sortedYears.map((y) => `${y}: ${uploadedFiles['ue_financial'].years?.[y]?.toLocaleString()}`).join(' · ')}
+                {uploadedFiles['ue_financial'].sortedYears.length === 1 && (
+                  <span className="text-amber-700 dark:text-amber-300"> — only one year loaded; LY slot columns will be empty unless you upload prior-year orders too.</span>
+                )}
+              </p>
+            )}
           </div>
 
           {uploadCount > 0 && (

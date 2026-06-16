@@ -1,18 +1,45 @@
 import { safeDivide, round, cleanInfinity } from '../utils/safeMath';
 import { getDominantStorePlatform } from '../utils/storeMeta';
 
-function windowMktSpend(row, window) {
-  if (row[`${window}_marketplaceFee`] !== undefined || row[`${window}_offers`] !== undefined) {
+function windowAdsSpend(row, window) {
+  if (row[`${window}_adSpend`] !== undefined || row[`${window}_marketingFees`] !== undefined) {
+    if (row[`${window}_adSpend`] !== undefined) {
+      return round(Number(row[`${window}_adSpend`]) || 0);
+    }
+    return round(Math.abs(row[`${window}_marketingFees`] || 0));
+  }
+  return 0;
+}
+
+function windowPromoSpend(row, window) {
+  if (row[`${window}_deliveryOffers`] !== undefined || row[`${window}_offers`] !== undefined) {
     return round(
-      Math.abs(row[`${window}_marketplaceFee`] || 0) + Math.abs(row[`${window}_offers`] || 0),
+      Math.abs(row[`${window}_offers`] || 0) + Math.abs(row[`${window}_deliveryOffers`] || 0),
     );
   }
   return round(
-    Math.abs(row[`${window}_marketingFees`] || 0)
-      + Math.abs(row[`${window}_customerDiscounts`] || 0)
+    Math.abs(row[`${window}_customerDiscounts`] || 0)
       + Math.abs(row[`${window}_customerDiscountsDoorDash`] || 0)
       + Math.abs(row[`${window}_customerDiscountsThirdParty`] || 0),
   );
+}
+
+function windowMktSpend(row, window) {
+  return round(windowPromoSpend(row, window) + windowAdsSpend(row, window));
+}
+
+export function addSpendMetricDeltas(row, metric) {
+  const pre = row[`pre_${metric}`] || 0;
+  const post = row[`post_${metric}`] || 0;
+  const preLY = row[`preLY_${metric}`] || 0;
+  const postLY = row[`postLY_${metric}`] || 0;
+
+  row[`${metric}_prevspost`] = round(post - pre);
+  row[`${metric}_ly_prevspost`] = round(postLY - preLY);
+  row[`${metric}_yoy`] = round(post - postLY);
+  row[`${metric}_growth_pct`] = round(cleanInfinity(safeDivide(post - pre, pre) * 100));
+  row[`${metric}_ly_growth_pct`] = round(cleanInfinity(safeDivide(postLY - preLY, preLY) * 100));
+  row[`${metric}_yoy_pct`] = round(cleanInfinity(safeDivide(post - postLY, postLY) * 100));
 }
 
 export function addDerivedMetrics(storeData) {
@@ -36,8 +63,14 @@ export function addDerivedMetrics(storeData) {
     for (const w of ['pre', 'post', 'preLY', 'postLY']) {
       r[`${w}_aov`] = round(safeDivide(r[`${w}_sales`], r[`${w}_orders`]), 2);
       r[`${w}_avg_payout`] = round(safeDivide(r[`${w}_payouts`], r[`${w}_orders`]), 2);
+      r[`${w}_adsSpend`] = windowAdsSpend(r, w);
+      r[`${w}_promoSpend`] = windowPromoSpend(r, w);
       r[`${w}_mktSpend`] = windowMktSpend(r, w);
       r[`${w}_profitability`] = round(safeDivide(r[`${w}_payouts`], r[`${w}_sales`]) * 100);
+    }
+
+    for (const metric of ['mktSpend', 'adsSpend', 'promoSpend']) {
+      addSpendMetricDeltas(r, metric);
     }
 
     r.aov_prevspost = round(r.post_aov - r.pre_aov, 2);
@@ -65,33 +98,51 @@ export function addDerivedMetrics(storeData) {
   });
 }
 
-export function buildSummaryRow(storeData, metricName) {
-  const totals = {};
-  for (const w of ['pre', 'post', 'preLY', 'postLY']) {
-    totals[w] = storeData.reduce((s, r) => s + (r[`${w}_${metricName}`] || 0), 0);
-  }
-  const prevspost = totals.post - totals.pre;
-  const lyPrevspost = totals.postLY - totals.preLY;
-  const yoy = totals.post - totals.postLY;
+function sumMetricWindow(storeData, metricName, window) {
+  return storeData.reduce((s, r) => s + (r[`${window}_${metricName}`] || 0), 0);
+}
+
+function rowsForAlignment(storeData, alignment, key) {
+  if (!alignment?.[key]?.commonIds?.size) return storeData;
+  const ids = alignment[key].commonIds;
+  return storeData.filter((r) => ids.has(String(r.storeId ?? '').trim()));
+}
+
+export function buildSummaryRow(storeData, metricName, alignment = null) {
+  const pvpRows = alignment ? rowsForAlignment(storeData, alignment, 'pvp') : storeData;
+  const lyPvpRows = alignment ? rowsForAlignment(storeData, alignment, 'lyPvp') : storeData;
+  const yoyRows = alignment ? rowsForAlignment(storeData, alignment, 'yoy') : storeData;
+
+  const pre = sumMetricWindow(pvpRows, metricName, 'pre');
+  const post = sumMetricWindow(pvpRows, metricName, 'post');
+  const preLY = sumMetricWindow(lyPvpRows, metricName, 'preLY');
+  const postLY = sumMetricWindow(lyPvpRows, metricName, 'postLY');
+  const yoyPost = sumMetricWindow(yoyRows, metricName, 'post');
+  const yoyPostLY = sumMetricWindow(yoyRows, metricName, 'postLY');
+
+  const prevspost = post - pre;
+  const lyPrevspost = postLY - preLY;
+  const yoy = yoyPost - yoyPostLY;
+
   return {
     metric: metricName,
-    pre: round(totals.pre),
-    post: round(totals.post),
-    preLY: round(totals.preLY),
-    postLY: round(totals.postLY),
+    pre: round(pre),
+    post: round(post),
+    preLY: round(preLY),
+    postLY: round(postLY),
     prevspost: round(prevspost),
     lyPrevspost: round(lyPrevspost),
     yoy: round(yoy),
-    growthPct: round(cleanInfinity(safeDivide(prevspost, totals.pre) * 100)),
-    lyGrowthPct: round(cleanInfinity(safeDivide(lyPrevspost, totals.preLY) * 100)),
-    yoyPct: round(cleanInfinity(safeDivide(yoy, totals.postLY) * 100)),
+    growthPct: round(cleanInfinity(safeDivide(prevspost, pre) * 100)),
+    lyGrowthPct: round(cleanInfinity(safeDivide(lyPrevspost, preLY) * 100)),
+    yoyPct: round(cleanInfinity(safeDivide(yoy, yoyPostLY) * 100)),
   };
 }
 
-function buildDerivedSummaryRow(storeData, type) {
-  const sales = buildSummaryRow(storeData, 'sales');
-  const payouts = buildSummaryRow(storeData, 'payouts');
-  const orders = buildSummaryRow(storeData, 'orders');
+function buildDerivedSummaryRow(storeData, type, alignment = null) {
+  const sales = buildSummaryRow(storeData, 'sales', alignment);
+  const payouts = buildSummaryRow(storeData, 'payouts', alignment);
+  const orders = buildSummaryRow(storeData, 'orders', alignment);
   return buildDerivedFromRows(sales, payouts, orders, type);
 }
 
@@ -147,26 +198,38 @@ function combineSummaryRows(dd, ue, metric) {
   return row;
 }
 
-export function buildSummaryTables(ddStoreData, ueStoreData) {
+export function buildSummaryTables(ddStoreData, ueStoreData, alignmentByPlatform = null) {
   const metrics = ['sales', 'payouts', 'orders'];
+  const spendMetrics = ['adsSpend', 'promoSpend', 'mktSpend'];
+  const ddAlignment = alignmentByPlatform?.dd || null;
+  const ueAlignment = alignmentByPlatform?.ue || null;
 
   const dd = [
-    ...metrics.map(m => buildSummaryRow(ddStoreData || [], m)),
-    buildDerivedSummaryRow(ddStoreData || [], 'profitability'),
-    buildDerivedSummaryRow(ddStoreData || [], 'aov'),
+    ...metrics.map((m) => buildSummaryRow(ddStoreData || [], m, ddAlignment)),
+    ...spendMetrics.map((m) => buildSummaryRow(ddStoreData || [], m, ddAlignment)),
+    buildDerivedSummaryRow(ddStoreData || [], 'profitability', ddAlignment),
+    buildDerivedSummaryRow(ddStoreData || [], 'aov', ddAlignment),
   ].filter(Boolean);
 
   const ue = [
-    ...metrics.map(m => buildSummaryRow(ueStoreData || [], m)),
-    buildDerivedSummaryRow(ueStoreData || [], 'profitability'),
-    buildDerivedSummaryRow(ueStoreData || [], 'aov'),
+    ...metrics.map((m) => buildSummaryRow(ueStoreData || [], m, ueAlignment)),
+    ...spendMetrics.map((m) => buildSummaryRow(ueStoreData || [], m, ueAlignment)),
+    buildDerivedSummaryRow(ueStoreData || [], 'profitability', ueAlignment),
+    buildDerivedSummaryRow(ueStoreData || [], 'aov', ueAlignment),
   ].filter(Boolean);
 
-  const combined = metrics.map(m => {
-    const ddRow = dd.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
-    const ueRow = ue.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
-    return combineSummaryRows(ddRow, ueRow, m);
-  });
+  const combined = [
+    ...metrics.map((m) => {
+      const ddRow = dd.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
+      const ueRow = ue.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
+      return combineSummaryRows(ddRow, ueRow, m);
+    }),
+    ...spendMetrics.map((m) => {
+      const ddRow = dd.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
+      const ueRow = ue.find(r => r.metric === m) || { pre: 0, post: 0, preLY: 0, postLY: 0 };
+      return combineSummaryRows(ddRow, ueRow, m);
+    }),
+  ];
 
   const cSales = combined.find(r => r.metric === 'sales');
   const cPayouts = combined.find(r => r.metric === 'payouts');
@@ -215,6 +278,12 @@ function sumCombinedStoreMetrics(dd, ue, rowMeta) {
 
   for (const w of ['pre', 'post', 'preLY', 'postLY']) {
     row[`${w}_mktSpend`] = (dd?.[`${w}_mktSpend`] || 0) + (ue?.[`${w}_mktSpend`] || 0);
+    row[`${w}_adsSpend`] = (dd?.[`${w}_adsSpend`] || 0) + (ue?.[`${w}_adsSpend`] || 0);
+    row[`${w}_promoSpend`] = (dd?.[`${w}_promoSpend`] || 0) + (ue?.[`${w}_promoSpend`] || 0);
+  }
+
+  for (const metric of ['mktSpend', 'adsSpend', 'promoSpend']) {
+    addSpendMetricDeltas(row, metric);
   }
 
   for (const w of ['pre', 'post', 'preLY', 'postLY']) {
@@ -272,6 +341,7 @@ export function buildCombinedStoreTables(ddStoreData, ueStoreData, ddToUeStoreMa
         storeId: ddKey,
         storeName: ddRow.storeName || '',
         ddStoreId: ddRow.ddStoreId || '',
+        merchantStoreId: ddRow.merchantStoreId || '',
         _ddStoreKey: ddKey,
         _ueStoreKey: ueKey,
       }));
@@ -287,6 +357,7 @@ export function buildCombinedStoreTables(ddStoreData, ueStoreData, ddToUeStoreMa
         storeId: ueKey,
         storeName: ueRow.storeName || '',
         ddStoreId: ddMerged?.ddStoreId || '',
+        merchantStoreId: ddMerged?.merchantStoreId || '',
         _ddStoreKey: ddKeys[0] || '',
         _ueStoreKey: ueKey,
       }));

@@ -16,6 +16,13 @@ if [ -f ".env" ]; then
     set +a
 fi
 
+activate_venv() {
+    if [ -d ".venv" ]; then
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+    fi
+}
+
 AGENT=${1:-}
 
 if [ -n "$AGENT" ]; then
@@ -26,7 +33,8 @@ if [ -n "$AGENT" ]; then
     echo "================================================="
     echo "🚀 Launching Agent: $AGENT"
     echo "================================================="
-    python -c "import agents.${AGENT} as agent; print(agent.run_app(wait=True))"
+    activate_venv
+    PYTHONPATH=. python -c "import agents.${AGENT} as agent; print(agent.run_app(wait=True))"
     exit 0
 fi
 
@@ -38,10 +46,10 @@ echo "================================================="
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment and installing packages..."
     python3 -m venv .venv
-    source .venv/bin/activate
+    activate_venv
     pip install -r requirements.txt || true
 else
-    source .venv/bin/activate
+    activate_venv
 fi
 
 # Health Check PDF export (Playwright Chromium)
@@ -119,7 +127,8 @@ echo "🔌 API available at: http://localhost:8000"
 if [ -n "$SUPERAPP_WATCH_PID" ]; then
     echo "📦 Super App: auto-rebuild on save (Cmd+Shift+R in browser to pick up UI changes)"
 fi
-echo "Press Ctrl+C to stop."
+echo "Press Ctrl+C to stop, or run ./stop.sh from another terminal."
+echo "   ./stop.sh stops API, dashboard, agents, and Chrome CDP even if this terminal was closed."
 
 # Wait for background processes to keep the script running
 trap 'echo "Shutting down..."; kill $API_PID $DASH_PID ${SUPERAPP_WATCH_PID:-} 2>/dev/null; exit' SIGINT SIGTERM

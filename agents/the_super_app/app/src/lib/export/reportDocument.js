@@ -12,21 +12,35 @@
  */
 
 import { format } from 'date-fns';
-import { buildSlotAnalysis, SLOT_DEFINITIONS, getSlotTimeRange } from '../engine/slots';
+import { buildSlotAnalysis, SLOT_DEFINITIONS, SLOT_METRIC_TABLES, getSlotTimeRange } from '../engine/slots';
 import { loadBrandLogosAsDataUri } from '../brand/brandLogos';
-import { pivotDowntimeByStore } from '../utils/opsProductPivot';
 import { buildNewCustomersSummary } from '../engine/newCustomers';
+import { payoutDeltaPerStoreForSection } from '../utils/summaryKpis';
+import { storeSpecsForPlatform, storeSpecValueKind } from '../engine/storeTableSpecs';
+import { getStarAndDecliningStores, getPlatformDailyExtremes } from '../engine/diagnostics';
+import { MARKETING_IMPACT_METRICS, buildCorpTodcImpactRows } from '../engine/marketing';
+import {
+  resolveMarketingTables,
+  marketingCampaignSlices,
+  buildCampaignHighlights,
+  MARKETING_IMPACT_HEADERS,
+  CAMPAIGN_IMPACT_HEADERS,
+} from './marketingExport.js';
+import { collectOperationsExportSections } from './operationsExport.js';
+import { captureOperatorMapScreenshot } from './mapExportCapture.js';
 
 import { resolveDocExportUrl } from './exportApi.js';
 import { buildExportFilename } from './exportFilename.js';
 import {
   buildAlignedExportStoreTables,
-  combinedExportStoreId,
   combinedExportStoreName,
   EXPORT_NA,
+  EXPORT_STORE_ID_HEADERS,
+  exportStoreIdCells,
+  exportStoreIdHeaders,
   exportStoreName,
-  legacyStoreIdCell,
 } from './storeExportLayout.js';
+import { buildDdStoreIdToMerchantMap } from '../utils/storeCatalog';
 
 const GOOGLE_SHEETS_EXPORT_URL = import.meta.env.VITE_GOOGLE_SHEETS_EXPORT_URL;
 const GOOGLE_DOC_EXPORT_URL = import.meta.env.VITE_GOOGLE_DOC_EXPORT_URL;
@@ -158,7 +172,7 @@ function activeStoreCount(storeTables, key) {
 function platformSlotAnalysis(data, config, platform) {
   const rawData = platform === 'ue' ? data.ueFinancial : data.ddFinancial;
   const prefix = platform === 'ue' ? 'ue' : 'dd';
-  if (!rawData) return null;
+  if (!rawData?.length) return null;
   const preStart = config[`${prefix}PreStart`];
   const preEnd = config[`${prefix}PreEnd`];
   const postStart = config[`${prefix}PostStart`];
@@ -170,6 +184,7 @@ function platformSlotAnalysis(data, config, platform) {
     postStart,
     postEnd,
     excludedDates: config[`${prefix}ExcludedDates`] || [],
+    excludedStores: config[`${prefix}ExcludedStores`] || [],
     platform,
   });
 }
@@ -222,97 +237,239 @@ function baselineRows(summaryTables, logos) {
     </tr>`).join('');
 }
 
-function storePrePostRows(stores, metric = 'sales', platform = 'combined', dominantPlatform = 'dd') {
-  return (stores || []).map((s) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(s, dominantPlatform)
-      : legacyStoreIdCell(s, platform);
-    const storeName = platform === 'combined'
-      ? combinedExportStoreName(s, dominantPlatform)
-      : exportStoreName(s);
-    const na = s._isNa;
-    return `<tr>
-    <td>${escapeHtml(storeId)}</td>
-    <td>${escapeHtml(storeName)}</td>
-    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[`pre_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
-    ${deltaCell(s[`${metric}_prevspost`], 'usd')}
-    ${deltaCell(s[`${metric}_ly_prevspost`], 'usd')}
-    ${pctDeltaCell(s[`${metric}_growth_pct`])}
-    ${pctDeltaCell(s[`${metric}_ly_growth_pct`])}`}
-  </tr>`;
-  }).join('') || emptyRow(8);
+function storeCells(s, platform, dominantPlatform, ddToUeStoreMap = {}, ddStoreIdToMerchant = null) {
+  const [ddMerchantStoreId, ueStoreId] = exportStoreIdCells(
+    s, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant,
+  );
+  const storeName = platform === 'combined'
+    ? combinedExportStoreName(s, dominantPlatform)
+    : exportStoreName(s);
+  return { ddMerchantStoreId, ueStoreId, storeName };
 }
 
-function storeYoyRows(stores, metric = 'sales', platform = 'combined', dominantPlatform = 'dd') {
+function storePrePostRows(stores, spec, platform = 'combined', dominantPlatform = 'dd', ddToUeStoreMap = {}, ddStoreIdToMerchant = null) {
+  const kind = storeSpecValueKind(spec);
   return (stores || []).map((s) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(s, dominantPlatform)
-      : legacyStoreIdCell(s, platform);
-    const storeName = platform === 'combined'
-      ? combinedExportStoreName(s, dominantPlatform)
-      : exportStoreName(s);
+    const { ddMerchantStoreId, ueStoreId, storeName } = storeCells(
+      s, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant,
+    );
     const na = s._isNa;
     return `<tr>
-    <td>${escapeHtml(storeId)}</td>
+    <td>${escapeHtml(ddMerchantStoreId)}</td>
+    <td>${escapeHtml(ueStoreId)}</td>
     <td>${escapeHtml(storeName)}</td>
-    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[`postLY_${metric}`], 'usd')}${td(s[`post_${metric}`], 'usd')}
-    ${deltaCell(s[`${metric}_yoy`], 'usd')}
-    ${pctDeltaCell(s[`${metric}_yoy_pct`])}`}
+    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[spec.preKey], kind)}${td(s[spec.postKey], kind)}
+    ${deltaCell(s[spec.deltaKey], kind)}
+    ${deltaCell(s[spec.lyDeltaKey], kind)}
+    ${pctDeltaCell(s[spec.deltaPctKey])}
+    ${pctDeltaCell(s[spec.lyDeltaPctKey])}`}
   </tr>`;
-  }).join('') || emptyRow(6);
+  }).join('') || emptyRow(9);
 }
 
-function slotPrePostRows(rows) {
+function storeYoyRows(stores, spec, platform = 'combined', dominantPlatform = 'dd', ddToUeStoreMap = {}, ddStoreIdToMerchant = null) {
+  const kind = storeSpecValueKind(spec);
+  return (stores || []).map((s) => {
+    const { ddMerchantStoreId, ueStoreId, storeName } = storeCells(
+      s, platform, dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant,
+    );
+    const na = s._isNa;
+    return `<tr>
+    <td>${escapeHtml(ddMerchantStoreId)}</td>
+    <td>${escapeHtml(ueStoreId)}</td>
+    <td>${escapeHtml(storeName)}</td>
+    ${na ? `<td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td><td>${EXPORT_NA}</td>` : `${td(s[spec.postLyKey], kind)}${td(s[spec.postKey], kind)}
+    ${deltaCell(s[spec.yoyDeltaKey], kind)}
+    ${pctDeltaCell(s[spec.yoyPctKey])}`}
+  </tr>`;
+  }).join('') || emptyRow(7);
+}
+
+function slotValueKind(valueKind) {
+  if (valueKind === 'int') return 'int';
+  if (valueKind === 'usd2') return 'usd2';
+  if (valueKind === 'pct') return 'pct';
+  return 'usd';
+}
+
+function slotPrePostRows(rows, valueKind = 'usd') {
+  const kind = slotValueKind(valueKind);
   return (rows || []).map(r => `<tr>
     <td>${escapeHtml(r.slot)}</td>
     <td>${escapeHtml(getSlotTimeRange(r.slot))}</td>
-    ${td(r.pre, 'usd')}${td(r.post, 'usd')}
-    ${deltaCell(r.prevspost, 'usd')}
+    ${td(r.pre, kind)}${td(r.post, kind)}
+    ${deltaCell(r.prevspost, kind)}
     ${pctDeltaCell(r.growthPct)}
   </tr>`).join('') || emptyRow(6);
 }
 
-function slotYoyRows(rows) {
+function slotYoyRows(rows, valueKind = 'usd') {
+  const kind = slotValueKind(valueKind);
   return (rows || []).map(r => `<tr>
     <td>${escapeHtml(r.slot)}</td>
     <td>${escapeHtml(getSlotTimeRange(r.slot))}</td>
-    ${td(r.postLY, 'usd')}${td(r.post, 'usd')}
-    ${deltaCell(r.yoy, 'usd')}
+    ${td(r.postLY, kind)}${td(r.post, kind)}
+    ${deltaCell(r.yoy, kind)}
     ${pctDeltaCell(r.yoyPct)}
   </tr>`).join('') || emptyRow(6);
 }
 
-function marketingSourceRows(marketingTables) {
-  const source = marketingTables?.bySource?.combined;
-  const make = (entry) => {
-    if (!entry) return '';
-    return `<tr>
-      <td>${escapeHtml(entry.label)}</td>
-      ${td(entry.ordersPost, 'int')}
-      ${td(entry.salesPost, 'usd')}
-      ${td(entry.spendPost, 'usd')}
-      ${td(entry.roasPost, 'roas')}
-      ${td(entry.cpoPost, 'usd2')}
-    </tr>`;
-  };
-  const out = `${make(source?.corp)}${make(source?.todc)}`;
-  return out || emptyRow(6);
+function marketingImpactDocRows(table, period) {
+  return buildCorpTodcImpactRows(table, period).map((r) => `<tr${r._total ? ' class="totals-row"' : ''}>
+    <td>${escapeHtml(r.group)}</td>
+    ${MARKETING_IMPACT_METRICS.map((m) => td(r[m.key], m.kind === 'roas' ? 'roas' : m.kind)).join('')}
+  </tr>`).join('') || emptyRow(MARKETING_IMPACT_METRICS.length);
 }
 
-function markupTableRows(storeTables) {
+function marketingCampaignDocRows(campaigns) {
+  return (campaigns || []).map((c) => `<tr>
+    <td>${escapeHtml(c.campaignName)}</td>
+    ${MARKETING_IMPACT_METRICS.map((m) => td(c[m.key], m.kind === 'roas' ? 'roas' : m.kind)).join('')}
+  </tr>`).join('') || emptyRow(MARKETING_IMPACT_METRICS.length);
+}
+
+function renderDataTable(headers, bodyRows, theadClass = '') {
+  const head = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+  return `<div class="table-wrap ${theadClass}"><table>
+    <thead><tr>${head}</tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table></div>`;
+}
+
+/** Subsection title + table/chart block that should not split across printed pages. */
+function keepTogether(titleHtml, bodyHtml) {
+  if (!bodyHtml) return '';
+  const title = titleHtml ? `<div class="subsection-title">${titleHtml}</div>` : '';
+  return `<div class="keep-together">${title}${bodyHtml}</div>`;
+}
+
+function mapSectionHtml(mapImageDataUri, operatorName) {
+  if (!mapImageDataUri) return '';
+  return `
+    <div class="section">
+      <div class="section-header gold"><div class="section-title">Store Locations</div><div class="section-num">Map</div></div>
+      ${keepTogether('', `<div class="map-export-wrap">${imgTag(mapImageDataUri, `${operatorName || 'Operator'} store map`, 'map-export-img')}</div>`)}
+      <p class="chart-caption">Operator store locations — Post-period KPIs shown on map pins when analysis data is loaded.</p>
+    </div>`;
+}
+
+function renderPlainTable(headers, rows) {
+  const body = (rows || []).map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell ?? '')}</td>`).join('')}</tr>`).join('');
+  return renderDataTable(headers, body);
+}
+
+function buildOverviewSpotlightHtml(data, config, storeTables) {
+  const stores = storeTables?.combined || [];
+  const spotlight = getStarAndDecliningStores(stores);
+  const postExtremes = getPlatformDailyExtremes(
+    { ddFinancial: data.ddFinancial, ueFinancial: data.ueFinancial, ddExcludedDates: config.ddExcludedDates, ueExcludedDates: config.ueExcludedDates },
+    'combined',
+    config.ddPostStart,
+    config.ddPostEnd,
+  );
+  const preExtremes = getPlatformDailyExtremes(
+    { ddFinancial: data.ddFinancial, ueFinancial: data.ueFinancial, ddExcludedDates: config.ddExcludedDates, ueExcludedDates: config.ueExcludedDates },
+    'combined',
+    config.ddPreStart,
+    config.ddPreEnd,
+  );
+  const ddToUe = config?.ddToUeStoreMap || {};
+  const aligned = buildAlignedExportStoreTables(storeTables, ddToUe);
+  const spotlightStoreCells = (s) => {
+    const [ddMerchantStoreId, ueStoreId] = exportStoreIdCells(s, 'combined', aligned.dominantPlatform, ddToUe);
+    return `<tr><td>${escapeHtml(ddMerchantStoreId)}</td><td>${escapeHtml(ueStoreId)}</td>${pctDeltaCell(s.sales_growth_pct)}</tr>`;
+  };
+  const starRows = (spotlight.stars || []).map(spotlightStoreCells).join('');
+  const declineRows = (spotlight.declining || []).map(spotlightStoreCells).join('');
+  const dayRow = (d) => `<tr><td>${d.date ? format(d.date, 'MMM d') : escapeHtml(d.dateKey)}</td>${td(d.sales, 'usd')}</tr>`;
+  const postTop = (postExtremes.top || []).map(dayRow).join('');
+  const postLow = (postExtremes.low || []).map(dayRow).join('');
+  const preTop = (preExtremes.top || []).map(dayRow).join('');
+  const preLow = (preExtremes.low || []).map(dayRow).join('');
+  if (!starRows && !declineRows && !postTop && !preTop) return '';
+
+  return `
+    <div class="subsection-title">Store &amp; Date Spotlight (Combined)</div>
+    <div class="grid-2">
+      ${starRows || declineRows ? `<div>
+        <p class="text-xs" style="color:var(--text-subtle);margin:0 0 8px">Top &amp; low stores by Pre→Post sales growth</p>
+        ${renderDataTable([...EXPORT_STORE_ID_HEADERS, 'Growth %'], `${starRows}${declineRows}` || emptyRow(3))}
+      </div>` : ''}
+      ${postTop || postLow ? `<div>
+        <p class="text-xs" style="color:var(--text-subtle);margin:0 0 8px">Top &amp; low sales days (10% of days)</p>
+        ${renderDataTable(['Day', 'Sales'], `${postTop}${postLow}` || emptyRow(2))}
+      </div>` : ''}
+    </div>
+    ${preTop || preLow ? `<div class="subsection-title">Pre period — top &amp; low days</div>${renderDataTable(['Day', 'Sales'], `${preTop}${preLow}` || emptyRow(2))}` : ''}`;
+}
+
+function buildMarketingDocSection(marketingTables) {
+  if (!marketingTables?.bySource?.combined?.corp) return '';
+  const combined = marketingTables.bySource.combined;
+  const { promoCampaigns, adsCampaigns } = marketingCampaignSlices(marketingTables);
+  const impactHead = MARKETING_IMPACT_HEADERS.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+  const campaignHead = CAMPAIGN_IMPACT_HEADERS.map((h) => `<th>${escapeHtml(h)}</th>`).join('');
+  const highlightBlock = (label, campaigns, kind, title) => {
+    const rows = buildCampaignHighlights(campaigns, kind);
+    if (!rows.length) return '';
+    return keepTogether(`${label} — ${title}`, `<div class="table-wrap thead-dd"><table><thead><tr>${campaignHead}</tr></thead><tbody>${marketingCampaignDocRows(rows)}</tbody></table></div>`);
+  };
+
+  return `
+    <div class="section">
+      <div class="section-header gold"><div class="section-title">Marketing</div><div class="section-num">08</div></div>
+      ${tableBlock('Corp vs TODC — Post period', `<table><thead><tr>${impactHead}</tr></thead><tbody>${marketingImpactDocRows(combined, 'post')}</tbody></table>`, 'thead-dd')}
+      ${tableBlock('Corp vs TODC — Pre period', `<table><thead><tr>${impactHead}</tr></thead><tbody>${marketingImpactDocRows(combined, 'pre')}</tbody></table>`, 'thead-dd')}
+      ${promoCampaigns.length ? tableBlock('Promo campaigns (post period)', `<table><thead><tr>${campaignHead}</tr></thead><tbody>${marketingCampaignDocRows(promoCampaigns)}</tbody></table>`, 'thead-dd') : ''}
+      ${highlightBlock('Promo', promoCampaigns, 'topRoas', 'Top by ROAS')}
+      ${highlightBlock('Promo', promoCampaigns, 'topSpend', 'Top by spend')}
+      ${highlightBlock('Promo', promoCampaigns, 'poorRoas', 'Bottom by ROAS')}
+      ${adsCampaigns.length ? tableBlock('Ads campaigns (post period)', `<table><thead><tr>${campaignHead}</tr></thead><tbody>${marketingCampaignDocRows(adsCampaigns)}</tbody></table>`, 'thead-dd') : ''}
+      ${highlightBlock('Ads', adsCampaigns, 'topRoas', 'Top by ROAS')}
+      ${highlightBlock('Ads', adsCampaigns, 'topSpend', 'Top by spend')}
+      ${highlightBlock('Ads', adsCampaigns, 'poorRoas', 'Bottom by ROAS')}
+    </div>`;
+}
+
+function buildOperationsDocSection(data) {
+  const sections = collectOperationsExportSections(data);
+  if (!sections.length) return '';
+
+  const body = sections.map((sec) => {
+    if (sec.type === 'block') {
+      const [headers, ...rows] = sec.blockRows;
+      return keepTogether(escapeHtml(sec.title), renderPlainTable(headers, rows));
+    }
+    const tableBody = (sec.rows || []).map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell ?? '')}</td>`).join('')}</tr>`).join('');
+    return tableBlock(escapeHtml(sec.title), `<table><thead><tr>${sec.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${tableBody}</tbody></table>`);
+  }).join('');
+
+  return `
+    <div class="section">
+      <div class="section-header mc"><div class="section-title">Operations</div><div class="section-num">09</div></div>
+      ${body}
+    </div>`;
+}
+
+function markupTableRows(storeTables, ddToUeStoreMap = {}, ddStoreIdToMerchant = null) {
   const stores = storeTables?.combined || storeTables?.dd || storeTables?.ue || [];
+  const aligned = buildAlignedExportStoreTables(storeTables, ddToUeStoreMap);
   if (!stores.length) {
     return Array.from({ length: 3 }, () =>
-      '<tr><td>[Store Name]</td><td>[XX%]</td></tr>').join('');
+      '<tr><td>[DD ID]</td><td>[UE ID]</td><td>[XX%]</td></tr>').join('');
   }
-  return stores.map((s) =>
-    `<tr><td>${escapeHtml(s.storeId)}</td><td>—</td></tr>`).join('');
+  return stores.map((s) => {
+    const [ddMerchantStoreId, ueStoreId] = exportStoreIdCells(
+      s, 'combined', aligned.dominantPlatform, ddToUeStoreMap, ddStoreIdToMerchant,
+    );
+    return `<tr><td>${escapeHtml(ddMerchantStoreId)}</td><td>${escapeHtml(ueStoreId)}</td><td>—</td></tr>`;
+  }).join('');
 }
 
-function markupTable(storeTables) {
+function markupTable(storeTables, ddToUeStoreMap = {}, ddStoreIdToMerchant = null) {
   return `<div class="table-wrap"><table>
-    <thead><tr><th>Store Name</th><th>Markup</th></tr></thead>
-    <tbody>${markupTableRows(storeTables)}</tbody>
+    <thead><tr>${EXPORT_STORE_ID_HEADERS.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}<th>Markup</th></tr></thead>
+    <tbody>${markupTableRows(storeTables, ddToUeStoreMap, ddStoreIdToMerchant)}</tbody>
   </table></div>`;
 }
 
@@ -396,7 +553,19 @@ function reportCss() {
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html{font-size:14px;}
   body{background:var(--bg);color:var(--text);font-family:var(--body);font-weight:400;line-height:1.5;-webkit-font-smoothing:antialiased;font-optical-sizing:auto;font-variation-settings:"GRAD" 0;}
-  @media print{body{background:#fff;}.page-break{page-break-before:always;}.no-print{display:none;}}
+  @media print{
+    body{background:#fff;}
+    .page-break{page-break-before:always;break-before:page;}
+    .no-print{display:none;}
+    .keep-together,.table-wrap,.chart-container,.kpi-strip,.meta-grid,.cover,.map-export-wrap{
+      break-inside:avoid;
+      page-break-inside:avoid;
+    }
+    .table-wrap{overflow:visible;}
+    thead{display:table-header-group;}
+    .chart-canvas-wrap canvas{display:none!important;}
+    .chart-print-img{display:block!important;width:100%;height:auto;}
+  }
   .report{max-width:1100px;margin:0 auto;padding:72px 24px 60px;}
   @media print{.report{padding-top:24px;}}
   .cover{display:flex;align-items:flex-end;justify-content:space-between;padding:32px 28px;margin-bottom:32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
@@ -459,11 +628,14 @@ function reportCss() {
   td.neg{color:var(--neg);background:var(--neg-bg);font-weight:500;}
   .thead-dd thead tr{background:#FEF2F2;}.thead-dd thead th{color:#B91C1C;border-color:#FECACA;}
   .thead-ue thead tr{background:#F5F5F4;}.thead-ue thead th{color:#111827;border-color:#E7E5E4;}
-  .chart-container{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow);}
+  .chart-container{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow);break-inside:avoid;page-break-inside:avoid;}
   .chart-title{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:16px;}
   .chart-canvas-wrap{position:relative;height:280px;}
   canvas{display:block;}
+  .chart-print-img{display:none;width:100%;height:auto;}
   .chart-caption{font-size:10px;color:var(--text-subtle);text-align:center;margin-top:12px;font-style:italic;}
+  .map-export-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;box-shadow:var(--shadow);}
+  .map-export-img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:var(--surface2);}
   .report-footer{border-top:1px solid var(--border);padding:20px 0 0;display:flex;justify-content:space-between;align-items:center;}
   .footer-left,.footer-right{font-size:10px;color:var(--text-subtle);}
   .totals-row td{font-weight:600!important;color:var(--text)!important;border-top:2px solid var(--border-light)!important;}
@@ -485,16 +657,6 @@ function metaValue(text, placeholder = false) {
 function periodText(start, end) {
   if (!start || !end) return null;
   return `${format(start, 'MM/dd/yyyy')} – ${format(end, 'MM/dd/yyyy')}`;
-}
-
-const DOWNTIME_REPORT_HEADERS = ['Store', 'Days', 'Hours', 'Minutes', 'Total (min)', 'Rows'];
-
-function getDowntimeStoreRows(data) {
-  const raw = data?.ddOps?.byStore?.downtime?.data;
-  if (!Array.isArray(raw) || !raw.length) return [];
-  const columns = raw[0] ? Object.keys(raw[0]) : [];
-  const pivot = pivotDowntimeByStore(raw, columns);
-  return pivot?.rows?.length ? pivot.rows : [];
 }
 
 function buildSlotDefinitionsScreenSection() {
@@ -521,33 +683,6 @@ function buildSlotDefinitionsWordSection() {
     ${wDataTable(['Day part', 'Time window'], body)}`;
 }
 
-function buildAppendixScreenSection(data) {
-  const rows = getDowntimeStoreRows(data);
-  if (!rows.length) return '';
-
-  const body = rows.map((r) => `<tr>
-    <td>${escapeHtml(r.store)}</td>
-    <td>${num(r.days ?? 0)}</td>
-    <td>${num(r.hours ?? 0)}</td>
-    <td>${num(r.minutes ?? 0)}</td>
-    <td>${num(r.totalMinutes ?? 0)}</td>
-    <td>${num(r.lineCount ?? 0)}</td>
-  </tr>`).join('');
-
-  const head = DOWNTIME_REPORT_HEADERS.map((h, i) =>
-    `<th${i === 0 ? '' : ''}>${h}</th>`).join('');
-
-  return `
-    <div class="section">
-      <div class="section-header mc"><div class="section-title">Appendix</div><div class="section-num">08</div></div>
-      <div class="subsection-title">DoorDash Downtime — by store</div>
-      <div class="table-wrap"><table>
-        <thead><tr>${head}</tr></thead>
-        <tbody>${body}</tbody>
-      </table></div>
-    </div>`;
-}
-
 function kpiCard(label, value, deltaPct, hasData, deltaSuffix = 'YoY') {
   if (!hasData) {
     return `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value placeholder">—</div><div class="kpi-delta" style="color:var(--text-muted)">no data</div></div>`;
@@ -560,7 +695,7 @@ function kpiCard(label, value, deltaPct, hasData, deltaSuffix = 'YoY') {
   return `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div><div class="kpi-delta ${dir}">${deltaText}</div></div>`;
 }
 
-function buildReportBody(data, config, variant, logos = null) {
+function buildReportBody(data, config, variant, logos = null, mapImageDataUri = null) {
   const summaryTables = data.summaryTables || {};
   const storeTables = data.storeTables || {};
   const alignedStores = buildAlignedExportStoreTables(storeTables, config?.ddToUeStoreMap || {});
@@ -570,7 +705,9 @@ function buildReportBody(data, config, variant, logos = null) {
     ue: alignedStores.ue,
   };
   const dominantPlatform = alignedStores.dominantPlatform;
-  const marketingTables = data.marketingTables || {};
+  const ddToUe = config?.ddToUeStoreMap || {};
+  const ddStoreIdToMerchant = buildDdStoreIdToMerchantMap(data?.ddFinancial);
+  const marketingTables = resolveMarketingTables(data, config) || data.marketingTables || {};
   const ddSlot = platformSlotAnalysis(data, config, 'dd');
   const ueSlot = platformSlotAnalysis(data, config, 'ue');
   const includeCharts = variant !== 'word';
@@ -580,9 +717,7 @@ function buildReportBody(data, config, variant, logos = null) {
   const cPay = summaryRow(summaryTables.combined, 'payouts');
   const ddStores = activeStoreCount(storeTables, 'dd');
   const ueStores = activeStoreCount(storeTables, 'ue');
-  const payoutLiftPerStore = cPay && (ddStores + ueStores) > 0
-    ? cPay.prevspost / (ddStores + ueStores)
-    : null;
+  const payoutPerStore = payoutDeltaPerStoreForSection(summaryTables, storeTables, 'combined');
 
   const prePeriod = periodText(config.ddPreStart, config.ddPreEnd);
   const postPeriod = periodText(config.ddPostStart, config.ddPostEnd);
@@ -594,67 +729,66 @@ function buildReportBody(data, config, variant, logos = null) {
   const chart = chartData(summaryTables, ddSlot);
 
   const chartBlock = (title, id) => includeCharts
-    ? `<div class="chart-container"><div class="chart-title">${title}</div><div class="chart-canvas-wrap"><canvas id="${id}" height="280"></canvas></div></div>`
+    ? `<div class="keep-together"><div class="chart-container"><div class="chart-title">${title}</div><div class="chart-canvas-wrap"><canvas id="${id}" height="280"></canvas></div></div></div>`
     : '';
+
+  const tableBlock = (title, tableInnerHtml, theadClass = '') =>
+    keepTogether(title, `<div class="table-wrap ${theadClass}">${tableInnerHtml}</div>`);
+
+  const metricTableInner = (summary, isYoy) => {
+    if (isYoy) {
+      return `<table>
+        <thead><tr><th>Metric</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+        <tbody>${metricYoyRows(summary) || emptyRow(5)}</tbody>
+      </table>`;
+    }
+    return `<table>
+      <thead><tr><th>Metric</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
+      <tbody>${metricPrePostRows(summary) || emptyRow(6)}</tbody>
+    </table>`;
+  };
 
   const ncSummary = buildNewCustomersSummary(data, config);
   const cNewCust = ncSummary?.combined;
 
-  const platformSection = (key, label, badgeClass, badgeLogo, sectionNum, includeMarketing) => {
+  const platformSection = (key, label, badgeClass, badgeLogo, sectionNum, withChart = false) => {
     const summary = summaryTables[key];
     return `
   <div class="section">
     ${platformBadgeHtml(badgeClass, label, badgeLogo, logos, sectionNum)}
-    <div class="subsection-title">Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
-      <thead><tr><th>Metric</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
-      <tbody>${metricPrePostRows(summary) || emptyRow(6)}</tbody>
-    </table></div>
-    <div class="subsection-title">YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
-      <thead><tr><th>Metric</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${metricYoyRows(summary) || emptyRow(5)}</tbody>
-    </table></div>
-    ${includeMarketing ? `
-    <div class="subsection-title">Corporate vs TODC — Promos &amp; Ads</div>
-    <div class="table-wrap thead-${badgeClass}"><table>
-      <thead><tr><th>Campaign</th><th>Orders</th><th>Sales</th><th>Spend</th><th>ROAS</th><th>Cost / Order</th></tr></thead>
-      <tbody>${marketingSourceRows(marketingTables)}</tbody>
-    </table></div>
-    ${chartBlock('DoorDash vs Uber Eats — Sales Pre vs Post', 'chart-platform')}` : ''}
+    ${tableBlock('Pre vs Post', metricTableInner(summary, false), `thead-${badgeClass}`)}
+    ${tableBlock('YoY', metricTableInner(summary, true), `thead-${badgeClass}`)}
+    ${withChart ? chartBlock('DoorDash vs Uber Eats — Sales Pre vs Post', 'chart-platform') : ''}
   </div>`;
   };
 
-  const storeLevelBlock = (key, label, badgeClass) => `
-    ${badgeClass ? platformBadgeHtml(badgeClass, label, badgeClass.toUpperCase(), logos) : ''}
-    <div class="subsection-title">${label} — Pre vs Post</div>
-    <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
-      <thead><tr><th>Store ID</th><th>Store Name</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
-      <tbody>${storePrePostRows(exportStoreTables[key], 'sales', key, dominantPlatform)}</tbody>
-    </table></div>
-    <div class="subsection-title">${label} — YoY</div>
-    <div class="table-wrap ${badgeClass ? `thead-${badgeClass}` : ''}"><table>
-      <thead><tr><th>Store ID</th><th>Store Name</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${storeYoyRows(exportStoreTables[key], 'sales', key, dominantPlatform)}</tbody>
-    </table></div>`;
+  const storeLevelBlock = (key, label, badgeClass) => {
+    const badge = badgeClass ? platformBadgeHtml(badgeClass, label, badgeClass.toUpperCase(), logos) : `<div class="subsection-title">${label}</div>`;
+    const idHeaders = exportStoreIdHeaders(key);
+    const tables = storeSpecsForPlatform(key).map((spec) => `
+    ${tableBlock(`${spec.label} — Pre vs Post`, `<table>
+      <thead><tr>${idHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}<th>Store Name</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
+      <tbody>${storePrePostRows(exportStoreTables[key], spec, key, dominantPlatform, ddToUe, ddStoreIdToMerchant)}</tbody>
+    </table>`, badgeClass ? `thead-${badgeClass}` : '')}
+    ${tableBlock(`${spec.label} — YoY`, `<table>
+      <thead><tr>${idHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}<th>Store Name</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+      <tbody>${storeYoyRows(exportStoreTables[key], spec, key, dominantPlatform, ddToUe, ddStoreIdToMerchant)}</tbody>
+    </table>`, badgeClass ? `thead-${badgeClass}` : '')}`).join('');
+    return `${badge}${tables}`;
+  };
 
-  const daypartBlock = (slot, label, badgeClass, logo) => slot ? `
-    ${platformBadgeHtml(badgeClass, label, logo, logos)}
-    <div class="subsection-title">Sales — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
-      <tbody>${slotPrePostRows(slot.salesPrePost)}</tbody></table></div>
-    <div class="subsection-title">Sales — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${slotYoyRows(slot.salesYoY)}</tbody></table></div>
-    <div class="subsection-title">Payouts — Pre vs Post</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
-      <tbody>${slotPrePostRows(slot.payoutsPrePost)}</tbody></table></div>
-    <div class="subsection-title">Payouts — YoY</div>
-    <div class="table-wrap thead-${badgeClass}"><table><thead><tr><th>Daypart</th><th>Slot time</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-      <tbody>${slotYoyRows(slot.payoutsYoY)}</tbody></table></div>` : '';
+  const daypartBlock = (slot, label, badgeClass, logo) => {
+    if (!slot) return '';
+    const metricTables = SLOT_METRIC_TABLES.map(({ key, title, valueKind }) => `
+    ${tableBlock(`${title} — Pre vs Post`, `<table><thead><tr><th>Daypart</th><th>Slot time</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>Growth %</th></tr></thead>
+      <tbody>${slotPrePostRows(slot[`${key}PrePost`], valueKind)}</tbody></table>`, `thead-${badgeClass}`)}
+    ${tableBlock(`${title} — YoY`, `<table><thead><tr><th>Daypart</th><th>Slot time</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
+      <tbody>${slotYoyRows(slot[`${key}YoY`], valueKind)}</tbody></table>`, `thead-${badgeClass}`)}`).join('');
+    return `${platformBadgeHtml(badgeClass, label, logo, logos)}${metricTables}`;
+  };
 
   const printBar = variant === 'screen'
-    ? `<div class="print-bar no-print"><button class="btn btn-accent" onclick="window.print()">Print / Save as PDF</button><span class="print-label">TODC Partnership Performance Report</span></div>`
+    ? `<div class="print-bar no-print"><button class="btn btn-accent" id="printBtn" disabled>Preparing charts…</button><span class="print-label" id="printStatus">Rendering charts for PDF export…</span></div>`
     : '';
 
   return `${printBar}
@@ -686,34 +820,28 @@ function buildReportBody(data, config, variant, logos = null) {
         ${kpiCard('Sales Growth', cSales ? `${num(cSales.growthPct, 1)}%` : '—', cSales?.yoyPct, !!cSales)}
         ${kpiCard('Order Growth', cOrders ? `${num(cOrders.growthPct, 1)}%` : '—', cOrders?.yoyPct, !!cOrders)}
         ${kpiCard('New Customers', cNewCust ? num(cNewCust.post) : '—', cNewCust?.growthPct, !!cNewCust, 'Pre vs Post')}
-        ${kpiCard('Payout Lift / Store', payoutLiftPerStore != null ? `$${num(payoutLiftPerStore)}` : '—', cPay?.yoyPct, payoutLiftPerStore != null)}
+        ${kpiCard('Payout Δ/Store', payoutPerStore != null ? `$${num(payoutPerStore)}` : '—', cPay?.yoyPct, payoutPerStore != null)}
         ${kpiCard('Avg Markup', '—', null, false)}
       </div>
-      <div class="subsection-title">Pre-TODC YoY Baseline (Sales)</div>
-      <div class="table-wrap"><table>
+      ${tableBlock('Pre-TODC YoY Baseline (Sales)', `<table>
         <thead><tr><th>Platform</th><th>Prior Year</th><th>Current Year</th><th>Δ ($)</th><th>Δ (%)</th></tr></thead>
         <tbody>${baselineRows(summaryTables, logos) || emptyRow(5)}</tbody>
-      </table></div>
+      </table>`)}
+      ${buildOverviewSpotlightHtml(data, config, storeTables)}
     </div>
+
+    ${mapSectionHtml(mapImageDataUri, operatorDisplay)}
 
     <div class="section">
       <div class="section-header gold"><div class="section-title">Store Level Markups</div><div class="section-num">02</div></div>
-      ${markupTable(storeTables)}
+      ${keepTogether('', markupTable(storeTables, ddToUe, ddStoreIdToMerchant))}
     </div>
 
     <div class="section">
       <div class="section-header gold"><div class="section-title">Combined Performance</div><div class="section-num">03</div></div>
-      <div class="subsection-title">Pre vs Post</div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Metric</th><th>Pre</th><th>Post</th><th>Δ ($)</th><th>LY Δ ($)</th><th>Growth %</th><th>LY Growth %</th></tr></thead>
-        <tbody>${metricPrePostRows(summaryTables.combined) || emptyRow(6)}</tbody>
-      </table></div>
+      ${tableBlock('Pre vs Post', metricTableInner(summaryTables.combined, false))}
       ${chartBlock('Sales &amp; Payout — Pre vs Post (Combined)', 'chart-combined-pvp')}
-      <div class="subsection-title">YoY: Post (Last Year) vs Post (Current)</div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Metric</th><th>LY Post</th><th>Post</th><th>YoY ($)</th><th>YoY %</th></tr></thead>
-        <tbody>${metricYoyRows(summaryTables.combined) || emptyRow(5)}</tbody>
-      </table></div>
+      ${tableBlock('YoY: Post (Last Year) vs Post (Current)', metricTableInner(summaryTables.combined, true))}
       ${chartBlock('YoY Sales — DoorDash / Uber Eats / Combined', 'chart-yoy')}
     </div>
 
@@ -734,7 +862,9 @@ function buildReportBody(data, config, variant, logos = null) {
       ${daypartBlock(ueSlot, 'Uber Eats', 'ue', 'UE · Day Part')}
     </div>
 
-    ${buildAppendixScreenSection(data)}
+    ${buildMarketingDocSection(marketingTables)}
+
+    ${buildOperationsDocSection(data)}
 
     ${buildSlotDefinitionsScreenSection()}
 
@@ -860,6 +990,38 @@ function chartScript(chart) {
   bar('chart-yoy', DATA.yoy.labels, DATA.yoy.pre, DATA.yoy.post, true);
   bar('chart-platform', DATA.platform.labels, DATA.platform.pre, DATA.platform.post, true);
   bar('chart-daypart-dd', DATA.daypart.labels, DATA.daypart.pre, DATA.daypart.post, true);
+
+  function finalizeChartsForPrint() {
+    document.querySelectorAll('.chart-canvas-wrap canvas').forEach(function (canvas) {
+      try {
+        var img = document.createElement('img');
+        img.src = canvas.toDataURL('image/png');
+        img.className = 'chart-print-img';
+        img.alt = canvas.closest('.chart-container')?.querySelector('.chart-title')?.textContent || 'Chart';
+        canvas.parentNode.insertBefore(img, canvas);
+      } catch (err) {
+        console.warn('Chart print image failed', err);
+      }
+    });
+  }
+
+  function markPrintReady() {
+    finalizeChartsForPrint();
+    var btn = document.getElementById('printBtn');
+    var status = document.getElementById('printStatus');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Print / Save as PDF';
+      btn.onclick = function () { window.print(); };
+    }
+    if (status) status.textContent = 'Charts ready — use Print / Save as PDF';
+  }
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { setTimeout(markPrintReady, 350); });
+  } else {
+    window.addEventListener('load', function () { setTimeout(markPrintReady, 500); });
+  }
 </script>`;
 }
 
@@ -965,27 +1127,49 @@ const UE_ACCENT = { bg: W.posBg, text: '#04864a' };
 
 const PVP_METRIC_HEADERS = ['Metric', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
 const YOY_METRIC_HEADERS = ['Metric', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
-const STORE_PVP_HEADERS = ['Store ID', 'Store Name', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
-const STORE_YOY_HEADERS = ['Store ID', 'Store Name', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
-const SLOT_PVP_HEADERS = ['Daypart', 'Slot time', 'Pre', 'Post', 'Δ ($)', 'Growth %'];
+const STORE_PVP_HEADERS = [...EXPORT_STORE_ID_HEADERS, 'Store Name', 'Pre', 'Post', 'Δ ($)', 'LY Δ ($)', 'Growth %', 'LY Growth %'];
+const STORE_YOY_HEADERS = [...EXPORT_STORE_ID_HEADERS, 'Store Name', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
+const SLOT_PVP_HEADERS = ['Daypart', 'Slot time', 'Pre', 'Post', 'Δ ($)', 'Growth %', 'LY Δ ($)', 'LY Growth %'];
 const SLOT_YOY_HEADERS = ['Daypart', 'Slot time', 'LY Post', 'Post', 'YoY ($)', 'YoY %'];
 
-function buildAppendixWordSection(data) {
-  const rows = getDowntimeStoreRows(data);
-  if (!rows.length) return '';
+function buildOperationsWordSection(data) {
+  const sections = collectOperationsExportSections(data);
+  if (!sections.length) return '';
+  const body = sections.map((sec) => {
+    if (sec.type === 'block') {
+      const [headers, ...rows] = sec.blockRows;
+      const tableBody = rows.map((row) => `<tr>${row.map((cell, i) => (i === 0 ? wLabelTd(cell) : wValTd(cell, 'text'))).join('')}</tr>`).join('');
+      return `${wSub(sec.title)}${wDataTable(headers, tableBody)}`;
+    }
+    const tableBody = (sec.rows || []).map((row) => `<tr>${row.map((cell, i) => (i === 0 ? wLabelTd(cell) : wValTd(cell, 'text'))).join('')}</tr>`).join('');
+    return `${wSub(sec.title)}${wDataTable(sec.headers, tableBody)}`;
+  }).join('');
+  return `${wSectionHeader('Operations', '09', W.mcRed)}${body}`;
+}
 
-  const body = rows.map((r) => `<tr>
-    ${wLabelTd(r.store)}
-    ${wValTd(r.days, 'int')}
-    ${wValTd(r.hours, 'int')}
-    ${wValTd(r.minutes, 'int')}
-    ${wValTd(r.totalMinutes, 'int')}
-    ${wValTd(r.lineCount, 'int')}
-  </tr>`).join('');
-
-  return `${wSectionHeader('Appendix', '08', W.mcRed)}
-    ${wSub('DoorDash Downtime — by store')}
-    ${wDataTable(DOWNTIME_REPORT_HEADERS, body)}`;
+function buildMarketingWordSection(marketingTables) {
+  if (!marketingTables?.bySource?.combined?.corp) return '';
+  const combined = marketingTables.bySource.combined;
+  const { promoCampaigns, adsCampaigns } = marketingCampaignSlices(marketingTables);
+  const impactHead = MARKETING_IMPACT_HEADERS;
+  const campaignHead = CAMPAIGN_IMPACT_HEADERS;
+  const wImpact = (table, period) => wDataTable(impactHead, marketingImpactDocRows(table, period));
+  const wCampaigns = (rows) => wDataTable(campaignHead, marketingCampaignDocRows(rows));
+  const highlight = (label, campaigns, kind, title) => {
+    const rows = buildCampaignHighlights(campaigns, kind);
+    return rows.length ? `${wSub(`${label} — ${title}`)}${wCampaigns(rows)}` : '';
+  };
+  return `${wSectionHeader('Marketing', '08', W.accentBar)}
+    ${wSub('Corp vs TODC — Post period')}${wImpact(combined, 'post')}
+    ${wSub('Corp vs TODC — Pre period')}${wImpact(combined, 'pre')}
+    ${promoCampaigns.length ? `${wSub('Promo campaigns (post period)')}${wCampaigns(promoCampaigns)}` : ''}
+    ${highlight('Promo', promoCampaigns, 'topRoas', 'Top by ROAS')}
+    ${highlight('Promo', promoCampaigns, 'topSpend', 'Top by spend')}
+    ${highlight('Promo', promoCampaigns, 'poorRoas', 'Bottom by ROAS')}
+    ${adsCampaigns.length ? `${wSub('Ads campaigns (post period)')}${wCampaigns(adsCampaigns)}` : ''}
+    ${highlight('Ads', adsCampaigns, 'topRoas', 'Top by ROAS')}
+    ${highlight('Ads', adsCampaigns, 'topSpend', 'Top by spend')}
+    ${highlight('Ads', adsCampaigns, 'poorRoas', 'Bottom by ROAS')}`;
 }
 
 function wMetricPvp(summary) {
@@ -1004,41 +1188,35 @@ function wMetricYoy(summary) {
     return `<tr>${wLabelTd(METRIC_LABELS[m])}${wValTd(r.postLY, k)}${wValTd(r.post, k)}${wDeltaTd(r.yoy, k)}${wDeltaTd(r.yoyPct, 'pct')}</tr>`;
   }).join('') || wEmpty(5);
 }
-function wStorePvp(stores, platform = 'combined', dominantPlatform = 'dd') {
+function wStorePvp(stores, spec, platform = 'combined', dominantPlatform = 'dd', ddToUeStoreMap = {}) {
+  const kind = storeSpecValueKind(spec);
   return (stores || []).map((s) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(s, dominantPlatform)
-      : legacyStoreIdCell(s, platform);
-    const storeName = platform === 'combined'
-      ? combinedExportStoreName(s, dominantPlatform)
-      : exportStoreName(s);
+    const { ddMerchantStoreId, ueStoreId, storeName } = storeCells(s, platform, dominantPlatform, ddToUeStoreMap);
     if (s._isNa) {
-      return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'pct')}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
+      return `<tr>${wLabelTd(ddMerchantStoreId)}${wLabelTd(ueStoreId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, kind)}${wDeltaTd(EXPORT_NA, kind)}${wDeltaTd(EXPORT_NA, 'pct')}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
     }
-    return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(s.pre_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_prevspost, 'usd')}${wDeltaTd(s.sales_ly_prevspost, 'usd')}${wDeltaTd(s.sales_growth_pct, 'pct')}${wDeltaTd(s.sales_ly_growth_pct, 'pct')}</tr>`;
-  }).join('') || wEmpty(8);
+    return `<tr>${wLabelTd(ddMerchantStoreId)}${wLabelTd(ueStoreId)}${wLabelTd(storeName)}${wValTd(s[spec.preKey], kind)}${wValTd(s[spec.postKey], kind)}${wDeltaTd(s[spec.deltaKey], kind)}${wDeltaTd(s[spec.lyDeltaKey], kind)}${wDeltaTd(s[spec.deltaPctKey], 'pct')}${wDeltaTd(s[spec.lyDeltaPctKey], 'pct')}</tr>`;
+  }).join('') || wEmpty(9);
 }
-function wStoreYoy(stores, platform = 'combined', dominantPlatform = 'dd') {
+function wStoreYoy(stores, spec, platform = 'combined', dominantPlatform = 'dd', ddToUeStoreMap = {}) {
+  const kind = storeSpecValueKind(spec);
   return (stores || []).map((s) => {
-    const storeId = platform === 'combined'
-      ? combinedExportStoreId(s, dominantPlatform)
-      : legacyStoreIdCell(s, platform);
-    const storeName = platform === 'combined'
-      ? combinedExportStoreName(s, dominantPlatform)
-      : exportStoreName(s);
+    const { ddMerchantStoreId, ueStoreId, storeName } = storeCells(s, platform, dominantPlatform, ddToUeStoreMap);
     if (s._isNa) {
-      return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, 'usd')}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
+      return `<tr>${wLabelTd(ddMerchantStoreId)}${wLabelTd(ueStoreId)}${wLabelTd(storeName)}${wValTd(EXPORT_NA, 'text')}${wValTd(EXPORT_NA, 'text')}${wDeltaTd(EXPORT_NA, kind)}${wDeltaTd(EXPORT_NA, 'pct')}</tr>`;
     }
-    return `<tr>${wLabelTd(storeId)}${wLabelTd(storeName)}${wValTd(s.postLY_sales, 'usd')}${wValTd(s.post_sales, 'usd')}${wDeltaTd(s.sales_yoy, 'usd')}${wDeltaTd(s.sales_yoy_pct, 'pct')}</tr>`;
-  }).join('') || wEmpty(6);
+    return `<tr>${wLabelTd(ddMerchantStoreId)}${wLabelTd(ueStoreId)}${wLabelTd(storeName)}${wValTd(s[spec.postLyKey], kind)}${wValTd(s[spec.postKey], kind)}${wDeltaTd(s[spec.yoyDeltaKey], kind)}${wDeltaTd(s[spec.yoyPctKey], 'pct')}</tr>`;
+  }).join('') || wEmpty(7);
 }
-function wSlotPvp(rows) {
+function wSlotPvp(rows, valueKind = 'usd') {
+  const kind = slotValueKind(valueKind);
   return (rows || []).map(r =>
-    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.pre, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.prevspost, 'usd')}${wDeltaTd(r.growthPct, 'pct')}</tr>`).join('') || wEmpty(6);
+    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.pre, kind)}${wValTd(r.post, kind)}${wDeltaTd(r.prevspost, kind)}${wDeltaTd(r.growthPct, 'pct')}${wDeltaTd(r.lyPrevspost, kind)}${wDeltaTd(r.lyGrowthPct, 'pct')}</tr>`).join('') || wEmpty(8);
 }
-function wSlotYoy(rows) {
+function wSlotYoy(rows, valueKind = 'usd') {
+  const kind = slotValueKind(valueKind);
   return (rows || []).map(r =>
-    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.postLY, 'usd')}${wValTd(r.post, 'usd')}${wDeltaTd(r.yoy, 'usd')}${wDeltaTd(r.yoyPct, 'pct')}</tr>`).join('') || wEmpty(6);
+    `<tr>${wLabelTd(r.slot)}${wLabelTd(getSlotTimeRange(r.slot))}${wValTd(r.postLY, kind)}${wValTd(r.post, kind)}${wDeltaTd(r.yoy, kind)}${wDeltaTd(r.yoyPct, 'pct')}</tr>`).join('') || wEmpty(6);
 }
 function wBaseline(summaryTables, logos) {
   const rows = [
@@ -1056,14 +1234,6 @@ function wMetaLabel(text, logos) {
     : '';
   return `${img}${escapeHtml(text)}`;
 }
-function wMarketing(marketingTables) {
-  const src = marketingTables?.bySource?.combined;
-  const make = (e) => e
-    ? `<tr>${wLabelTd(e.label)}${wValTd(e.ordersPost, 'int')}${wValTd(e.salesPost, 'usd')}${wValTd(e.spendPost, 'usd')}${wValTd(e.roasPost, 'roas')}${wValTd(e.cpoPost, 'usd2')}</tr>`
-    : '';
-  return `${make(src?.corp)}${make(src?.todc)}` || wEmpty(6);
-}
-
 function wKpiStrip(cards) {
   const width = `${Math.floor(100 / cards.length)}%`;
   const tds = cards.map(c => `<td style="border:1px solid ${W.border};border-top:3px solid ${W.accentBar};padding:14px 8px;text-align:center;width:${width};vertical-align:top">
@@ -1084,13 +1254,15 @@ function wMetaGrid(cells) {
   }
   return `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-bottom:32px">${rows}</table>`;
 }
-function wMarkupRows(stores) {
+function wMarkupRows(stores, dominantPlatform = 'dd', ddToUeStoreMap = {}) {
   if (!stores.length) {
     return Array.from({ length: 3 }, () =>
-      `<tr>${wLabelTd('[Store Name]')}${wValTd('[XX%]', 'text')}</tr>`).join('');
+      `<tr>${wLabelTd('[DD ID]')}${wLabelTd('[UE ID]')}${wValTd('[XX%]', 'text')}</tr>`).join('');
   }
-  return stores.map((s) =>
-    `<tr>${wLabelTd(s.storeId)}${wValTd('—', 'text')}</tr>`).join('');
+  return stores.map((s) => {
+    const [ddMerchantStoreId, ueStoreId] = exportStoreIdCells(s, 'combined', dominantPlatform, ddToUeStoreMap);
+    return `<tr>${wLabelTd(ddMerchantStoreId)}${wLabelTd(ueStoreId)}${wValTd('—', 'text')}</tr>`;
+  }).join('');
 }
 
 function buildWordReportHtml(data, config, logos = null) {
@@ -1103,7 +1275,8 @@ function buildWordReportHtml(data, config, logos = null) {
     ue: alignedStores.ue,
   };
   const dominantPlatform = alignedStores.dominantPlatform;
-  const marketingTables = data.marketingTables || {};
+  const ddToUe = config?.ddToUeStoreMap || {};
+  const marketingTables = resolveMarketingTables(data, config) || data.marketingTables || {};
   const ddSlot = platformSlotAnalysis(data, config, 'dd');
   const ueSlot = platformSlotAnalysis(data, config, 'ue');
 
@@ -1114,7 +1287,7 @@ function buildWordReportHtml(data, config, logos = null) {
   const cNewCust = ncSummary?.combined;
   const ddStores = activeStoreCount(storeTables, 'dd');
   const ueStores = activeStoreCount(storeTables, 'ue');
-  const payoutLiftPerStore = cPay && (ddStores + ueStores) > 0 ? cPay.prevspost / (ddStores + ueStores) : null;
+  const payoutPerStore = payoutDeltaPerStoreForSection(summaryTables, storeTables, 'combined');
 
   const prePeriod = periodText(config.ddPreStart, config.ddPreEnd);
   const postPeriod = periodText(config.ddPostStart, config.ddPostEnd);
@@ -1172,45 +1345,49 @@ function buildWordReportHtml(data, config, logos = null) {
           : 'no data',
         deltaColor: cNewCust ? (Number(cNewCust.growthPct) < 0 ? W.negText : W.posText) : W.muted,
       },
-      { label: 'Payout Lift / Store', value: payoutLiftPerStore != null ? `$${num(payoutLiftPerStore)}` : '—', ...payKpi },
+      { label: 'Payout Δ/Store', value: payoutPerStore != null ? `$${num(payoutPerStore)}` : '—', ...payKpi },
       { label: 'Avg Markup', value: '—', delta: 'combined', deltaColor: W.muted },
     ].map(c => ({ label: c.label, value: c.value, delta: c.delta, deltaColor: c.deltaColor || c.color })))}
     ${wSub('Pre-TODC YoY Baseline (Sales)')}
     ${wDataTable(['Platform', 'Prior Year', 'Current Year', 'Δ ($)', 'Δ (%)'], wBaseline(summaryTables, logos))}`;
 
-  const markups = `${wSectionHeader('Store Level Markups', '02', W.accentBar)}${wDataTable(['Store Name', 'Markup'], wMarkupRows(storeTables.combined || storeTables.dd || storeTables.ue || []))}`;
+  const markups = `${wSectionHeader('Store Level Markups', '02', W.accentBar)}${wDataTable([...EXPORT_STORE_ID_HEADERS, 'Markup'], wMarkupRows(storeTables.combined || storeTables.dd || storeTables.ue || [], dominantPlatform, ddToUe))}`;
 
   const combined = `${wSectionHeader('Combined Performance', '03', W.accentBar)}
     ${wSub('Pre vs Post')}${wDataTable(PVP_METRIC_HEADERS, wMetricPvp(summaryTables.combined))}
     ${wSub('YoY: Post (Last Year) vs Post (Current)')}${wDataTable(YOY_METRIC_HEADERS, wMetricYoy(summaryTables.combined))}`;
 
-  const platform = (key, label, accent, badge, logo, num2, withMarketing) => `${wBadge(label, logo, badge, logos, key, num2)}
+  const platform = (key, label, accent, badge, logo, num2) => `${wBadge(label, logo, badge, logos, key, num2)}
     ${wSub('Pre vs Post')}${wDataTable(PVP_METRIC_HEADERS, wMetricPvp(summaryTables[key]), accent)}
-    ${wSub('YoY')}${wDataTable(YOY_METRIC_HEADERS, wMetricYoy(summaryTables[key]), accent)}
-    ${withMarketing ? `${wSub('Corporate vs TODC — Promos & Ads')}${wDataTable(['Campaign', 'Orders', 'Sales', 'Spend', 'ROAS', 'Cost / Order'], wMarketing(marketingTables), accent)}` : ''}`;
+    ${wSub('YoY')}${wDataTable(YOY_METRIC_HEADERS, wMetricYoy(summaryTables[key]), accent)}`;
 
-  const storeBlock = (key, label, accent, badge, logo, badgeColor, platformKey) => `
-    ${badge ? wBadge(label, logo, badgeColor, logos, platformKey) : wSub(label)}
-    ${wSub(`${label} — Pre vs Post`)}${wDataTable(STORE_PVP_HEADERS, wStorePvp(exportStoreTables[key], key, dominantPlatform), accent)}
-    ${wSub(`${label} — YoY`)}${wDataTable(STORE_YOY_HEADERS, wStoreYoy(exportStoreTables[key], key, dominantPlatform), accent)}`;
+  const storeBlock = (key, label, accent, badge, logo, badgeColor, platformKey) => {
+    const head = badge ? wBadge(label, logo, badgeColor, logos, platformKey) : wSub(label);
+    const tables = storeSpecsForPlatform(key).map((spec) => `
+    ${wSub(`${spec.label} — Pre vs Post`)}${wDataTable(STORE_PVP_HEADERS, wStorePvp(exportStoreTables[key], spec, key, dominantPlatform, ddToUe), accent)}
+    ${wSub(`${spec.label} — YoY`)}${wDataTable(STORE_YOY_HEADERS, wStoreYoy(exportStoreTables[key], spec, key, dominantPlatform, ddToUe), accent)}`).join('');
+    return `${head}${tables}`;
+  };
 
   const stores = `${wSectionHeader('Store Level Analysis', '06', W.accentBar)}
     ${storeBlock('combined', 'Combined', null, false)}
     ${storeBlock('dd', 'DoorDash — Store Level', DD_ACCENT, true, 'DD', W.ddRed, 'dd')}
     ${storeBlock('ue', 'Uber Eats — Store Level', UE_ACCENT, true, 'UE', W.ueGreen, 'ue')}`;
 
-  const daypart = (slot, label, accent, logo, badgeColor, platformKey) => slot ? `
-    ${wBadge(label, logo, badgeColor, logos, platformKey)}
-    ${wSub('Sales — Pre vs Post')}${wDataTable(SLOT_PVP_HEADERS, wSlotPvp(slot.salesPrePost), accent)}
-    ${wSub('Sales — YoY')}${wDataTable(SLOT_YOY_HEADERS, wSlotYoy(slot.salesYoY), accent)}
-    ${wSub('Payouts — Pre vs Post')}${wDataTable(SLOT_PVP_HEADERS, wSlotPvp(slot.payoutsPrePost), accent)}
-    ${wSub('Payouts — YoY')}${wDataTable(SLOT_YOY_HEADERS, wSlotYoy(slot.payoutsYoY), accent)}` : '';
+  const daypart = (slot, label, accent, logo, badgeColor, platformKey) => {
+    if (!slot) return '';
+    const metrics = SLOT_METRIC_TABLES.map(({ key, title, valueKind }) => `
+    ${wSub(`${title} — Pre vs Post`)}${wDataTable(SLOT_PVP_HEADERS, wSlotPvp(slot[`${key}PrePost`], valueKind), accent)}
+    ${wSub(`${title} — YoY`)}${wDataTable(SLOT_YOY_HEADERS, wSlotYoy(slot[`${key}YoY`], valueKind), accent)}`).join('');
+    return `${wBadge(label, logo, badgeColor, logos, platformKey)}${metrics}`;
+  };
 
   const dayparts = `${wSectionHeader('Day Part Analysis', '07', W.accentBar)}
     ${daypart(ddSlot, 'DoorDash', DD_ACCENT, 'DD · Day Part', W.ddRed, 'dd')}
     ${daypart(ueSlot, 'Uber Eats', UE_ACCENT, 'UE · Day Part', W.ueGreen, 'ue')}`;
 
-  const appendix = buildAppendixWordSection(data);
+  const marketing = buildMarketingWordSection(marketingTables);
+  const operations = buildOperationsWordSection(data);
   const slotDefinitions = buildSlotDefinitionsWordSection();
 
   const footer = `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;border-top:1px solid ${W.border};margin-top:24px"><tr>
@@ -1220,10 +1397,11 @@ function buildWordReportHtml(data, config, logos = null) {
 
   const sections = [
     cover, meta, overview, markups, combined,
-    platform('dd', 'DoorDash', DD_ACCENT, W.ddRed, 'DD · Platform Analytics', '04', true),
-    platform('ue', 'Uber Eats', UE_ACCENT, W.ueGreen, 'UE · Platform Analytics', '05', false),
+    platform('dd', 'DoorDash', DD_ACCENT, W.ddRed, 'DD · Platform Analytics', '04'),
+    platform('ue', 'Uber Eats', UE_ACCENT, W.ueGreen, 'UE · Platform Analytics', '05'),
     stores, dayparts,
-    ...(appendix ? [appendix] : []),
+    ...(marketing ? [marketing] : []),
+    ...(operations ? [operations] : []),
     slotDefinitions,
     footer,
   ].join('\n');
@@ -1245,7 +1423,7 @@ ${sections}
  *   - 'screen': light Super App theme with Chart.js charts (used for Print → PDF).
  *   - 'word': light, table-based, inline-styled build for Word / Google Docs fidelity.
  */
-export function buildReportHtml(data, config, { variant = 'screen', logos = null } = {}) {
+export function buildReportHtml(data, config, { variant = 'screen', logos = null, mapImageDataUri = null } = {}) {
   if (variant === 'word') return buildWordReportHtml(data, config, logos);
   const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet">';
   return `<!DOCTYPE html>
@@ -1254,7 +1432,7 @@ export function buildReportHtml(data, config, { variant = 'screen', logos = null
 ${fonts}
 <style>${reportCss()}</style>
 </head><body>
-${buildReportBody(data, config, 'screen', logos)}
+${buildReportBody(data, config, 'screen', logos, mapImageDataUri)}
 </body></html>`;
 }
 
@@ -1282,7 +1460,13 @@ export async function downloadReportDoc(data, config, baseName, logos = null) {
 /** Open the report in a new tab for Print → Save as PDF. */
 export async function openReportForPdf(data, config) {
   const logos = await loadBrandLogosAsDataUri();
-  const html = buildReportHtml(data, config, { variant: 'screen', logos });
+  let mapImageDataUri = null;
+  try {
+    mapImageDataUri = await captureOperatorMapScreenshot(config, data?.storeTables);
+  } catch (err) {
+    console.warn('Map capture skipped:', err);
+  }
+  const html = buildReportHtml(data, config, { variant: 'screen', logos, mapImageDataUri });
   const pdfName = buildExportFilename(config, 'pdf', { ext: 'pdf' });
   const win = window.open('', '_blank');
   if (!win) return false;

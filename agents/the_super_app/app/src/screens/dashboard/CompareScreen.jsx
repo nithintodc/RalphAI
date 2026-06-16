@@ -8,6 +8,7 @@ import PlatformLogo from '../../components/ui/PlatformLogo';
 const METRIC_LABELS = {
   sales: 'Sales', payouts: 'Payouts', orders: 'Orders',
   profitability: 'Profitability', aov: 'Average Check (AOV)',
+  adsSpend: 'Ads Spend', promoSpend: 'Promo Spend', mktSpend: 'Marketing Spend',
 };
 
 function renderVal(metric) {

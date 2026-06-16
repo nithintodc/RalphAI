@@ -422,13 +422,13 @@ export function getPlatformDailyExtremes(financialOrPair, platform, start, end, 
 
 /** Slot dayparts with highest / lowest Pre→Post sales growth. */
 export function getSlotSpotlight(rawData, config, platform) {
-  if (!rawData?.length) return { stars: [], declining: [], count: 0 };
   const prefix = platform === 'ue' ? 'ue' : 'dd';
   const preStart = config[`${prefix}PreStart`];
   const preEnd = config[`${prefix}PreEnd`];
   const postStart = config[`${prefix}PostStart`];
   const postEnd = config[`${prefix}PostEnd`];
   if (!preStart || !postStart) return { stars: [], declining: [], count: 0 };
+  if (!rawData?.length) return { stars: [], declining: [], count: 0 };
 
   const analysis = buildSlotAnalysis(rawData, {
     preStart,
@@ -436,9 +436,10 @@ export function getSlotSpotlight(rawData, config, platform) {
     postStart,
     postEnd,
     excludedDates: config[`${prefix}ExcludedDates`] || [],
+    excludedStores: config[`${prefix}ExcludedStores`] || [],
     platform,
   });
-  const rows = (analysis.salesPrePost || []).map((r) => ({
+  const rows = (analysis?.salesPrePost || []).map((r) => ({
     slot: r.slot,
     sales_growth_pct: r.growthPct,
   }));

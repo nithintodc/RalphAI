@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Plus, RotateCw, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Download, Plus, RotateCw, Upload, X } from 'lucide-react';
 import {
   buildDdStoreCatalog,
   buildUeStoreCatalog,
@@ -7,6 +7,7 @@ import {
   applyUeSelection,
   formatUeOptionLabel,
 } from '../../lib/utils/storeCatalog';
+import { downloadStoreMapCsv, parseStoreMapCsv } from '../../lib/utils/storeMapCsv';
 import { STORE_TAG_LABELS } from '../../lib/export/exportSheetSummaries';
 
 const TAG_OPTIONS = [
@@ -20,7 +21,10 @@ export default function StoreMapEditor({
   ueFinancial,
   rows,
   setRows,
+  operatorName = '',
 }) {
+  const fileInputRef = useRef(null);
+  const [importPreview, setImportPreview] = useState(null);
   const ddCatalog = useMemo(() => buildDdStoreCatalog(ddFinancial), [ddFinancial]);
   const ueCatalog = useMemo(() => buildUeStoreCatalog(ueFinancial), [ueFinancial]);
   const ddById = useMemo(() => new Map(ddCatalog.map((d) => [d.id, d])), [ddCatalog]);
@@ -35,7 +39,12 @@ export default function StoreMapEditor({
     setRows((prev) => prev.map((r) => ({ ...r, tag: '' })));
   };
 
+  const setAllTags = (tag) => {
+    setRows((prev) => prev.map((r) => ({ ...r, tag })));
+  };
+
   const resetSuggested = () => {
+    setImportPreview(null);
     setRows(buildSuggestedMapRows(ddCatalog, ueCatalog, {}));
   };
 
@@ -47,7 +56,50 @@ export default function StoreMapEditor({
   };
 
   const removeRow = (index) => {
+    setImportPreview(null);
     setRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const downloadMapping = () => {
+    const safeName = String(operatorName || 'operator').replace(/[^\w.-]+/g, '_').slice(0, 40);
+    const date = new Date().toISOString().slice(0, 10);
+    downloadStoreMapCsv(safeRows, `store-mapping_${safeName}_${date}.csv`);
+  };
+
+  const onUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const onFileSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const result = parseStoreMapCsv(text, ddCatalog, ueCatalog);
+      if (result.errors?.length) {
+        setImportPreview({
+          kind: 'error',
+          fileName: file.name,
+          messages: result.errors,
+        });
+        return;
+      }
+      setRows(result.rows);
+      setImportPreview({
+        kind: 'success',
+        fileName: file.name,
+        messages: result.warnings,
+        stats: result.stats,
+      });
+    } catch (err) {
+      setImportPreview({
+        kind: 'error',
+        fileName: file.name,
+        messages: [err?.message || 'Could not read CSV file.'],
+      });
+    }
   };
 
   const onDdChange = (index, ddId) => {
@@ -103,6 +155,29 @@ export default function StoreMapEditor({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
+          onClick={downloadMapping}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+        >
+          <Download size={12} />
+          Download mapping (CSV)
+        </button>
+        <button
+          type="button"
+          onClick={onUploadClick}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+        >
+          <Upload size={12} />
+          Upload mapping (CSV)
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={onFileSelected}
+        />
+        <button
+          type="button"
           onClick={resetSuggested}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
         >
@@ -124,10 +199,71 @@ export default function StoreMapEditor({
         >
           Clear all tags
         </button>
+        <button
+          type="button"
+          onClick={() => setAllTags('A')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+          title={`Tag every row as A (${STORE_TAG_LABELS.A})`}
+        >
+          Select all as A
+        </button>
+        <button
+          type="button"
+          onClick={() => setAllTags('B')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)] cursor-pointer"
+          title={`Tag every row as B (${STORE_TAG_LABELS.B})`}
+        >
+          Select all as B
+        </button>
         <span className="text-[10px] text-[var(--text-subtle)] self-center">
-          {ddCatalog.length} DoorDash · {ueCatalog.length} Uber Eats stores detected
+          {safeRows.length} row{safeRows.length === 1 ? '' : 's'} in analysis · {ddCatalog.length} DoorDash · {ueCatalog.length} Uber Eats detected
         </span>
       </div>
+
+      {importPreview && (
+        <div
+          className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${
+            importPreview.kind === 'error'
+              ? 'border-red-200 bg-red-50 text-red-950'
+              : 'border-amber-200 bg-amber-50 text-amber-950'
+          }`}
+        >
+          <div className="font-medium mb-1">
+            {importPreview.kind === 'error' ? 'CSV import failed' : 'CSV import preview'} — {importPreview.fileName}
+          </div>
+          {importPreview.stats && (
+            <p className="mb-1">
+              Loaded {importPreview.stats.importedRows} row{importPreview.stats.importedRows === 1 ? '' : 's'}
+              ({importPreview.stats.mappedPairs} mapped, {importPreview.stats.ddOnly} DD-only, {importPreview.stats.ueOnly} UE-only).
+              {importPreview.stats.duplicateRowsMerged > 0 && (
+                <> {importPreview.stats.duplicateRowsMerged} duplicate row{importPreview.stats.duplicateRowsMerged === 1 ? '' : 's'} merged.</>
+              )}
+              {' '}Review the table below, edit if needed, then Analyze.
+            </p>
+          )}
+          {importPreview.messages?.length > 0 && (
+            <ul className="list-disc pl-4 space-y-0.5">
+              {importPreview.messages.map((msg) => (
+                <li key={msg}>{msg}</li>
+              ))}
+            </ul>
+          )}
+          {importPreview.kind === 'success' && (
+            <button
+              type="button"
+              onClick={() => setImportPreview(null)}
+              className="mt-2 text-[10px] underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+
+      <p className="text-[10px] text-[var(--text-subtle)] leading-relaxed">
+        Removing a row (×) excludes that store from all analysis — same as omitting it from an uploaded CSV.
+        Use <strong>Exclude Stores</strong> above for temporary exclusions without changing the map.
+      </p>
 
       <div className="overflow-x-auto rounded-lg border border-[var(--border)] max-h-[min(58vh,520px)] overflow-y-auto">
         <table className="w-full min-w-[1200px] text-xs">
@@ -215,7 +351,7 @@ export default function StoreMapEditor({
                       type="button"
                       onClick={() => removeRow(i)}
                       className="inline-flex items-center justify-center p-1 rounded hover:bg-red-50 text-[var(--text-subtle)] hover:text-[var(--negative)] cursor-pointer"
-                      title="Remove from analysis"
+                      title="Remove from analysis (excludes this store from all calculations)"
                     >
                       <X size={14} />
                     </button>

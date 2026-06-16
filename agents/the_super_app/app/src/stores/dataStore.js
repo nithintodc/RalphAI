@@ -16,6 +16,10 @@ const initialState = {
   aggregated: null,
   storeTables: null,
   summaryTables: null,
+  /** Per-platform Pre/Post & YoY store alignment ({ dd, ue }). */
+  storePeriodAlignment: null,
+  /** DD ↔ UE union stats when both platforms are loaded. */
+  crossPlatformAlignment: null,
   marketingTables: null,
   slotAnalysis: null,
   bucketAnalysis: null,
@@ -68,6 +72,8 @@ export const useDataStore = create((set, get) => ({
   setAggregated: (data) => set({ aggregated: data }),
   setStoreTables: (data) => set({ storeTables: data }),
   setSummaryTables: (data) => set({ summaryTables: data }),
+  setStorePeriodAlignment: (data) => set({ storePeriodAlignment: data }),
+  setCrossPlatformAlignment: (data) => set({ crossPlatformAlignment: data }),
   setMarketingTables: (data) => set({ marketingTables: data }),
   setSlotAnalysis: (data) => set({ slotAnalysis: data }),
   setBucketAnalysis: (data) => set({ bucketAnalysis: data }),

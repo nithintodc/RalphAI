@@ -49,7 +49,7 @@ def ralph_ads_upload_rows(ads_plan: dict) -> list[dict]:
     """
     One row per store for Ralph Ads upload:
     National Store ID when present in financial data (else DoorDash Store ID) | Slots |
-    Bid strategy (3) | Budget (sum budget_estimate for Yes ÷ 12) | Campaign Name.
+    Bid strategy (3) | Campaign Name.
 
     Each row uses key ``store_id`` (historical name) for the identifier column value.
     """
@@ -85,14 +85,11 @@ def ralph_ads_upload_rows(ads_plan: dict) -> list[dict]:
         tags = sorted(set(tags))
         if not tags:
             continue
-        total_budget_estimate = sum(float(r.get("budget_estimate") or 0) for r in yes_rows)
-        budget = round(total_budget_estimate / 12.0, 2)
         out.append(
             {
                 "store_id": sid,
                 "slots": ",".join(str(t) for t in tags),
                 "bid_strategy": 3,
-                "budget": budget,
                 "campaign_name": f"TODC-{sid}-Ads",
             }
         )

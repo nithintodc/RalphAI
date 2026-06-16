@@ -53,8 +53,8 @@ const agents = [
       "Manual: one operator + DD register Excel/CSV upload",
     ],
     outputs: [
-      "Auto: combined_analysis + campaigns.xlsx per operator",
-      "Manual: marketing_plan.json + marketing_plan.xlsx (Offers, Ads, Register slots)",
+      "Auto: combined_analysis + Campaign Mappings + slot_info.csv per operator",
+      "Manual: marketing_plan.json + marketing_plan.xlsx + slot_info.csv (Offers, Ads, Register slots)",
       "Per-operator status: success | failed | skipped",
     ],
   },
@@ -80,14 +80,14 @@ const agents = [
   {
     id: "ralphai-offers",
     name: "RalphAI — Offers",
-    desc: "Latest Strategist Offers sheet → browser-use discount campaigns (Slack progress).",
+    desc: "Auto: latest Strategist Offers sheet → discount campaigns. Manual: upload Offers CSV/Excel.",
     icon: ShoppingBag,
     status: "ready",
     color: "from-brand-400 to-emerald-700",
     inputs: [
       "Operator from Airtable account directory",
       "DoorDash credentials (auto-filled from directory)",
-      "Requires Strategist campaigns.xlsx under data/Strategist/",
+      "Requires Strategist combined_analysis (Campaign Mappings) under data/Strategist/",
     ],
     outputs: [
       "Promo campaigns created in Merchant Portal",
