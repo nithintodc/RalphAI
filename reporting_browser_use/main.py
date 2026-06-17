@@ -141,8 +141,11 @@ def _run_financial(financial_path: Path, run_dir: Path, report_start_date: str, 
         with open(dl_path, "rb") as f:
             is_zip = f.read(4) == b"PK\x03\x04"
     if not is_zip:
-        logger.warning("FinancialAgent: file is not a ZIP, skipping: %s", dl_path)
-        return None
+        # Accept extracted FINANCIAL_DETAILED CSV when DoorDash saves a loose file.
+        name = dl_path.name.lower()
+        if not (dl_path.suffix.lower() == ".csv" and "financial_detailed" in name):
+            logger.warning("FinancialAgent: file is not a ZIP or FINANCIAL_DETAILED CSV, skipping: %s", dl_path)
+            return None
     try:
         result = analysis_run(
             dl_path,

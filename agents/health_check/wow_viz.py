@@ -13,7 +13,7 @@ import numbers
 from pathlib import Path
 from typing import Optional
 
-from agents.health_check.health_summary import build_health_summary
+from agents.health_check.health_summary import build_health_summary, build_wow_table_payload
 from shared.register_wow import build_slack_summary, compare_register_slots
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ def build_register_wow_report_html(
         _json_safe({
             "summary": summary,
             "campaigns": campaigns_analysis,
+            "tables": build_wow_table_payload(dd_analysis),
         }),
         ensure_ascii=False,
         allow_nan=False,
@@ -173,7 +174,7 @@ _REPORT_TEMPLATE = r"""<!DOCTYPE html>
 <title>Health Check__TITLE_SUFFIX__</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; padding: 28px 24px 48px; max-width: 920px; margin: 0 auto; line-height: 1.5; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; padding: 28px 24px 48px; max-width: 1440px; margin: 0 auto; line-height: 1.5; }
   h1 { font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 6px; }
   .subtitle { color: #8b949e; font-size: 15px; margin-bottom: 28px; }
   .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; font-size: 13px; color: #8b949e; }
@@ -209,12 +210,63 @@ _REPORT_TEMPLATE = r"""<!DOCTYPE html>
   .all-clear { background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3); border-radius: 10px; padding: 16px 18px; color: #3fb950; font-size: 14px; margin-bottom: 24px; }
   .campaigns-section { margin-top: 40px; padding-top: 8px; border-top: 1px solid #30363d; }
   .campaigns-section h2 { font-size: 20px; color: #58a6ff; margin-bottom: 16px; }
-  table.data { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; }
-  table.data th, table.data td { padding: 8px 10px; border-bottom: 1px solid #21262d; text-align: left; }
-  table.data th { color: #8b949e; }
+  .table-wrap { overflow-x: auto; margin-bottom: 20px; }
+  .store-block { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+  .store-block h4 { font-size: 15px; color: #fff; margin-bottom: 10px; }
+  .sub-table-title { font-size: 13px; font-weight: 600; color: #8b949e; margin: 14px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; background: #0d1117; }
+  table.data th, table.data td { padding: 8px 10px; border-bottom: 1px solid #21262d; text-align: left; white-space: nowrap; }
+  table.data th { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; position: sticky; top: 0; background: #161b22; }
   table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .pos { color: #3fb950; }
   .neg { color: #f85149; }
+  .slot-grid-wrap { overflow-x: auto; margin-bottom: 16px; }
+  .slot-grid { display: grid; gap: 6px; min-width: 860px; }
+  .day-row-grid { min-width: 640px; }
+  .slot-grid-corner { font-size: 11px; color: #8b949e; align-self: end; padding: 6px 4px; }
+  .slot-grid-day-hdr { font-size: 11px; font-weight: 600; color: #c9d1d9; text-align: center; padding: 6px 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .slot-grid-row-hdr { font-size: 11px; font-weight: 600; color: #8b949e; padding: 8px 6px; display: flex; align-items: center; }
+  .slot-grid-slot-hdr { font-size: 11px; font-weight: 600; color: #8b949e; padding: 8px 6px; display: flex; align-items: center; min-height: 112px; }
+  .metric-cell { border-radius: 10px; padding: 10px 11px; font-size: 12px; line-height: 1.45; min-height: 112px; display: flex; flex-direction: column; justify-content: space-between; gap: 3px; }
+  .slot-cell-healthy, .metric-cell-healthy { background: rgba(63,185,80,0.22); border: 1px solid rgba(63,185,80,0.5); }
+  .slot-cell-neutral, .metric-cell-neutral { background: rgba(210,153,34,0.2); border: 1px solid rgba(210,153,34,0.45); }
+  .slot-cell-unhealthy, .metric-cell-unhealthy { background: rgba(248,81,73,0.22); border: 1px solid rgba(248,81,73,0.5); }
+  .slot-cell-empty, .metric-cell-empty { background: #161b22; border: 1px dashed #30363d; color: #6e7681; min-height: 112px; }
+  .metric-cell .row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .metric-cell .lbl { font-size: 10px; color: rgba(230,237,243,0.7); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0; }
+  .metric-cell .val { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; word-break: break-word; }
+  .metric-cell .delta-line { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); font-weight: 700; font-size: 12px; text-align: center; }
+  .order-mix-cell { border-radius: 10px; padding: 9px 10px; font-size: 11px; line-height: 1.4; min-height: 132px; display: flex; flex-direction: column; gap: 4px; }
+  .order-mix-cell .order-line { display: grid; grid-template-columns: 42px 1fr auto; gap: 4px; align-items: baseline; }
+  .order-mix-cell .order-line .lbl { font-size: 9px; color: rgba(230,237,243,0.75); text-transform: uppercase; }
+  .order-mix-cell .order-line .mini { font-size: 10px; color: #8b949e; text-align: right; }
+  .order-mix-cell .order-line .chg { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+  .campaign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .campaign-box { border-radius: 10px; padding: 12px 13px; min-height: 150px; display: flex; flex-direction: column; gap: 5px; }
+  .campaign-box h5 { font-size: 12px; font-weight: 600; color: #fff; margin: 0 0 4px; line-height: 1.35; word-break: break-word; }
+  .campaign-box .store-tag { font-size: 10px; color: #8b949e; margin-bottom: 4px; }
+  .campaign-box .status-tag { font-size: 10px; font-weight: 600; margin-top: auto; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 32px; }
+  .summary-box { border-radius: 10px; padding: 12px 14px; min-height: 130px; }
+  .summary-box .metric-title, .metric-cell .metric-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .order-mix-cell.metric-cell-healthy { background: rgba(63,185,80,0.22); border: 1px solid rgba(63,185,80,0.5); }
+  .order-mix-cell.metric-cell-neutral { background: rgba(210,153,34,0.2); border: 1px solid rgba(210,153,34,0.45); }
+  .order-mix-cell.metric-cell-unhealthy { background: rgba(248,81,73,0.22); border: 1px solid rgba(248,81,73,0.5); }
+  .order-mix-cell.metric-cell-empty { background: #161b22; border: 1px dashed #30363d; color: #6e7681; }
+  .summary-box .metric-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .store-row-grid { min-width: 480px; }
+  .slot-cell { border-radius: 10px; padding: 10px 11px; font-size: 12px; line-height: 1.45; min-height: 112px; display: flex; flex-direction: column; justify-content: space-between; gap: 3px; }
+  .slot-cell .row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .slot-cell .lbl { font-size: 10px; color: rgba(230,237,243,0.7); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0; }
+  .slot-cell .val { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; word-break: break-word; }
+  .slot-cell .delta-line { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); font-weight: 700; font-size: 12px; text-align: center; }
+  @media print {
+    body { max-width: none; width: 100%; padding: 12px 16px 24px; }
+    .slot-grid-wrap { overflow: visible; }
+    .slot-grid, .day-row-grid, .store-row-grid { min-width: 0; width: 100%; page-break-inside: avoid; }
+    .store-block, .drill-metric { page-break-inside: avoid; break-inside: avoid-page; }
+    .metric-cell, .slot-cell, .order-mix-cell { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
@@ -222,11 +274,9 @@ _REPORT_TEMPLATE = r"""<!DOCTYPE html>
 <p class="subtitle" id="subtitle"></p>
 <div class="legend" id="legend"></div>
 <div id="all-clear"></div>
-<table class="summary-table" id="summary-table">
-  <thead><tr><th>Metric</th><th>Week 1</th><th>Week 2</th><th>WoW change</th><th>Status</th></tr></thead>
-  <tbody id="summary-body"></tbody>
-</table>
+<div id="summary-grid" class="summary-grid"></div>
 <div id="drilldowns"></div>
+<div id="order-breakdown"></div>
 <div class="campaigns-section" id="campaigns"></div>
 <script id="wow-data" type="application/json">__EMBEDDED_DATA__</script>
 <script>
@@ -282,62 +332,235 @@ function fmtMix(mix) {
     + `<span class="c-neutral">${mix.neutral}/${mix.total} neutral</span> · `
     + `<span class="c-unhealthy">${mix.unhealthy}/${mix.total} unhealthy</span>`;
 }
-function nodeLine(metric, node) {
-  const pct = node.pct;
-  const delta = node.delta;
-  const cls = pct != null && pct < 0 ? 'neg' : '';
-  return `<span class="node-label">${node.label}</span> ${statusBadge(node.status)}`
-    + `<span class="node-stats"><span class="${cls}">${fmtPct(pct)}</span> (${fmtDelta(metric, delta)})</span>`;
+const TABLES = ROOT.tables || {};
+const W1 = LABELS.week1 || 'Week 1';
+const W2 = LABELS.week2 || 'Week 2';
+
+function deltaClass(d) { return d > 0 ? 'pos' : d < 0 ? 'neg' : ''; }
+
+function classifyFromPct(pct) {
+  if (pct == null) return 'neutral';
+  if (pct < 0) return 'unhealthy';
+  if (pct >= THRESH) return 'healthy';
+  return 'neutral';
 }
 
-function renderUnhealthyTree(metric, items, level) {
-  if (!items || !items.length) return '';
-  const unhealthy = items.filter(n => n.status === 'unhealthy');
-  if (!unhealthy.length) return '';
-  let html = '<ul class="tree">';
-  for (const node of unhealthy) {
-    html += '<li>' + nodeLine(metric, node);
-    if (level === 'stores' && node.mix) {
-      html += `<div class="mix-line">${fmtMix(node.mix)}</div>`;
-      html += renderUnhealthyTree(metric, node.days || [], 'days');
-    } else if (level === 'days' && node.mix) {
-      html += `<div class="mix-line">${fmtMix(node.mix)}</div>`;
-      const badSlots = (node.slots || []).filter(s => s.status === 'unhealthy');
-      if (badSlots.length) {
-        html += '<ul class="tree">';
-        for (const slot of badSlots) {
-          html += '<li>' + nodeLine(metric, slot) + '</li>';
-        }
-        html += '</ul>';
-      }
-    }
-    if (node.note) html += `<div class="node-stats" style="margin-top:4px">${node.note}</div>`;
-    html += '</li>';
+function cellStatusClass(status, empty) {
+  if (empty) return 'metric-cell-empty';
+  return `metric-cell-${status || 'neutral'}`;
+}
+
+function renderSummaryMetricBox(m) {
+  if (m.skipped) {
+    return `<div class="metric-cell metric-cell-empty summary-box"><div class="metric-title">${m.name}</div><span class="lbl">${m.note || 'No data'}</span></div>`;
   }
-  return html + '</ul>';
+  const status = m.status || classifyFromPct(m.pct);
+  return `<div class="metric-cell ${cellStatusClass(status, false)} summary-box">`
+    + `<div class="metric-title">${m.name}</div>`
+    + `<div class="row"><span class="lbl">${W1}</span><span class="val">${fmtVal(m.name, m.week1)}</span></div>`
+    + `<div class="row"><span class="lbl">${W2}</span><span class="val">${fmtVal(m.name, m.week2)}</span></div>`
+    + `<div class="row"><span class="lbl">Δ</span><span class="val ${deltaClass(m.delta)}">${fmtDelta(m.name, m.delta)}</span></div>`
+    + `<div class="delta-line ${pctClass(m.pct)}">${fmtPct(m.pct)}</div>`
+    + `<div style="margin-top:6px">${statusBadge(status)}</div>`
+    + '</div>';
+}
+
+function renderStoreRowGrid(stores, metric) {
+  if (!stores?.length) return '';
+  const colMin = 140;
+  let html = `<div class="slot-grid-wrap"><div class="slot-grid store-row-grid" style="grid-template-columns: 80px repeat(${stores.length}, minmax(${colMin}px, 1fr))">`;
+  html += '<div class="slot-grid-corner">Store →</div>';
+  for (const row of stores) {
+    html += `<div class="slot-grid-day-hdr">Store ${row.storeId}</div>`;
+  }
+  html += `<div class="slot-grid-row-hdr">${metric}</div>`;
+  for (const row of stores) {
+    html += renderMetricCellBox(row, metric, `Store ${row.storeId}`);
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderMetricCellBox(cell, metric, title) {
+  if (!cell) {
+    return `<div class="metric-cell metric-cell-empty" title="${title}"><span class="lbl">—</span></div>`;
+  }
+  const status = cell.status || classifyFromPct(cell.pct);
+  const empty = (cell.week1 == null || cell.week1 === 0) && (cell.week2 == null || cell.week2 === 0);
+  const cls = cellStatusClass(status, empty);
+  const pct = cell.pct;
+  const delta = cell.delta;
+  return `<div class="metric-cell ${cls}" title="${title}">`
+    + `<div class="row"><span class="lbl">${W1}</span><span class="val">${fmtVal(metric, cell.week1)}</span></div>`
+    + `<div class="row"><span class="lbl">${W2}</span><span class="val">${fmtVal(metric, cell.week2)}</span></div>`
+    + `<div class="row"><span class="lbl">Δ</span><span class="val ${deltaClass(delta)}">${fmtDelta(metric, delta)}</span></div>`
+    + `<div class="delta-line ${pctClass(pct)}">${fmtPct(pct)}</div>`
+    + '</div>';
+}
+
+function renderDayRowGrid(days, metric) {
+  const dayOrder = TABLES.dayOrder || ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const lookup = {};
+  for (const d of (days || [])) lookup[d.day] = d;
+  const colMin = 118;
+  let html = `<div class="slot-grid-wrap"><div class="slot-grid day-row-grid" style="grid-template-columns: 80px repeat(${dayOrder.length}, minmax(${colMin}px, 1fr))">`;
+  html += '<div class="slot-grid-corner">Day →</div>';
+  for (const day of dayOrder) {
+    html += `<div class="slot-grid-day-hdr">${day}</div>`;
+  }
+  html += `<div class="slot-grid-row-hdr">${metric}</div>`;
+  for (const day of dayOrder) {
+    html += renderMetricCellBox(lookup[day], metric, day);
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderSlotGrid(slots, metric) {
+  const dayOrder = TABLES.dayOrder || ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const slotOrder = TABLES.slotOrder || ['Overnight','Breakfast','Lunch','Afternoon','Dinner','Late night'];
+  const lookup = {};
+  for (const s of (slots || [])) {
+    lookup[`${s.day}|${s.daypart}`] = s;
+  }
+  const colMin = 118;
+  let html = `<div class="slot-grid-wrap"><div class="slot-grid" style="grid-template-columns: 100px repeat(${dayOrder.length}, minmax(${colMin}px, 1fr))">`;
+  html += '<div class="slot-grid-corner">Slot ↓<br>Day →</div>';
+  for (const day of dayOrder) {
+    html += `<div class="slot-grid-day-hdr">${day}</div>`;
+  }
+  for (const slot of slotOrder) {
+    html += `<div class="slot-grid-slot-hdr">${slot}</div>`;
+    for (const day of dayOrder) {
+      const cell = lookup[`${day}|${slot}`];
+      const box = renderMetricCellBox(cell, metric, `${day} · ${slot}`);
+      html += box.replace(/metric-cell/g, 'slot-cell');
+    }
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderOrderAttributionLine(lbl, block) {
+  const w1 = block?.week1 ?? 0;
+  const w2 = block?.week2 ?? 0;
+  const d = block?.delta ?? 0;
+  return `<div class="order-line"><span class="lbl">${lbl}</span>`
+    + `<span class="mini">${fmtNum(w1)}→${fmtNum(w2)}</span>`
+    + `<span class="chg ${deltaClass(d)}">${fmtDelta('Orders', d)}</span></div>`;
+}
+
+function renderOrderMixCellBox(row, title) {
+  if (!row) {
+    return `<div class="order-mix-cell metric-cell-empty" title="${title}"><span class="lbl">—</span></div>`;
+  }
+  const o = row.organic || {};
+  const p = row.promo || {};
+  const a = row.ads || {};
+  const b = row.both || {};
+  const totalDelta = (o.delta || 0) + (p.delta || 0) + (a.delta || 0) + (b.delta || 0);
+  const w1Total = (o.week1 || 0) + (p.week1 || 0) + (a.week1 || 0) + (b.week1 || 0);
+  const w2Total = (o.week2 || 0) + (p.week2 || 0) + (a.week2 || 0) + (b.week2 || 0);
+  const empty = w1Total === 0 && w2Total === 0;
+  let status = 'neutral';
+  if (totalDelta < 0) status = 'unhealthy';
+  else if (totalDelta > 0) status = 'healthy';
+  const cls = cellStatusClass(status, empty);
+  return `<div class="order-mix-cell metric-cell ${cls}" title="${title}">`
+    + renderOrderAttributionLine('Org', o)
+    + renderOrderAttributionLine('Promo', p)
+    + renderOrderAttributionLine('Ads', a)
+    + renderOrderAttributionLine('P+A', b)
+    + '</div>';
+}
+
+function renderOrderMixSlotGrid(rows, storeId) {
+  const dayOrder = TABLES.dayOrder || ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const slotOrder = TABLES.slotOrder || ['Overnight','Breakfast','Lunch','Afternoon','Dinner','Late night'];
+  const lookup = {};
+  for (const r of (rows || [])) lookup[`${r.day}|${r.daypart}`] = r;
+  const colMin = 118;
+  let html = `<div class="slot-grid-wrap"><div class="slot-grid" style="grid-template-columns: 100px repeat(${dayOrder.length}, minmax(${colMin}px, 1fr))">`;
+  html += '<div class="slot-grid-corner">Slot ↓<br>Day →</div>';
+  for (const day of dayOrder) {
+    html += `<div class="slot-grid-day-hdr">${day}</div>`;
+  }
+  for (const slot of slotOrder) {
+    html += `<div class="slot-grid-slot-hdr">${slot}</div>`;
+    for (const day of dayOrder) {
+      html += renderOrderMixCellBox(lookup[`${day}|${slot}`], `Store ${storeId} · ${day} · ${slot}`);
+    }
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderMetricGrids(metric, view) {
+  if (!view || !view.stores?.length) return '';
+  let html = `<p class="sub-table-title">All stores (row grid)</p>`;
+  html += renderStoreRowGrid(view.stores, metric);
+  for (const row of view.stores) {
+    const sid = row.storeId;
+    const days = (view.daysByStore || {})[sid] || [];
+    const slots = (view.slotsByStore || {})[sid] || [];
+    html += `<div class="store-block"><h4>Store ${sid}</h4>`;
+    if (days.length) {
+      html += `<p class="sub-table-title">By weekday (row grid)</p>`;
+      html += renderDayRowGrid(days, metric);
+    }
+    if (slots.length) {
+      html += `<p class="sub-table-title">Day × slot grid</p>`;
+      html += renderSlotGrid(slots, metric);
+    }
+    html += '</div>';
+  }
+  return html;
 }
 
 function renderDrilldowns() {
   const unhealthy = (S.metrics || []).filter(m => m.status === 'unhealthy' && !m.skipped);
-  if (!unhealthy.length) {
-    document.getElementById('drilldowns').innerHTML = '';
-    return;
-  }
-  let html = '<h2 class="section-title">Where declines came from</h2>'
-    + '<p class="subtitle" style="margin-top:-8px;margin-bottom:20px">Degrowth metrics only. Each level shows healthy / neutral / unhealthy counts, then drills into unhealthy branches.</p>';
-  for (const m of unhealthy) {
-    html += `<div class="drill-metric"><h3>${m.name} — ${fmtPct(m.pct)} ${statusBadge('unhealthy')}</h3>`
-      + `<p class="drill-headline">Overall ${fmtDelta(m.name, m.delta)} (${fmtVal(m.name, m.week1)} → ${fmtVal(m.name, m.week2)})</p>`;
-    const dd = m.drilldown;
-    if (dd && dd.items && dd.items.length) {
-      if (dd.mix) html += `<div class="mix-line">${fmtMix(dd.mix)}</div>`;
-      html += renderUnhealthyTree(m.name, dd.items, 'stores');
-    } else {
-      html += '<p class="empty-drill">Decline is spread evenly — no single store/day/slot dominates.</p>';
-    }
+  const byMetric = TABLES.byMetric || {};
+  let html = '<h2 class="section-title">Performance breakdown</h2>'
+    + '<p class="subtitle" style="margin-top:-8px;margin-bottom:20px">Box grids per store. Green ≥2%, yellow 0–2%, red &lt;0%.</p>';
+
+  const metricsToShow = unhealthy.length
+    ? unhealthy.map(m => m.name)
+    : Object.keys(byMetric);
+
+  for (const name of metricsToShow) {
+    const view = byMetric[name];
+    if (!view) continue;
+    const summary = (S.metrics || []).find(m => m.name === name);
+    const headline = summary && !summary.skipped
+      ? `<p class="drill-headline">Overall ${fmtDelta(name, summary.delta)} (${fmtVal(name, summary.week1)} → ${fmtVal(name, summary.week2)}, ${fmtPct(summary.pct)})</p>`
+      : '';
+    html += `<div class="drill-metric"><h3>${name}</h3>${headline}`;
+    html += renderMetricGrids(name, view);
     html += '</div>';
   }
+
+  if (!html.includes('drill-metric')) {
+    html += '<p class="empty-drill">No breakdown data available.</p>';
+  }
   document.getElementById('drilldowns').innerHTML = html;
+}
+
+function renderOrderBreakdown() {
+  const byStore = TABLES.orderBreakdownByStore || {};
+  const storeIds = Object.keys(byStore).sort();
+  const el = document.getElementById('order-breakdown');
+  if (!storeIds.length) {
+    el.innerHTML = '';
+    return;
+  }
+  let html = '<h2 class="section-title">Order mix by store × day × slot</h2>'
+    + '<p class="subtitle" style="margin-top:-8px;margin-bottom:16px">Each box: organic, promo-only, ads-only, promo+ads (W1→W2 and Δ). Box color = net order change.</p>';
+  for (const sid of storeIds) {
+    html += `<div class="store-block"><h4>Store ${sid}</h4>`;
+    html += renderOrderMixSlotGrid(byStore[sid], sid);
+    html += '</div>';
+  }
+  el.innerHTML = html;
 }
 
 function renderSummary() {
@@ -349,22 +572,7 @@ function renderSummary() {
     + `<span><span class="badge badge-neutral">Neutral</span> 0% to &lt; ${THRESH}%</span>`
     + `<span><span class="badge badge-unhealthy">Unhealthy</span> &lt; 0% (degrowth)</span>`;
 
-  const tbody = document.getElementById('summary-body');
-  let rows = '';
-  for (const m of (S.metrics || [])) {
-    if (m.skipped) {
-      rows += `<tr><td class="metric-name">${m.name}</td><td colspan="3" style="color:#8b949e">${m.note || 'No data'}</td><td>—</td></tr>`;
-      continue;
-    }
-    rows += `<tr>
-      <td class="metric-name">${m.name}</td>
-      <td class="num">${fmtVal(m.name, m.week1)}</td>
-      <td class="num">${fmtVal(m.name, m.week2)}</td>
-      <td class="num ${pctClass(m.pct)}">${fmtPct(m.pct)} (${fmtDelta(m.name, m.delta)})</td>
-      <td>${statusBadge(m.status)}</td>
-    </tr>`;
-  }
-  tbody.innerHTML = rows;
+  document.getElementById('summary-grid').innerHTML = (S.metrics || []).map(renderSummaryMetricBox).join('');
 
   const un = S.unhealthy_metrics || [];
   const allClear = document.getElementById('all-clear');
@@ -385,20 +593,53 @@ function renderSummary() {
 
 renderSummary();
 renderDrilldowns();
+renderOrderBreakdown();
 
-function deltaClass(d) { return d > 0 ? 'pos' : d < 0 ? 'neg' : ''; }
+function campaignBoxStatus(r) {
+  const s = (r.status || '').toLowerCase();
+  if (s === 'improving') return 'healthy';
+  if (s === 'declining') return 'unhealthy';
+  return 'neutral';
+}
 
-function renderCampaignTable(rows, title) {
-  if (!rows || !rows.length) return `<h3 style="margin:20px 0 10px;color:#c9d1d9">${title}</h3><p class="subtitle">No campaigns in this bucket.</p>`;
-  let html = `<h3 style="margin:20px 0 10px;color:#c9d1d9">${title}</h3><table class="data"><thead><tr><th>Campaign</th><th>Store</th><th>Sales Δ</th><th>Orders Δ</th><th>Spend Δ</th><th>Status</th></tr></thead><tbody>`;
-  for (const r of rows) {
-    html += `<tr><td>${r.name}</td><td>${r.storeId}</td>`
-      + `<td class="num ${deltaClass(r.salesDelta)}">${fmtMoney(r.salesDelta)}</td>`
-      + `<td class="num ${deltaClass(r.ordersDelta)}">${fmtNum(r.ordersDelta)}</td>`
-      + `<td class="num ${deltaClass(r.spendDelta)}">${fmtMoney(r.spendDelta)}</td>`
-      + `<td>${r.status || ''}</td></tr>`;
-  }
-  return html + '</tbody></table>';
+function renderCampaignBox(r) {
+  const aovD = r.promoAovDelta != null ? r.promoAovDelta : null;
+  const status = campaignBoxStatus(r);
+  return `<div class="campaign-box metric-cell ${cellStatusClass(status, false)}">`
+    + `<h5>${r.name}</h5>`
+    + `<div class="store-tag">Store ${r.storeId}</div>`
+    + `<div class="row"><span class="lbl">Sales Δ</span><span class="val ${deltaClass(r.salesDelta)}">${fmtMoney(r.salesDelta)}</span></div>`
+    + `<div class="row"><span class="lbl">Orders Δ</span><span class="val ${deltaClass(r.ordersDelta)}">${fmtNum(r.ordersDelta)}</span></div>`
+    + `<div class="row"><span class="lbl">Spend Δ</span><span class="val ${deltaClass(r.spendDelta)}">${fmtMoney(r.spendDelta)}</span></div>`
+    + `<div class="row"><span class="lbl">AOV Δ</span><span class="val ${deltaClass(aovD)}">${aovD != null ? fmtMoney(aovD) : '—'}</span></div>`
+    + `<div class="status-tag">${r.status || ''}</div>`
+    + '</div>';
+}
+
+function campaignSortRank(r) {
+  const s = (r.status || '').toLowerCase();
+  if (s === 'declining') return 0;
+  if (s === 'mixed') return 1;
+  if (s === 'flat') return 2;
+  if (s === 'improving') return 3;
+  return 1.5;
+}
+
+function sortCampaignsWorstFirst(rows) {
+  return [...rows].sort((a, b) => {
+    const ra = campaignSortRank(a);
+    const rb = campaignSortRank(b);
+    if (ra !== rb) return ra - rb;
+    return (a.salesDelta || 0) - (b.salesDelta || 0);
+  });
+}
+
+function renderCampaignGrid(rows, title) {
+  if (!rows?.length) return `<h3 style="margin:20px 0 10px;color:#c9d1d9">${title}</h3><p class="subtitle">No campaigns in this bucket.</p>`;
+  const sorted = sortCampaignsWorstFirst(rows);
+  let html = `<h3 style="margin:20px 0 10px;color:#c9d1d9">${title} (${sorted.length})</h3><div class="campaign-grid">`;
+  for (const r of sorted) html += renderCampaignBox(r);
+  return html + '</div>';
 }
 
 function renderSlotReview(SR) {
@@ -411,9 +652,10 @@ function renderSlotReview(SR) {
 const C = ROOT.campaigns;
 let campaignsHtml = '';
 if (C && (C.promo?.length || C.ads?.length || C.slotReview)) {
-  campaignsHtml = '<h2>Campaigns (reference)</h2>';
-  if (C.promo?.length) campaignsHtml += renderCampaignTable(C.promo, 'Promo');
-  if (C.ads?.length) campaignsHtml += renderCampaignTable(C.ads, 'Ads');
+  campaignsHtml = '<h2>Campaign performance (week over week)</h2>'
+    + '<p class="subtitle" style="margin-bottom:16px">Promo and Ads campaigns from marketing exports — each box is one campaign × store, compared to the prior week. Sorted worst → best (declining red on top, improving green on bottom).</p>';
+  if (C.promo?.length) campaignsHtml += renderCampaignGrid(C.promo, 'Promo');
+  if (C.ads?.length) campaignsHtml += renderCampaignGrid(C.ads, 'Ads');
   if (C.slotReview) campaignsHtml += renderSlotReview(C.slotReview);
 }
 document.getElementById('campaigns').innerHTML = campaignsHtml;

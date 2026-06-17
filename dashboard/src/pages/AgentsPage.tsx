@@ -44,17 +44,17 @@ const agents = [
   {
     id: "strategist",
     name: "Strategist",
-    desc: "Auto: portal login + 90-day download → Offers + Ads campaigns. Manual: DD register upload → marketing plan.",
+    desc: "Auto: portal login + 90-day download → Offers + Ads campaigns. Manual: DD FINANCIAL zip → combined_analysis + slot_info (bottom 8 ads slots/store).",
     icon: Bot,
     status: "ready",
     color: "from-violet-500 to-purple-700",
     inputs: [
       "Auto: operators (multi-select) from Airtable; credentials auto-loaded",
-      "Manual: one operator + DD register Excel/CSV upload",
+      "Manual: one operator + DD FINANCIAL zip (optional marketing zip)",
     ],
     outputs: [
       "Auto: combined_analysis + Campaign Mappings + slot_info.csv per operator",
-      "Manual: marketing_plan.json + marketing_plan.xlsx + slot_info.csv (Offers, Ads, Register slots)",
+      "Manual: combined_analysis.xlsx + slot_info.csv (Offers all active slots; Ads bottom 8 by orders)",
       "Per-operator status: success | failed | skipped",
     ],
   },

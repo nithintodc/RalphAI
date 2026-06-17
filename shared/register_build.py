@@ -15,6 +15,13 @@ from shared.time_slots import SLOT_ORDER as SLOT_NAMES
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
+ORDER_BREAKDOWN_COLUMNS = [
+    "Organic Orders",
+    "Orders Inf by Promo",
+    "Orders inf by Ads",
+    "Orders inf by both",
+]
+
 REGISTER_COLUMNS = [
     "Merchant Store ID",
     "Day",
@@ -23,6 +30,7 @@ REGISTER_COLUMNS = [
     "Payouts",
     "Orders",
     "AOV",
+    *ORDER_BREAKDOWN_COLUMNS,
     "Week",
 ]
 
@@ -74,7 +82,7 @@ def weekly_csv_to_register_df(weekly_csv: Path, *, week_label: str = "") -> pd.D
     if df.empty:
         return pd.DataFrame(columns=REGISTER_COLUMNS)
 
-    for col in ("Sales", "Payouts", "Orders"):
+    for col in ("Sales", "Payouts", "Orders", *ORDER_BREAKDOWN_COLUMNS):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
@@ -96,18 +104,22 @@ def weekly_csv_to_register_df(weekly_csv: Path, *, week_label: str = "") -> pd.D
         sales = float(grp["Sales"].sum()) / n_dates
         payouts = float(grp["Payouts"].sum()) / n_dates
         orders = float(grp["Orders"].sum()) / n_dates
-        rows.append(
-            {
-                "Merchant Store ID": str(store_id).strip(),
-                "Day": str(day).strip(),
-                "Day part": str(daypart).strip(),
-                "Sales": round(sales, 2),
-                "Payouts": round(payouts, 2),
-                "Orders": round(orders, 2),
-                "AOV": _aov(sales, orders),
-                "Week": week_label or str(grp["Week"].iloc[0] if "Week" in grp.columns else ""),
-            }
-        )
+        row: dict[str, Any] = {
+            "Merchant Store ID": str(store_id).strip(),
+            "Day": str(day).strip(),
+            "Day part": str(daypart).strip(),
+            "Sales": round(sales, 2),
+            "Payouts": round(payouts, 2),
+            "Orders": round(orders, 2),
+            "AOV": _aov(sales, orders),
+            "Week": week_label or str(grp["Week"].iloc[0] if "Week" in grp.columns else ""),
+        }
+        for oc in ORDER_BREAKDOWN_COLUMNS:
+            if oc in grp.columns:
+                row[oc] = round(float(grp[oc].sum()) / n_dates, 2)
+            else:
+                row[oc] = 0.0
+        rows.append(row)
 
     return _fill_register_grid(pd.DataFrame(rows), week_label)
 
@@ -126,19 +138,19 @@ def _fill_register_grid(df: pd.DataFrame, week_label: str) -> pd.DataFrame:
     for store_id in store_ids:
         for day in DAY_NAMES:
             for slot in SLOT_NAMES:
-                row = by_key.get(
-                    (store_id, day, slot),
-                    {
-                        "Merchant Store ID": store_id,
-                        "Day": day,
-                        "Day part": slot,
-                        "Sales": 0.0,
-                        "Payouts": 0.0,
-                        "Orders": 0.0,
-                        "AOV": 0.0,
-                        "Week": week_label,
-                    },
-                )
+                defaults: dict[str, Any] = {
+                    "Merchant Store ID": store_id,
+                    "Day": day,
+                    "Day part": slot,
+                    "Sales": 0.0,
+                    "Payouts": 0.0,
+                    "Orders": 0.0,
+                    "AOV": 0.0,
+                    "Week": week_label,
+                }
+                for oc in ORDER_BREAKDOWN_COLUMNS:
+                    defaults[oc] = 0.0
+                row = by_key.get((store_id, day, slot), defaults)
                 out.append(row)
     return pd.DataFrame(out)[REGISTER_COLUMNS]
 
@@ -150,18 +162,19 @@ def empty_ue_register_df(store_ids: list[str], *, week_label: str) -> pd.DataFra
     for store_id in stores:
         for day in DAY_NAMES:
             for slot in SLOT_NAMES:
-                rows.append(
-                    {
-                        "Merchant Store ID": store_id,
-                        "Day": day,
-                        "Day part": slot,
-                        "Sales": 0.0,
-                        "Payouts": 0.0,
-                        "Orders": 0.0,
-                        "AOV": 0.0,
-                        "Week": week_label,
-                    }
-                )
+                row_dict: dict[str, Any] = {
+                    "Merchant Store ID": store_id,
+                    "Day": day,
+                    "Day part": slot,
+                    "Sales": 0.0,
+                    "Payouts": 0.0,
+                    "Orders": 0.0,
+                    "AOV": 0.0,
+                    "Week": week_label,
+                }
+                for oc in ORDER_BREAKDOWN_COLUMNS:
+                    row_dict[oc] = 0.0
+                rows.append(row_dict)
     return pd.DataFrame(rows)[REGISTER_COLUMNS]
 
 

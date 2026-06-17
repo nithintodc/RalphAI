@@ -30,6 +30,7 @@ import {
 } from '../../lib/utils/analysisPeriodSelectors';
 import { WEEK_DEFINITION_OPTIONS, resolveWeekStartsOn } from '../../lib/utils/weekDefinition';
 import { runComparisonAnalysis } from '../../lib/engine/comparisonAnalysis';
+import { buildPrePostQuickInsights } from '../../lib/engine/prePostQuickInsights';
 import { resolveMarketingTables } from '../../lib/export/marketingExport';
 import StoreComparisonNotice from '../../components/ui/StoreComparisonNotice';
 import StoreMapEditor from '../../components/config/StoreMapEditor';
@@ -854,6 +855,16 @@ export default function ConfigScreen() {
       dataStore.setSummaryTables(summaries);
       dataStore.setStorePeriodAlignment(storePeriodAlignment);
       dataStore.setCrossPlatformAlignment(crossPlatformAlignment);
+
+      if (!isSinglePeriod) {
+        dataStore.setDiagnosticsData(buildPrePostQuickInsights({
+          ddFinancial: dataStore.ddFinancial,
+          ueFinancial: dataStore.ueFinancial,
+          storeTables,
+        }, config));
+      } else {
+        dataStore.setDiagnosticsData(null);
+      }
 
       const marketingTables = resolveMarketingTables(
         {

@@ -381,7 +381,7 @@ def _lookup_slot_tag(slots_grid: dict[tuple[str, str], int], day: str, daypart: 
 
 def register_to_per_store(df: pd.DataFrame) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
     """
-    Convert register rows to auto-mode ``per_store`` metrics for campaigns.xlsx / slot_info.
+    Convert register rows to auto-mode ``per_store`` metrics for combined_analysis / slot_info.
     """
     per_store: dict[str, list[dict[str, Any]]] = {}
     store_names: dict[str, str] = {}

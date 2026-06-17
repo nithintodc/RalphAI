@@ -1725,6 +1725,17 @@ def _list_report_files(download_dir: Path) -> list[Path]:
     return [f for _mtime, f in all_files]
 
 
+def _combined_has_financial_sheets(path: Path) -> bool:
+    """True when combined workbook includes Day-Slot sheets needed for campaigns."""
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(path, read_only=True)
+        return any("Day-Slot" in name for name in wb.sheetnames)
+    except Exception:
+        return False
+
+
 def _discover_downloads(
     download_dir: Path,
     *,
@@ -2006,65 +2017,77 @@ async def run_reports_then_analysis_then_campaign(
 
     else:
         # --- FULL MODE: Login → Reports → Analysis → Campaigns ---
-        reports_task = get_task_description_reports_only(
-            email=email,
-            password=password,
-            start_date=start_date,
-            end_date=end_date,
-            session_prepared=True,
-        )
+        marketing_path, financial_path, _diag = _discover_downloads(download_dir)
 
-        agent = Agent(task=reports_task, llm=llm, browser=browser)
-
-        logger.info("=" * 70)
-        logger.info("PHASE 1: LOGIN + REPORTS (login, create financial & marketing, download)")
-        logger.info("  Email: %s", email)
-        logger.info("  Date range: %s to %s", start_date, end_date)
-        logger.info("  Download dir: %s", download_dir)
-        logger.info("=" * 70)
-        push_to_slack(
-            slack_msg.reports_phase_started(date_range=f"{start_date} → {end_date}")
-        )
-        phase1_start = time.time()
-        try:
-            await _prepare_portal_session(browser, email, password)
-            await asyncio.wait_for(agent.run(), timeout=AGENT_REPORTS_TIMEOUT)
-            phase1_elapsed = time.time() - phase1_start
-            logger.info("Phase 1: Login + reports completed in %.0fs", phase1_elapsed)
-            push_to_slack(slack_msg.portal_logged_in())
-        except asyncio.TimeoutError:
+        if marketing_path and financial_path:
+            logger.info("=" * 70)
+            logger.info("PHASE 1: SKIPPED — both reports already in download dir")
+            logger.info("  Financial: %s", financial_path.name)
+            logger.info("  Marketing: %s", marketing_path.name)
+            logger.info("=" * 70)
+            push_to_slack("⏭️ Reports already downloaded — skipping Phase 1")
             await _kill_browser(browser)
-            push_to_slack(
-                slack_msg.portal_login_failed(
-                    detail=f"Reports timed out after {AGENT_REPORTS_TIMEOUT}s"
-                )
+            browser = None
+        else:
+            reports_task = get_task_description_reports_only(
+                email=email,
+                password=password,
+                start_date=start_date,
+                end_date=end_date,
+                session_prepared=True,
             )
-            raise RuntimeError(f"Phase 1 (reports) timed out after {AGENT_REPORTS_TIMEOUT}s")
-        except Exception as e:
-            await _kill_browser(browser)
-            push_to_slack(slack_msg.portal_login_failed(detail=str(e)))
-            raise e
 
-        marketing_path, financial_path = _discover_downloads(download_dir)
+            agent = Agent(task=reports_task, llm=llm, browser=browser)
 
-        # --- Retry: if one report is missing, attempt to download just the missing one ---
-        if not financial_path or not marketing_path:
-            missing = []
-            if not financial_path:
-                missing.append("Financial")
-            if not marketing_path:
-                missing.append("Marketing")
-            logger.warning("DoorDash (browser-use): Missing report(s) after Phase 1: %s. Retrying download.", ", ".join(missing))
-            push_to_slack(slack_msg.report_missing_retry(names=missing))
-
-            retry_task = _get_retry_download_task(missing)
-            retry_agent = Agent(task=retry_task, llm=llm, browser=browser)
+            logger.info("=" * 70)
+            logger.info("PHASE 1: LOGIN + REPORTS (login, create financial & marketing, download)")
+            logger.info("  Email: %s", email)
+            logger.info("  Date range: %s to %s", start_date, end_date)
+            logger.info("  Download dir: %s", download_dir)
+            logger.info("=" * 70)
+            push_to_slack(
+                slack_msg.reports_phase_started(date_range=f"{start_date} → {end_date}")
+            )
+            phase1_start = time.time()
             try:
-                await asyncio.wait_for(retry_agent.run(), timeout=300)  # 5 min retry
-                marketing_path, financial_path = _discover_downloads(download_dir)
-                logger.info("DoorDash (browser-use): After retry — financial=%s, marketing=%s", financial_path, marketing_path)
-            except Exception as retry_err:
-                logger.warning("DoorDash (browser-use): Retry download failed: %s", retry_err)
+                await _prepare_portal_session(browser, email, password)
+                await asyncio.wait_for(agent.run(), timeout=AGENT_REPORTS_TIMEOUT)
+                phase1_elapsed = time.time() - phase1_start
+                logger.info("Phase 1: Login + reports completed in %.0fs", phase1_elapsed)
+                push_to_slack(slack_msg.portal_logged_in())
+            except asyncio.TimeoutError:
+                await _kill_browser(browser)
+                push_to_slack(
+                    slack_msg.portal_login_failed(
+                        detail=f"Reports timed out after {AGENT_REPORTS_TIMEOUT}s"
+                    )
+                )
+                raise RuntimeError(f"Phase 1 (reports) timed out after {AGENT_REPORTS_TIMEOUT}s")
+            except Exception as e:
+                await _kill_browser(browser)
+                push_to_slack(slack_msg.portal_login_failed(detail=str(e)))
+                raise e
+
+            marketing_path, financial_path, _diag = _discover_downloads(download_dir)
+
+            # --- Retry: if one report is missing, attempt to download just the missing one ---
+            if not financial_path or not marketing_path:
+                missing = []
+                if not financial_path:
+                    missing.append("Financial")
+                if not marketing_path:
+                    missing.append("Marketing")
+                logger.warning("DoorDash (browser-use): Missing report(s) after Phase 1: %s. Retrying download.", ", ".join(missing))
+                push_to_slack(slack_msg.report_missing_retry(names=missing))
+
+                retry_task = _get_retry_download_task(missing)
+                retry_agent = Agent(task=retry_task, llm=llm, browser=browser)
+                try:
+                    await asyncio.wait_for(retry_agent.run(), timeout=300)  # 5 min retry
+                    marketing_path, financial_path, _diag = _discover_downloads(download_dir)
+                    logger.info("DoorDash (browser-use): After retry — financial=%s, marketing=%s", financial_path, marketing_path)
+                except Exception as retry_err:
+                    logger.warning("DoorDash (browser-use): Retry download failed: %s", retry_err)
 
         if financial_path:
             logger.info("DoorDash (browser-use): Financial report at %s", financial_path)
@@ -2096,18 +2119,42 @@ async def run_reports_then_analysis_then_campaign(
         if old_combined_files:
             logger.info("Found previous combined analysis: %s", old_combined_files[0])
 
-        logger.info("=" * 70)
-        logger.info("ANALYSIS PHASE: Financial + Marketing analysis, combined report, Google Sheets")
-        logger.info("=" * 70)
-        push_to_slack(slack_msg.analysis_started())
-        analysis_start = time.time()
-        combined_path = await analysis_callback(marketing_path, financial_path)
-        analysis_elapsed = time.time() - analysis_start
-        logger.info("Analysis phase completed in %.0fs", analysis_elapsed)
+        existing_combined = sorted(
+            download_dir.glob("combined_analysis_*.xlsx"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        reusable_combined = next(
+            (p for p in existing_combined if _combined_has_financial_sheets(p)),
+            None,
+        )
+        if reusable_combined:
+            combined_path = reusable_combined
+            logger.info("=" * 70)
+            logger.info("ANALYSIS PHASE: SKIPPED — combined report already exists")
+            logger.info("  %s", combined_path.name)
+            logger.info("=" * 70)
+            push_to_slack(f"⏭️ Analysis already done — using {combined_path.name}")
+        else:
+            if existing_combined:
+                logger.warning(
+                    "Ignoring incomplete combined analysis %s (no Day-Slot sheets) — re-running analysis",
+                    existing_combined[0].name,
+                )
+            logger.info("=" * 70)
+            logger.info("ANALYSIS PHASE: Financial + Marketing analysis, combined report, Google Sheets")
+            logger.info("=" * 70)
+            push_to_slack(slack_msg.analysis_started())
+            analysis_start = time.time()
+            combined_path = await analysis_callback(marketing_path, financial_path)
+            analysis_elapsed = time.time() - analysis_start
+            logger.info("Analysis phase completed in %.0fs", analysis_elapsed)
 
         if not combined_path or not Path(combined_path).is_file():
             logger.warning("No combined_analysis file returned — campaigns will have no slot data")
             push_to_slack(slack_msg.analysis_missing())
+        elif reusable_combined:
+            push_to_slack(slack_msg.analysis_ready(seconds=0))
         else:
             push_to_slack(slack_msg.analysis_ready(seconds=analysis_elapsed))
 
@@ -2165,6 +2212,13 @@ async def run_reports_then_analysis_then_campaign(
     nav_to_marketing_task = _NAV_TO_MARKETING_TASK
 
     if combos:
+        if browser is None:
+            browser = _get_browser(download_dir, keep_alive=True, doordash_email=email)
+            relogin_ok = await _relogin_portal_session(browser, email, password)
+            if not relogin_ok:
+                await _kill_browser(browser)
+                raise RuntimeError("Failed to log in before campaign creation")
+
         if ensure_campaigns_executed_csv:
             ensure_campaigns_executed_csv(download_dir)
 

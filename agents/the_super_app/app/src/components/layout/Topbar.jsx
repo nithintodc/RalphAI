@@ -7,6 +7,7 @@ import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
 import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';
 import { ddMerchantStoreIdFromKey } from '../../lib/utils/storeDisplay';
 import { runComparisonAnalysis } from '../../lib/engine/comparisonAnalysis';
+import { buildPrePostQuickInsights } from '../../lib/engine/prePostQuickInsights';
 import { buildAnalysisScope, buildScopedExcludedStores } from '../../lib/utils/abStoreFilter';
 import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import DateFilterDropdown from './DateFilterDropdown';
@@ -334,6 +335,16 @@ export default function Topbar({ title, crumb, periodLabel, onExport, isExportin
         dataStore.setSummaryTables(summaries);
         dataStore.setStorePeriodAlignment(storePeriodAlignment);
         dataStore.setCrossPlatformAlignment(crossPlatformAlignment);
+
+        if (!isSinglePeriod) {
+          dataStore.setDiagnosticsData(buildPrePostQuickInsights({
+            ddFinancial: dataStore.ddFinancial,
+            ueFinancial: dataStore.ueFinancial,
+            storeTables,
+          }, latestConfig));
+        } else {
+          dataStore.setDiagnosticsData(null);
+        }
       } catch (err) {
         console.error('Re-analysis error:', err);
       }

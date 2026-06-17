@@ -188,7 +188,7 @@ def build_operator_register_bundle(
     result["pdf_export_ok"] = False
     skip_pdf = os.getenv("HEALTHCHECK_SKIP_PDF", "").strip().lower() in ("1", "true", "yes", "on")
     if html_path and not skip_pdf:
-        pdf_path = html_to_pdf(Path(html_path), output_dir / REGISTER_FILES["pdf"])
+        pdf_path = html_to_pdf(Path(html_path), output_dir / REGISTER_FILES["pdf"], landscape=True)
         if pdf_path and pdf_path.is_file():
             result["register_files"]["pdf"] = str(pdf_path)
             result["pdf_local_url"] = local_pdf_report_url(pdf_path)

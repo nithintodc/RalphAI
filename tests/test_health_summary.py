@@ -4,6 +4,7 @@ from agents.health_check.health_summary import (
     METRIC_ORDER,
     _status_mix,
     build_health_summary,
+    build_wow_table_payload,
     classify_status,
 )
 
@@ -73,3 +74,27 @@ def test_build_health_summary_drilldown_on_decline():
     assert drill["mix"]["unhealthy"] == 1
     assert by_name["Payouts"]["drilldown"] is None
     assert len(summary["metrics"]) == len(METRIC_ORDER)
+
+
+def test_build_wow_table_payload_includes_order_breakdown():
+    analysis = {
+        "slots": [
+            {
+                "storeId": "99",
+                "day": "Friday",
+                "daypart": "Lunch",
+                "metrics": {
+                    "Sales": {"week1": 100, "week2": 80, "delta": -20, "pct": -20.0},
+                    "Organic Orders": {"week1": 5, "week2": 3, "delta": -2, "pct": -40.0},
+                    "Orders Inf by Promo": {"week1": 2, "week2": 1, "delta": -1, "pct": -50.0},
+                    "Orders inf by Ads": {"week1": 1, "week2": 2, "delta": 1, "pct": 100.0},
+                    "Orders inf by both": {"week1": 0, "week2": 0, "delta": 0, "pct": 0.0},
+                },
+            },
+        ],
+    }
+    tables = build_wow_table_payload(analysis)
+    assert tables["byMetric"]["Sales"]["stores"][0]["storeId"] == "99"
+    assert "99" in tables["orderBreakdownByStore"]
+    assert tables["orderBreakdown"][0]["organic"]["delta"] == -2
+    assert tables["orderBreakdown"][0]["promo"]["delta"] == -1

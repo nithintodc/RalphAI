@@ -292,21 +292,39 @@ def run_strategist_manual_worker(
     t0: datetime,
     operator_id: str,
     business_name: str,
-    register_path: Path,
+    financial_path: Path | None = None,
+    marketing_path: Path | None = None,
+    register_path: Path | None = None,
     append_index: Callable[[dict], None],
     ralph_ads_upload_rows: Callable[[dict], list],
 ) -> None:
     from agents.strategist.agent import run as run_strategist
 
     run_dir = agent_run_dir("strategist", run_id)
+    uploads_parent: Path | None = None
+    if financial_path and financial_path.parent.is_dir():
+        uploads_parent = financial_path.parent
+    elif register_path and register_path.parent.is_dir():
+        uploads_parent = register_path.parent
     try:
         with agent_run_logging(run_dir, run_id=run_id, agent="strategist"):
-            result = run_strategist(
-                mode="manual",
-                operator_id=operator_id,
-                register_report_path=str(register_path),
-                business_name=business_name,
-            )
+            if financial_path and financial_path.is_file():
+                result = run_strategist(
+                    mode="manual",
+                    operator_id=operator_id,
+                    financial_zip_path=str(financial_path),
+                    marketing_zip_path=str(marketing_path) if marketing_path and marketing_path.is_file() else None,
+                    business_name=business_name,
+                )
+            elif register_path and register_path.is_file():
+                result = run_strategist(
+                    mode="manual",
+                    operator_id=operator_id,
+                    register_report_path=str(register_path),
+                    business_name=business_name,
+                )
+            else:
+                raise ValueError("Manual Strategist requires financial_path or register_path")
         first = (result.get("results") or [{}])[0]
         ads_plan_payload = first.get("ads_plan") or {}
         downloads: dict[str, str] = {}
@@ -358,7 +376,8 @@ def run_strategist_manual_worker(
             extra_meta={"mode": "manual"},
         )
     finally:
-        shutil.rmtree(register_path.parent, ignore_errors=True)
+        if uploads_parent is not None:
+            shutil.rmtree(uploads_parent, ignore_errors=True)
 
 
 def get_agent_job_payload(run_id: str) -> dict[str, Any] | None:

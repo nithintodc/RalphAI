@@ -354,9 +354,9 @@ def campaign_wow_for_html(
     promo_wow_csv: Path | None,
     ads_wow_csv: Path | None,
     *,
-    top_n: int = 15,
+    top_n: int | None = None,
 ) -> dict[str, Any]:
-    """Serialize top campaign movers for embedded HTML."""
+    """Serialize campaign WoW rows for embedded HTML (all campaigns by default)."""
     out: dict[str, Any] = {"promo": [], "ads": [], "metrics": CAMPAIGN_METRICS}
 
     for platform_key, csv_path in (("promo", promo_wow_csv), ("ads", ads_wow_csv)):
@@ -368,9 +368,12 @@ def campaign_wow_for_html(
             continue
         df = df.copy()
         df[delta_col] = pd.to_numeric(df[delta_col], errors="coerce").fillna(0)
-        df = df.reindex(df[delta_col].abs().sort_values(ascending=False).index)
+        status_rank = {"Declining": 0, "Mixed": 1, "Flat": 2, "Improving": 3}
+        df["_status_rank"] = df["Status"].map(lambda s: status_rank.get(str(s).strip(), 1.5))
+        df = df.sort_values(by=["_status_rank", delta_col], ascending=[True, True])
+        subset = df if top_n is None else df.head(top_n)
         rows = []
-        for _, r in df.head(top_n).iterrows():
+        for _, r in subset.iterrows():
             row = {
                 "name": str(r.get("Campaign Name", "")),
                 "storeId": str(r.get("Store ID", "")),

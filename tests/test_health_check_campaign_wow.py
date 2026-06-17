@@ -203,6 +203,49 @@ class TestCampaignMetrics(unittest.TestCase):
             self.assertIn("checkDelta", out["ads"][0])
             self.assertNotIn("SalesDelta", out["ads"][0])
 
+    def test_campaign_wow_for_html_sorts_worst_first(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            wow = pd.DataFrame(
+                [
+                    {
+                        "Campaign Type": "Promo",
+                        "Campaign Name": "Good",
+                        "Store ID": "1",
+                        "Status": "Improving",
+                        "Sales WoW Δ": 100.0,
+                        "Orders WoW Δ": 10,
+                        "Spend WoW Δ": 20.0,
+                        "Promo AOV WoW Δ": 2.0,
+                    },
+                    {
+                        "Campaign Type": "Promo",
+                        "Campaign Name": "Bad",
+                        "Store ID": "2",
+                        "Status": "Declining",
+                        "Sales WoW Δ": -500.0,
+                        "Orders WoW Δ": -40,
+                        "Spend WoW Δ": -50.0,
+                        "Promo AOV WoW Δ": -1.0,
+                    },
+                    {
+                        "Campaign Type": "Promo",
+                        "Campaign Name": "Mixed",
+                        "Store ID": "3",
+                        "Status": "Mixed",
+                        "Sales WoW Δ": -10.0,
+                        "Orders WoW Δ": 2,
+                        "Spend WoW Δ": 5.0,
+                        "Promo AOV WoW Δ": 0.5,
+                    },
+                ]
+            )
+            promo_path = td_path / "promo.csv"
+            wow.to_csv(promo_path, index=False)
+            out = campaign_wow_for_html(promo_path, None)
+            names = [r["name"] for r in out["promo"]]
+            self.assertEqual(names, ["Bad", "Mixed", "Good"])
+
 
 if __name__ == "__main__":
     unittest.main()

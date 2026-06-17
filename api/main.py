@@ -1198,6 +1198,8 @@ def post_strategist(
     mode: str = Form("auto"),
     operator_ids: str = Form("", description="JSON array or comma-separated operator IDs (auto mode)"),
     operator_id: str = Form("", description="Single operator ID (manual mode)"),
+    financial_file: Optional[UploadFile] = File(None),
+    marketing_file: Optional[UploadFile] = File(None),
     register_file: Optional[UploadFile] = File(None),
 ):
     """
@@ -1224,18 +1226,47 @@ def post_strategist(
             oid = (operator_id or "").strip()
             if not oid:
                 raise HTTPException(400, "Manual mode requires operator_id.")
-            if not register_file or not register_file.filename:
-                raise HTTPException(400, "Manual mode requires a DD register file (.xlsx, .xls, .csv).")
-            reg_fn = register_file.filename.lower()
-            if not reg_fn.endswith((".xlsx", ".xls", ".csv")):
-                raise HTTPException(400, "register_file must be .xlsx, .xls, or .csv")
-            raw_bytes = _read_upload_file(register_file.file)
-            if not raw_bytes:
-                raise HTTPException(400, "register_file is empty.")
+            has_financial = bool(financial_file and financial_file.filename)
+            has_register = bool(register_file and register_file.filename)
+            if not has_financial and not has_register:
+                raise HTTPException(
+                    400,
+                    "Manual mode requires a DD FINANCIAL zip (.zip) or legacy register file.",
+                )
             uploads_dir = out_dir / "uploads"
             uploads_dir.mkdir(parents=True, exist_ok=True)
-            in_path = uploads_dir / Path(register_file.filename).name
-            in_path.write_bytes(raw_bytes)
+            financial_path: Path | None = None
+            marketing_path: Path | None = None
+            register_path: Path | None = None
+
+            if has_financial:
+                fin_fn = financial_file.filename.lower()
+                if not fin_fn.endswith(".zip"):
+                    raise HTTPException(400, "financial_file must be a .zip export.")
+                raw_bytes = _read_upload_file(financial_file.file)
+                if not raw_bytes:
+                    raise HTTPException(400, "financial_file is empty.")
+                financial_path = uploads_dir / Path(financial_file.filename).name
+                financial_path.write_bytes(raw_bytes)
+
+            if marketing_file and marketing_file.filename:
+                mkt_fn = marketing_file.filename.lower()
+                if not mkt_fn.endswith(".zip"):
+                    raise HTTPException(400, "marketing_file must be a .zip export.")
+                mkt_bytes = _read_upload_file(marketing_file.file)
+                if mkt_bytes:
+                    marketing_path = uploads_dir / Path(marketing_file.filename).name
+                    marketing_path.write_bytes(mkt_bytes)
+
+            if has_register and not has_financial:
+                reg_fn = register_file.filename.lower()
+                if not reg_fn.endswith((".xlsx", ".xls", ".csv")):
+                    raise HTTPException(400, "register_file must be .xlsx, .xls, or .csv")
+                raw_bytes = _read_upload_file(register_file.file)
+                if not raw_bytes:
+                    raise HTTPException(400, "register_file is empty.")
+                register_path = uploads_dir / Path(register_file.filename).name
+                register_path.write_bytes(raw_bytes)
 
             business_name = oid
             try:
@@ -1279,7 +1310,9 @@ def post_strategist(
                     "t0": t0,
                     "operator_id": oid,
                     "business_name": business_name,
-                    "register_path": in_path,
+                    "financial_path": financial_path,
+                    "marketing_path": marketing_path,
+                    "register_path": register_path,
                     "append_index": _append_index,
                     "ralph_ads_upload_rows": ralph_ads_upload_rows,
                 },

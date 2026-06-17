@@ -12,6 +12,22 @@ from typing import Any, Optional
 
 REGISTER_SLOT_METRICS = ("Sales", "Payouts", "Orders", "AOV")
 
+ORDER_BREAKDOWN_METRICS = (
+    "Organic Orders",
+    "Orders Inf by Promo",
+    "Orders inf by Ads",
+    "Orders inf by both",
+)
+
+ORDER_BREAKDOWN_SHORT = {
+    "Organic Orders": "organic",
+    "Orders Inf by Promo": "promo",
+    "Orders inf by Ads": "ads",
+    "Orders inf by both": "both",
+}
+
+ALL_SLOT_METRICS = REGISTER_SLOT_METRICS + ORDER_BREAKDOWN_METRICS
+
 JOIN_KEYS = ("Merchant Store ID", "Day", "Day part")
 
 # WoW report / Slack rollup order (coarse → finer; all stores for day/slot views).
@@ -61,12 +77,15 @@ def rows_to_slot_map(rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], d
             continue
         sales = _num(row.get("Sales"))
         orders = _num(row.get("Orders"))
-        out[key] = {
+        entry: dict[str, float] = {
             "Sales": sales,
             "Payouts": _num(row.get("Payouts")),
             "Orders": orders,
             "AOV": _num(row.get("AOV")) or _aov(sales, orders),
         }
+        for m in ORDER_BREAKDOWN_METRICS:
+            entry[m] = _num(row.get(m))
+        out[key] = entry
     return out
 
 
@@ -132,10 +151,10 @@ def compare_register_slots(
     slots: list[dict[str, Any]] = []
     for key in all_keys:
         store_id, day, daypart = key
-        v1 = w1.get(key, {"Sales": 0.0, "Payouts": 0.0, "Orders": 0.0, "AOV": 0.0})
-        v2 = w2.get(key, {"Sales": 0.0, "Payouts": 0.0, "Orders": 0.0, "AOV": 0.0})
+        v1 = w1.get(key, {m: 0.0 for m in ALL_SLOT_METRICS})
+        v2 = w2.get(key, {m: 0.0 for m in ALL_SLOT_METRICS})
         metrics: dict[str, Any] = {}
-        for m in REGISTER_SLOT_METRICS:
+        for m in ALL_SLOT_METRICS:
             a, b = v1[m], v2[m]
             metrics[m] = {
                 "week1": a,

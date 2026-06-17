@@ -406,11 +406,6 @@ def get_campaign_combos_from_slots_and_combined(
     return combos
 
 
-def get_campaign_mappings_for_combined(combined_xlsx_path: Path, slots_path: Path) -> List[dict]:
-    """Same as :func:`get_campaign_combos_from_slots_and_combined` with ``(combined_xlsx, slots)`` argument order."""
-    return get_campaign_combos_from_slots_and_combined(Path(slots_path), Path(combined_xlsx_path))
-
-
 def get_all_campaign_combos_from_combined_analysis(combined_xlsx_path: Path) -> List[dict]:
     """
     Read all "Day-Slot - {storeID}" sheets and yield every (store_id, day, slot, min_subtotal) combo.

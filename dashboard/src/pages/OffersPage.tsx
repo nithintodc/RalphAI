@@ -99,7 +99,7 @@ export function OffersPage() {
         </Link>
         <h2 className="font-display text-2xl font-semibold text-ink-900">RalphAI — Offers</h2>
         <p className="mt-1 max-w-2xl text-ink-600">
-          <strong>Auto</strong> (default): loads the latest Strategist <strong>Offers Campaigns</strong> sheet from{" "}
+          <strong>Auto</strong> (default): loads the latest Strategist <strong>Campaign Mappings</strong> sheet from{" "}
           <code>data/Strategist/</code>, then runs discount promo browser automation with Slack updates.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-ink-600">

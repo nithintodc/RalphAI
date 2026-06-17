@@ -95,6 +95,9 @@ def _resolve_date_col(df: pd.DataFrame) -> str | None:
     for col in ("Timestamp local date", "Timestamp Local Date"):
         if col in df.columns:
             return col
+    for col in ("Timestamp local time", "Timestamp Local Time"):
+        if col in df.columns:
+            return col
     return None
 
 
@@ -126,7 +129,13 @@ def build_order_records(df: pd.DataFrame) -> pd.DataFrame:
     if work.empty:
         return pd.DataFrame()
 
-    work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
+    if "Timestamp local date" in (date_col or "") or "Timestamp Local Date" in (date_col or ""):
+        work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
+    else:
+        work[date_col] = pd.to_datetime(
+            work[date_col].astype(str).str.split().str[0],
+            errors="coerce",
+        )
     work = work.dropna(subset=[date_col])
     work["_day"] = work[date_col].dt.day_name()
     work["_slot"] = work["_dd_slot_time"].apply(slot_from_datetime)

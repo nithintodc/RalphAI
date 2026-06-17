@@ -15,6 +15,7 @@ import { useConfigStore } from '../../stores/configStore';
 import SummaryKpiStrip from '../../components/ui/SummaryKpiStrip';
 import StoreComparisonNotice from '../../components/ui/StoreComparisonNotice';
 import CrossPlatformStoreNotice from '../../components/ui/CrossPlatformStoreNotice';
+import PrePostQuickInsights from '../../components/dashboard/PrePostQuickInsights';
 import { isSinglePeriodMode } from '../../lib/utils/periodMode';
 import { fmt } from '../../lib/utils/formatters';
 import { PLATFORM_SECTIONS } from '../../lib/platforms';
@@ -265,7 +266,7 @@ function MetricMovementSection({ label, logo, movementRows, suffix }) {
 }
 
 export default function OverviewScreen() {
-  const { summaryTables, storeTables, storePeriodAlignment, crossPlatformAlignment, ddFinancial, ueFinancial } = useDataStore();
+  const { summaryTables, storeTables, storePeriodAlignment, crossPlatformAlignment, ddFinancial, ueFinancial, diagnosticsData } = useDataStore();
   const config = useConfigStore();
   const isSingleMode = isSinglePeriodMode(config.dateAnalysisMode);
 
@@ -374,6 +375,10 @@ export default function OverviewScreen() {
             <StoreComparisonNotice platform="ue" alignment={storePeriodAlignment.ue} />
           )}
         </div>
+      )}
+
+      {!isSingleMode && (
+        <PrePostQuickInsights insights={diagnosticsData} ddFinancial={ddFinancial} />
       )}
 
       <div className="space-y-5">

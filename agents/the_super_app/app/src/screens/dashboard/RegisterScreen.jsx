@@ -12,6 +12,7 @@ import {
   DD_REGISTER_COLUMNS,
   UE_REGISTER_COLUMNS,
 } from '../../lib/engine/register';
+import { coerceDdSalesByOrderParsed } from '../../lib/parsers/ddSalesByOrder';
 import { buildPeriodExcludedStores, mergeExcludedStores } from '../../lib/utils/storePeriodAlignment';
 import { getUniqueStores as getDdStores } from '../../lib/parsers/ddFinancial';
 import { getUniqueStores as getUeStores } from '../../lib/parsers/ueFinancial';

@@ -4,6 +4,7 @@ import {
   FINANCIAL_ORDER_TIME_COL,
   FINANCIAL_ORDER_TIME_FALLBACK_COL,
   findExactColumn,
+  resolveDdFinancialDate,
   resolveDdSlotTime,
 } from '../constants/orderTimeColumns';
 
@@ -141,7 +142,7 @@ export function normalizeDdFinancial(parsed) {
 
   return data
     .map(row => {
-      const date = dateCol ? parseDate(row[dateCol]) : null;
+      const date = resolveDdFinancialDate(row, dateCol, timestampLocalTimeCol);
       const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
       const time = resolveDdSlotTime(row, orderReceivedTimeCol, timestampLocalTimeCol);
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';
@@ -216,7 +217,7 @@ export function normalizeDdErrorCharges(parsed) {
 
   return data
     .map((row) => {
-      const date = dateCol ? parseDate(row[dateCol]) : null;
+      const date = resolveDdFinancialDate(row, dateCol, timestampLocalTimeCol);
       const orderReceivedTime = orderReceivedTimeCol ? row[orderReceivedTimeCol] : null;
       const time = resolveDdSlotTime(row, orderReceivedTimeCol, timestampLocalTimeCol);
       const merchantStoreId = merchantStoreCol ? sanitizeStoreId(row[merchantStoreCol]) : '';

@@ -11,11 +11,12 @@ Outputs feed **Ralph Offers** and **Ralph Ads** browser automation.
 | Mode | Input | Browser | Output folder |
 |------|--------|---------|----------------|
 | **Auto** | Operator(s) from Airtable | Yes — downloads financial + marketing reports | `data/Strategist/<business name>/<timestamp>/` |
-| **Manual** | Uploaded DD register (`.xlsx` / `.xls` / `.csv`) | No | Same layout |
+| **Manual** | DD FINANCIAL zip (+ optional marketing zip) | No | Same layout |
+| **Manual (legacy)** | Uploaded DD register (`.xlsx` / `.xls` / `.csv`) | No | Same layout |
 
 Both modes produce the **same deliverables** when planning succeeds:
 
-- `campaigns.xlsx` — **Offers Campaigns** + **Ads Campaigns** sheets  
+- `downloads/combined_analysis_{timestamp}.xlsx` — analysis sheets (when FINANCIAL pipeline runs) plus **Campaign Mappings** + **Ads Campaign Mappings**  
 - `slot_info.csv` — one row per store × day × slot (42 rows per store)  
 - `result.json` — run metadata (manual always; auto per operator in API wrapper)
 
@@ -35,26 +36,29 @@ flowchart TD
   D --> E[combined_analysis.xlsx]
   E --> F[Read Day-Slot sheets per store]
   F --> G[campaign_workbook.write_campaigns_workbook_from_per_store]
-  G --> H[campaigns.xlsx + slot_info.csv]
+  G --> H[combined_analysis_*.xlsx + slot_info.csv]
 ```
 
 1. **Date range** — last **3 complete calendar months** (`_date_range_90_days`): from the 1st of month (today − 3) through the last day of the prior month.
 2. **Phase 1 (subprocess)** — `browser-use` logs into DoorDash, downloads reports into `<run>/downloads/`, with retry if a file is missing.
 3. **Phase 2** — Reporting `marketing_agent` + `analysis_agent` on downloaded files.
 4. **Phase 3** — `combined_report_agent` builds combined workbook; campaign mappings may be appended from `slots.csv` / combined analysis rules in the reporting fork.
-5. **Phase 4 (parent process)** — Read `Day-Slot - {store_id}` sheets → build `campaigns.xlsx` + `slot_info.csv`.
+5. **Phase 4 (parent process)** — Read `Day-Slot - {store_id}` sheets → append **Campaign Mappings** + **Ads Campaign Mappings** to `combined_analysis_*.xlsx` and write `slot_info.csv`.
 
 ### Manual mode
 
 ```mermaid
 flowchart TD
-  R[Register upload] --> P[register_reco.build_recommendations_from_register]
-  P --> M[plan_builder.build_marketing_plan]
-  P --> W[campaign_workbook.write_campaigns_workbook_from_per_store]
-  W --> H[campaigns.xlsx + slot_info.csv]
+  F[FINANCIAL zip upload] --> P[reporting analysis_agent + combined_report]
+  P --> C[combined_analysis.xlsx]
+  C --> R[register_reco.build_recommendations_from_financial]
+  R --> W[campaign_workbook.write_campaigns_workbook_from_per_store]
+  W --> H[combined_analysis + slot_info.csv]
 ```
 
-No portal login. Register rows are normalized (currency, column aliases, day names) then run through the **same slot classification and workbook builder** as auto.
+No portal login. Upload the same **FINANCIAL_DETAILED** zip used by `reporting_browser_use`. Optional marketing zip merges into combined analysis. Campaign rules match auto mode (Offers on all active slots; **Ads on bottom 8 active slots per store by order count**).
+
+Legacy register upload still works when no FINANCIAL zip is provided.
 
 ---
 
@@ -139,7 +143,7 @@ If AOV is missing or ≤ 0, min subtotal is 0 and the slot does not join an Offe
 | Offer | `TODC-{store_id}-${min_subtotal}` | `TODC-10661-$20` |
 | Ads | `TODC-ADS-{store_id}` | `TODC-ADS-10661` |
 
-### Grouping in `campaigns.xlsx`
+### Grouping in `combined_analysis_*.xlsx`
 
 - **Offers** — slots with the same `store_id` **and** same `min_subtotal` are merged into **one campaign**; `Slot Tags` is a comma-separated sorted list of tags.
 - **Ads** — bottom-8-by-orders slots per store are merged into **one campaign** per store; one tag list, bid (`ADS_MIN_BID`), and weekly budget (`ADS_WEEKLY_BUDGET`).
@@ -148,11 +152,11 @@ Initial **Status** on all planned rows: `Pending`.
 
 ---
 
-## `campaigns.xlsx` sheets
+## `combined_analysis_*.xlsx` sheets
 
-Written by `campaign_workbook.write_campaigns_workbook_from_per_store` (auto + manual).
+Written by `campaign_workbook.write_campaigns_workbook_from_per_store` (auto + manual). Naming matches `reporting_browser_use` (`combined_report_agent`).
 
-### Offers Campaigns
+### Campaign Mappings
 
 | Column | Description |
 |--------|-------------|
@@ -163,7 +167,7 @@ Written by `campaign_workbook.write_campaigns_workbook_from_per_store` (auto + m
 | Campaign Name | `TODC-{id}-${subtotal}` |
 | Status | `Pending` → updated by Ralph Offers after portal run |
 
-### Ads Campaigns
+### Ads Campaign Mappings
 
 | Column | Description |
 |--------|-------------|
@@ -223,16 +227,16 @@ Used for auditing slot-level assignments and status writeback alongside the work
 `shared/strategist_campaign_sheets.py` resolves the **latest** run:
 
 ```
-data/Strategist/<operator>/<timestamp>/campaigns.xlsx
+data/Strategist/<operator>/<timestamp>/downloads/combined_analysis_{timestamp}.xlsx
 ```
 
-- **Offers** reads **Offers Campaigns** sheet → browser combos.  
-- **Ads** reads **Ads Campaigns** sheet → browser rows.  
-- **`slot_info.csv`** resolved beside the workbook for status writeback.
+- **Offers** reads **Campaign Mappings** sheet → browser combos.  
+- **Ads** reads **Ads Campaign Mappings** sheet → browser rows.  
+- **`slot_info.csv`** at run root (beside `downloads/`) for status writeback.
 
 **Skip on re-run:** only `Successful` / `Success` rows are skipped; `Pending`, `Failed`, and `Skipped (duplicate)` are retried.
 
-After each portal campaign, status is written back to both `campaigns.xlsx` and `slot_info.csv` (`write_strategist_campaign_statuses`).
+After each portal campaign, status is written back to both `combined_analysis_*.xlsx` and `slot_info.csv` (`write_strategist_campaign_statuses`).
 
 ---
 
@@ -242,7 +246,7 @@ After each portal campaign, status is written back to both `campaigns.xlsx` and 
 |------|------|
 | `agent.py` | Entry `run()`, auto subprocess orchestration, manual wrapper, date range, operator resolution |
 | `register_reco.py` | Register load/normalize, AOV rule, uplift, slot tags, `build_recommendations_from_register` |
-| `campaign_workbook.py` | `campaigns.xlsx` + `slot_info.csv` from `per_store` metrics |
+| `campaign_workbook.py` | `combined_analysis_*.xlsx` + `slot_info.csv` from `per_store` metrics |
 | `slot_info.py` | 42-slot grid export, campaign type per cell |
 | `plan_builder.py` | `MarketingPlan` JSON from mappings + ads_plan (manual) |
 | `campaigns_excel.py` | Richer `marketing_plan.xlsx` (Offers / Ads / Register slots tabs) — manual/legacy UI |

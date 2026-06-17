@@ -36,6 +36,8 @@ export function StrategistPage() {
   const [mode, setMode] = useState<StrategistMode>("auto");
   const [selectedOperatorIds, setSelectedOperatorIds] = useState<string[]>([]);
   const [manualOperatorId, setManualOperatorId] = useState("");
+  const [financialFile, setFinancialFile] = useState<File | null>(null);
+  const [marketingFile, setMarketingFile] = useState<File | null>(null);
   const [registerFile, setRegisterFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,12 +124,14 @@ export function StrategistPage() {
         setError("Select an operator for manual mode.");
         return;
       }
-      if (!registerFile) {
-        setError("Upload a DoorDash register file (.xlsx, .xls, or .csv).");
+      if (!financialFile && !registerFile) {
+        setError("Upload a DoorDash FINANCIAL zip (.zip), or a legacy register file.");
         return;
       }
       formData.append("operator_id", manualOperatorId.trim());
-      formData.append("register_file", registerFile);
+      if (financialFile) formData.append("financial_file", financialFile);
+      if (marketingFile) formData.append("marketing_file", marketingFile);
+      if (registerFile && !financialFile) formData.append("register_file", registerFile);
     } else {
       if (!selectedOperatorIds.length) {
         setError("Select at least one operator for auto mode.");
@@ -190,8 +194,9 @@ export function StrategistPage() {
         <h2 className="font-display text-2xl font-semibold text-ink-900">Strategist</h2>
         <p className="mt-1 max-w-3xl text-ink-600">
           <strong>Auto:</strong> logs into each operator&apos;s DoorDash portal, downloads 90-day reports, and generates
-          store-wise Offers + Ads campaigns. <strong>Manual:</strong> upload a DD register file for one operator to build
-          a marketing plan (Offers + Ads) without browser login.
+          store-wise Offers + Ads campaigns. <strong>Manual:</strong> upload a DD FINANCIAL zip (same analysis as
+          reporting_browser_use) to build combined_analysis, campaign mappings, and slot_info — Ads on the bottom 8
+          active slots per store by orders.
         </p>
       </div>
 
@@ -204,7 +209,7 @@ export function StrategistPage() {
             onChange={(e) => setMode(e.target.value as StrategistMode)}
           >
             <option value="auto">Auto — portal download + analysis</option>
-            <option value="manual">Manual — register upload → marketing plan</option>
+            <option value="manual">Manual — FINANCIAL zip → combined analysis + campaigns</option>
           </select>
         </label>
 
@@ -226,14 +231,38 @@ export function StrategistPage() {
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-ink-700">DD register file (.xlsx, .xls, or .csv)</span>
+              <span className="text-sm font-medium text-ink-700">DD FINANCIAL zip (.zip)</span>
               <input
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".zip"
                 className="rounded-xl border border-brand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-900"
-                onChange={(e) => setRegisterFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => setFinancialFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="text-xs text-ink-500">
+                Must include FINANCIAL_DETAILED_TRANSACTIONS. Date range is read from the filename when present.
+              </span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-ink-700">DD Marketing zip (.zip, optional)</span>
+              <input
+                type="file"
+                accept=".zip"
+                className="rounded-xl border border-brand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-900"
+                onChange={(e) => setMarketingFile(e.target.files?.[0] ?? null)}
               />
             </label>
+            <details className="rounded-xl border border-brand-100 bg-brand-50/40 px-3 py-2 text-sm text-ink-600">
+              <summary className="cursor-pointer font-medium text-ink-700">Legacy: register upload</summary>
+              <label className="mt-2 flex flex-col gap-1">
+                <span className="text-xs text-ink-600">DD register file (.xlsx, .xls, or .csv)</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="rounded-xl border border-brand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-900"
+                  onChange={(e) => setRegisterFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </details>
           </>
         ) : (
           <div className="flex flex-col gap-2">

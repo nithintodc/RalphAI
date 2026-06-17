@@ -1,5 +1,7 @@
 /** Canonical DoorDash / Uber Eats time columns for slots and period filters. */
 
+import { parseDate } from '../utils/dateUtils';
+
 export const FINANCIAL_ORDER_TIME_COL = 'Order received local time';
 export const FINANCIAL_ORDER_TIME_FALLBACK_COL = 'Timestamp local time';
 export const SALES_BY_ORDER_TIME_COL = 'Order placed time';
@@ -27,4 +29,19 @@ export function resolveDdSlotTime(row, orderReceivedTimeCol, timestampLocalTimeC
   if (isPresentTimeValue(received)) return received;
   const fallback = timestampLocalTimeCol ? row[timestampLocalTimeCol] : null;
   return isPresentTimeValue(fallback) ? fallback : null;
+}
+
+/**
+ * DD financial period date — Timestamp local date when present; otherwise the calendar
+ * date from Timestamp local time (simplified exports often omit the date column).
+ */
+export function resolveDdFinancialDate(row, dateCol, timestampLocalTimeCol) {
+  if (dateCol) {
+    const fromDateCol = parseDate(row[dateCol]);
+    if (fromDateCol) return fromDateCol;
+  }
+  const ts = timestampLocalTimeCol ? row[timestampLocalTimeCol] : null;
+  if (!isPresentTimeValue(ts)) return null;
+  const datePart = String(ts).trim().split(/\s+/)[0];
+  return parseDate(datePart);
 }

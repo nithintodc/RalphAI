@@ -22,12 +22,28 @@ class TestHealthCheckWowViz(unittest.TestCase):
                 metric: {"week1": 1.0, "week2": 2.0, "delta": 1.0, "pct": 100.0}
                 for metric in ("Sales", "Payouts", "Orders", "AOV")
             },
-            "slots": [],
+            "slots": [
+                {
+                    "storeId": "1",
+                    "day": "Monday",
+                    "daypart": "Lunch",
+                    "week1": 100,
+                    "week2": 120,
+                    "delta": 20,
+                    "pct": 20.0,
+                    "status": "healthy",
+                    "metrics": {
+                        "Sales": {"week1": 100, "week2": 120, "delta": 20, "pct": 20.0},
+                        "Organic Orders": {"week1": 3, "week2": 5, "delta": 2, "pct": 66.7},
+                        "Orders Inf by Promo": {"week1": 1, "week2": 0, "delta": -1, "pct": -100.0},
+                    },
+                },
+            ],
             "movers": {},
             "rollups": {metric: {} for metric in ("Sales", "Payouts", "Orders", "AOV")},
         }
         campaigns = {
-            "promo": [],
+            "promo": [{"name": "Test promo", "storeId": "1", "salesDelta": 10, "ordersDelta": 2, "spendDelta": 1, "promoAovDelta": 0.5, "status": "Improving"}],
             "ads": [
                 {
                     "name": "New campaign",
@@ -46,6 +62,12 @@ class TestHealthCheckWowViz(unittest.TestCase):
                 campaigns_analysis=campaigns,
             )
             html = output.read_text(encoding="utf-8")
+
+        self.assertIn("Performance breakdown", html)
+        self.assertIn("summary-grid", html)
+        self.assertIn("campaign-grid", html)
+        self.assertIn("order-mix-cell", html)
+        self.assertIn("By weekday (row grid)", html)
 
         match = re.search(r'<script id="wow-data" type="application/json">(.*?)</script>', html)
         self.assertIsNotNone(match)

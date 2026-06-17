@@ -131,7 +131,7 @@ function looksLikeDdFinancialColumns(columns) {
     norms.has('transaction type')
     && norms.has('doordash order id')
     && norms.has('subtotal')
-    && norms.has('timestamp local date')
+    && (norms.has('timestamp local date') || norms.has('timestamp local time'))
   );
 }
 
@@ -156,9 +156,6 @@ export async function processUploadedFile(file) {
     if (entry.dir || !filename.toLowerCase().endsWith('.csv')) continue;
     if (shouldSkipZipEntry(filename)) continue;
     const lower = filename.toLowerCase();
-    if (type === 'dd_financial' && lower.includes('financial_simplified')) {
-      continue;
-    }
     const uncompressed = entryUncompressedSize(entry);
     if (uncompressed > MAX_CSV_UNCOMPRESSED_BYTES) {
       return { type, error: csvTooLargeMessage(filename, uncompressed) };
@@ -215,17 +212,21 @@ export async function processUploadedFile(file) {
   }
 
   if (type === 'dd_financial' && !results.detailed?.data?.length) {
-    // Renamed CSV inside the zip — accept it when the header matches DD financial detailed.
-    const fallback = unmatchedCsvs.find((p) => p?.data?.length && looksLikeDdFinancialColumns(p.columns));
-    if (fallback) {
-      results.detailed = fallback;
-    } else if (isHeaderSniffedZip) {
-      return { type: 'unknown', error: 'Unrecognized file format' };
+    if (results.simplified?.data?.length) {
+      results.detailed = results.simplified;
     } else {
-      return {
-        type,
-        error: 'No FINANCIAL_DETAILED_TRANSACTIONS rows found in ZIP (check export or re-download without macOS resource forks).',
-      };
+      // Renamed CSV inside the zip — accept it when the header matches DD financial.
+      const fallback = unmatchedCsvs.find((p) => p?.data?.length && looksLikeDdFinancialColumns(p.columns));
+      if (fallback) {
+        results.detailed = fallback;
+      } else if (isHeaderSniffedZip) {
+        return { type: 'unknown', error: 'Unrecognized file format' };
+      } else {
+        return {
+          type,
+          error: 'No FINANCIAL_DETAILED or FINANCIAL_SIMPLIFIED transactions found in ZIP (check export or re-download without macOS resource forks).',
+        };
+      }
     }
   }
 

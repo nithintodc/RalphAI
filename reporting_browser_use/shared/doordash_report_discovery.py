@@ -76,43 +76,56 @@ def _list_candidates(
     return all_files, filtered_out
 
 
+def _pick_best_report(
+    candidates: list[Path],
+    *,
+    kind: str,
+) -> Optional[Path]:
+    """Prefer .zip DoorDash exports over loose .csv files."""
+    if not candidates:
+        return None
+    zips = [p for p in candidates if p.suffix.lower() == ".zip"]
+    if zips:
+        return zips[0]
+    csvs = [p for p in candidates if p.suffix.lower() == ".csv"]
+    if csvs and kind == "financial":
+        # Raw FINANCIAL_DETAILED CSV is valid when no zip is available.
+        return csvs[0]
+    return candidates[0]
+
+
 def _classify_reports(
     all_files: list[tuple[float, Path, Path]],
 ) -> tuple[Optional[Path], Optional[Path]]:
-    financial_path: Optional[Path] = None
-    marketing_path: Optional[Path] = None
+    financial_candidates: list[Path] = []
+    marketing_candidates: list[Path] = []
     unmatched: list[Path] = []
 
     for _mtime, path, _src in all_files:
         name_lower = path.name.lower()
         if "financial" in name_lower or "financials" in name_lower:
-            if financial_path is None:
-                financial_path = path
+            financial_candidates.append(path)
         elif "marketing" in name_lower:
-            if marketing_path is None:
-                marketing_path = path
+            marketing_candidates.append(path)
         else:
             unmatched.append(path)
-        if financial_path and marketing_path:
-            break
 
-    if (financial_path is None or marketing_path is None) and unmatched:
+    if unmatched:
         for path in unmatched:
             if path.suffix.lower() != ".zip":
                 continue
             kind = _peek_zip_type(path)
-            if kind == "financial" and financial_path is None:
-                financial_path = path
-                logger.info("DoorDash: classified %s as financial by content", path.name)
-            elif kind == "marketing" and marketing_path is None:
-                marketing_path = path
-                logger.info("DoorDash: classified %s as marketing by content", path.name)
-            if financial_path and marketing_path:
-                break
+            if kind == "financial":
+                financial_candidates.append(path)
+            elif kind == "marketing":
+                marketing_candidates.append(path)
+
+    financial_path = _pick_best_report(financial_candidates, kind="financial")
+    marketing_path = _pick_best_report(marketing_candidates, kind="marketing")
 
     if financial_path is None and all_files:
         for _mtime, candidate, _src in all_files:
-            if candidate != marketing_path:
+            if candidate != marketing_path and candidate.suffix.lower() == ".zip":
                 financial_path = candidate
                 logger.warning(
                     "DoorDash: no filename/content match; treating %s as financial",

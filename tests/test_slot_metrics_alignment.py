@@ -136,7 +136,11 @@ def test_strategist_financial_matches_reporting_campaigns():
         reporting_dir.mkdir()
         combined = _write_combined_workbook_from_financial(SAMPLE_ZIP, reporting_dir)
 
-        strategist_offers = _offer_campaigns_from_workbook(strategist_dir / "campaigns.xlsx")
+        from shared.campaign_workbook_format import find_latest_combined_analysis
+
+        strategist_wb = find_latest_combined_analysis(strategist_dir / "downloads", strategist_dir)
+        assert strategist_wb is not None, "Strategist should write combined_analysis_*.xlsx under downloads/"
+        strategist_offers = _offer_campaigns_from_workbook(strategist_wb)
         reporting_offers = _reporting_offer_campaigns(combined)
 
         assert strategist_offers == reporting_offers, (

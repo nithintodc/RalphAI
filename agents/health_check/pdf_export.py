@@ -42,7 +42,7 @@ def _ensure_playwright_chromium() -> bool:
         return False
 
 
-def html_to_pdf(html_path: Path, pdf_path: Path) -> Optional[Path]:
+def html_to_pdf(html_path: Path, pdf_path: Path, *, landscape: bool = True) -> Optional[Path]:
     """Render local HTML file to PDF with styles/backgrounds. Returns pdf path or None."""
     html_path = Path(html_path).resolve()
     pdf_path = Path(pdf_path)
@@ -62,15 +62,22 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Optional[Path]:
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page = browser.new_page(
+                viewport={"width": 1600 if landscape else 1280, "height": 900}
+            )
             try:
                 page.goto(html_path.as_uri(), wait_until="domcontentloaded", timeout=45_000)
             except Exception as nav_err:
                 logger.warning("html_to_pdf: goto %s", nav_err)
             try:
                 page.wait_for_function(
-                    "() => { const el = document.querySelector('#platforms'); "
-                    "return el && el.innerHTML && el.innerHTML.length > 200; }",
+                    "() => {"
+                    "  const platforms = document.querySelector('#platforms');"
+                    "  if (platforms && platforms.innerHTML && platforms.innerHTML.length > 200) return true;"
+                    "  const summary = document.getElementById('summary-grid');"
+                    "  if (summary && summary.innerHTML && summary.innerHTML.length > 20) return true;"
+                    "  return false;"
+                    "}",
                     timeout=15_000,
                 )
             except Exception:
@@ -78,8 +85,9 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> Optional[Path]:
             page.pdf(
                 path=str(pdf_path),
                 format="A4",
+                landscape=landscape,
                 print_background=True,
-                margin={"top": "16px", "bottom": "16px", "left": "16px", "right": "16px"},
+                margin={"top": "12px", "bottom": "12px", "left": "12px", "right": "12px"},
             )
             browser.close()
         if pdf_path.is_file() and pdf_path.stat().st_size > 0:

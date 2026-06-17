@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from agents.health_check.data_processor import DAY_ORDER, SLOT_ORDER
+from shared.register_wow import ORDER_BREAKDOWN_METRICS, ORDER_BREAKDOWN_SHORT
 
 HealthStatus = Literal["healthy", "neutral", "unhealthy"]
 
@@ -88,10 +89,10 @@ def _sum_metric(
                 continue
             if day and str(slot.get("day")) != day:
                 continue
-            s1 += float(slot["metrics"]["Sales"]["week1"])
-            s2 += float(slot["metrics"]["Sales"]["week2"])
-            o1 += float(slot["metrics"]["Orders"]["week1"])
-            o2 += float(slot["metrics"]["Orders"]["week2"])
+            s1 += float((slot["metrics"].get("Sales") or {}).get("week1") or 0)
+            s2 += float((slot["metrics"].get("Sales") or {}).get("week2") or 0)
+            o1 += float((slot["metrics"].get("Orders") or {}).get("week1") or 0)
+            o2 += float((slot["metrics"].get("Orders") or {}).get("week2") or 0)
         w1 = round(s1 / o1, 2) if o1 else 0.0
         w2 = round(s2 / o2, 2) if o2 else 0.0
         return w1, w2
@@ -308,4 +309,94 @@ def build_health_summary(
         "healthy_metrics": healthy,
         "neutral_metrics": neutral,
         "unhealthy_metrics": unhealthy,
+    }
+
+
+TABLE_METRICS: tuple[str, ...] = ("Sales", "Payouts", "Orders", "AOV")
+
+
+def _slot_sort_key(row: dict[str, Any]) -> tuple[int, int]:
+    day = str(row.get("day") or "")
+    daypart = str(row.get("daypart") or "")
+    day_idx = DAY_ORDER.index(day) if day in DAY_ORDER else 99
+    slot_idx = SLOT_ORDER.index(daypart) if daypart in SLOT_ORDER else 99
+    return day_idx, slot_idx
+
+
+def build_wow_table_payload(analysis: dict[str, Any]) -> dict[str, Any]:
+    """Pre-built store / day / slot tables + order-type breakdown for HTML report."""
+    slots = analysis.get("slots") or []
+    store_ids = sorted({str(s.get("storeId") or "") for s in slots if s.get("storeId")})
+
+    by_metric: dict[str, Any] = {}
+    for metric in TABLE_METRICS:
+        stores: list[dict[str, Any]] = []
+        days_by_store: dict[str, list[dict[str, Any]]] = {}
+        slots_by_store: dict[str, list[dict[str, Any]]] = {}
+
+        for store_id in store_ids:
+            w1, w2 = _sum_metric(slots, metric, store_id=store_id)
+            snap = _metric_snapshot(w1, w2)
+            stores.append({"storeId": store_id, "label": f"Store {store_id}", **snap})
+
+            day_rows: list[dict[str, Any]] = []
+            for day in DAY_ORDER:
+                dw1, dw2 = _sum_metric(slots, metric, store_id=store_id, day=day)
+                day_rows.append({"day": day, **_metric_snapshot(dw1, dw2)})
+            days_by_store[store_id] = day_rows
+
+            slot_rows: list[dict[str, Any]] = []
+            for slot in slots:
+                if str(slot.get("storeId")) != store_id:
+                    continue
+                block = (slot.get("metrics") or {}).get(metric) or {}
+                slot_rows.append(
+                    {
+                        "day": slot.get("day"),
+                        "daypart": slot.get("daypart"),
+                        "week1": block.get("week1"),
+                        "week2": block.get("week2"),
+                        "delta": block.get("delta"),
+                        "pct": block.get("pct"),
+                        "status": classify_status(block.get("pct")),
+                    }
+                )
+            slots_by_store[store_id] = sorted(slot_rows, key=_slot_sort_key)
+
+        by_metric[metric] = {
+            "stores": sorted(stores, key=lambda r: float(r.get("delta") or 0)),
+            "daysByStore": days_by_store,
+            "slotsByStore": slots_by_store,
+        }
+
+    order_breakdown: list[dict[str, Any]] = []
+    for slot in slots:
+        row: dict[str, Any] = {
+            "storeId": slot.get("storeId"),
+            "day": slot.get("day"),
+            "daypart": slot.get("daypart"),
+        }
+        for metric_key in ORDER_BREAKDOWN_METRICS:
+            short = ORDER_BREAKDOWN_SHORT[metric_key]
+            block = (slot.get("metrics") or {}).get(metric_key) or {}
+            row[short] = {
+                "week1": block.get("week1"),
+                "week2": block.get("week2"),
+                "delta": block.get("delta"),
+                "pct": block.get("pct"),
+            }
+        order_breakdown.append(row)
+    order_breakdown.sort(key=lambda r: (str(r.get("storeId") or ""), *_slot_sort_key(r)))
+
+    order_by_store: dict[str, list[dict[str, Any]]] = {}
+    for row in order_breakdown:
+        sid = str(row.get("storeId") or "")
+        order_by_store.setdefault(sid, []).append(row)
+
+    return {
+        "byMetric": by_metric,
+        "orderBreakdown": order_breakdown,
+        "orderBreakdownByStore": order_by_store,
+        "dayOrder": list(DAY_ORDER),
+        "slotOrder": list(SLOT_ORDER),
     }

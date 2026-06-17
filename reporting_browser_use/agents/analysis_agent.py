@@ -182,43 +182,34 @@ def _build_slot_based(df: pd.DataFrame, time_col: str, subtotal_col: str, payout
 
 def _build_day_slot(df: pd.DataFrame, date_col: str, time_col: str, subtotal_col: str, payout_col: str, order_col: str) -> pd.DataFrame:
     """Day-Slot: Day, Slot, Sales, Payouts, Profitability, Orders, AOV, uplift, Min.Subtotal, campaign recommendation. Sorted by Day then Slot."""
-    from shared.slot_metrics import aggregate_per_store, build_order_records
-
-    orders = build_order_records(df)
-    if orders.empty:
+    df = _orders_with_time(df)
+    if df.empty:
         return pd.DataFrame()
-    per_store = aggregate_per_store(orders)
-    if not per_store:
-        return pd.DataFrame()
-    # Combined Day-Slot sheet merges all stores in the input frame.
-    merged: dict[tuple[str, str], dict[str, float]] = {}
-    for rows in per_store.values():
-        for row in rows:
-            key = (row["day"], row["slot"])
-            bucket = merged.setdefault(
-                key,
-                {"sales": 0.0, "payouts": 0.0, "orders": 0},
-            )
-            bucket["sales"] += float(row.get("sales") or 0)
-            bucket["payouts"] += float(row.get("payouts") or 0)
-            bucket["orders"] += int(row.get("orders") or 0)
-
-    from shared.slot_metrics import per_store_to_day_slot_frame
-
-    flat_per_store = {
-        "_combined": [
-            {
-                "day": day,
-                "slot": slot,
-                "sales": vals["sales"],
-                "payouts": vals["payouts"],
-                "orders": int(vals["orders"]),
-                "aov": round(vals["sales"] / vals["orders"], 2) if vals["orders"] > 0 else None,
-            }
-            for (day, slot), vals in merged.items()
-        ]
-    }
-    return per_store_to_day_slot_frame(flat_per_store, store_id="_combined")
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+    df["_day"] = df[date_col].dt.day_name()
+    df["_slot"] = df["_dd_slot_time"].apply(_get_time_slot)
+    df = df.dropna(subset=["_slot"])
+    df[subtotal_col] = pd.to_numeric(df[subtotal_col], errors="coerce").fillna(0)
+    df[payout_col] = pd.to_numeric(df[payout_col], errors="coerce").fillna(0)
+    agg = df.groupby(["_day", "_slot"]).agg(
+        Sales=(subtotal_col, "sum"),
+        Payouts=(payout_col, "sum"),
+        Orders=(order_col, "nunique") if order_col else (subtotal_col, "count"),
+    ).reset_index()
+    agg["Profitability"] = (agg["Payouts"] / agg["Sales"].replace(0, float("nan")) * 100).round(2)
+    agg["AOV"] = (agg["Sales"] / agg["Orders"].replace(0, float("nan"))).round(2)
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    agg["Day"] = pd.Categorical(agg["_day"], categories=weekday_order, ordered=True)
+    agg["Slot"] = pd.Categorical(agg["_slot"], categories=SLOT_ORDER, ordered=True)
+    agg = agg.sort_values(["Day", "Slot"]).drop(columns=["_day", "_slot"]).reset_index(drop=True)
+    # After AOV: uplift = AOV*1.2, Min.Subtotal = CEILING(uplift, 5), campaign recommendation
+    agg["uplift"] = (agg["AOV"] * 1.2).round(2)
+    agg["Min.Subtotal"] = agg["uplift"].astype(float).apply(lambda x: int(math.ceil(x / 5) * 5) if pd.notna(x) else 0)
+    agg["campaign recommendation"] = agg["Min.Subtotal"].apply(
+        lambda m: f"All customers 15% off on min order of {m} upto Always lowest" if m > 0 else "No recommendation (no data)"
+    )
+    return agg[["Day", "Slot", "Sales", "Payouts", "Profitability", "Orders", "AOV", "uplift", "Min.Subtotal", "campaign recommendation"]]
 
 
 def _build_store_slot_agg(

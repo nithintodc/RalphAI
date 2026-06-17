@@ -115,11 +115,14 @@ def write_campaigns_workbook_from_per_store(
             }
         )
 
+    download_dir = Path(operator_dir) / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
+
     if source_combined_path and Path(source_combined_path).is_file():
         out_path = Path(source_combined_path)
     else:
-        existing = find_latest_combined_analysis(operator_dir, operator_dir / "downloads")
-        out_path = existing or (Path(operator_dir) / combined_analysis_filename())
+        existing = find_latest_combined_analysis(download_dir, Path(operator_dir))
+        out_path = existing or (download_dir / combined_analysis_filename())
 
     write_mappings_sheets(
         out_path,

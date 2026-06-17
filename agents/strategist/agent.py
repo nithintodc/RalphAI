@@ -2,8 +2,11 @@
 Strategist agent: sequential browser-use login per operator from Airtable,
 download financial + marketing reports for the last 3 calendar months, run them
 through the full Reporting analysis pipeline, and produce
-a campaigns Excel with two sheets — Offers Campaigns and Ads Campaigns (store-wise,
-slot-tagged), plus slot_info.csv (per-store slot → campaign assignment).
+combined_analysis with Campaign Mappings + slot_info.csv (Offers on active slots;
+Ads on bottom 8 active slots per store by orders).
+
+Manual mode accepts the same DD FINANCIAL zip (no browser) and runs the identical
+reporting_browser_use analysis + campaign mapping path.
 Output saved to data/Strategist/<operatorName>/<timestamp>/.
 """
 
@@ -12,6 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -65,6 +70,92 @@ def _date_range_90_days() -> tuple[str, str]:
         year -= 1
     start = today.replace(year=year, month=month, day=1)
     return start.strftime("%m/%d/%Y"), end.strftime("%m/%d/%Y")
+
+
+def _parse_date_range_from_report_filename(path: Path) -> tuple[str, str] | None:
+    """Parse ``financial_2026-03-01_2026-05-31_...`` → (MM/DD/YYYY, MM/DD/YYYY)."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})", path.name)
+    if not m:
+        return None
+    start = datetime.strptime(m.group(1), "%Y-%m-%d").strftime("%m/%d/%Y")
+    end = datetime.strptime(m.group(2), "%Y-%m-%d").strftime("%m/%d/%Y")
+    return start, end
+
+
+def _mmddyyyy_to_iso(s: str | None) -> str | None:
+    if not s:
+        return None
+    try:
+        return datetime.strptime(str(s).strip(), "%m/%d/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _run_reporting_pipeline(
+    download_dir: Path,
+    *,
+    financial_path: Path,
+    marketing_path: Path | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, str]:
+    """
+    Same analysis path as auto Strategist phase 2–3: FINANCIAL_DETAILED → combined_analysis.
+    """
+    from shared.reporting_imports import import_reporting_agents_module
+
+    if not start_date or not end_date:
+        parsed = _parse_date_range_from_report_filename(financial_path)
+        if parsed:
+            start_date, end_date = parsed
+        else:
+            start_date, end_date = _date_range_90_days()
+
+    analysis_run = import_reporting_agents_module("analysis_agent", REPORTING_ROOT).run
+    marketing_run = import_reporting_agents_module("marketing_agent", REPORTING_ROOT).run
+    combined_run = import_reporting_agents_module("combined_report_agent", REPORTING_ROOT).run
+
+    financial_sheets = analysis_run(
+        Path(financial_path),
+        output_dir=download_dir,
+        report_start_date=start_date,
+        report_end_date=end_date,
+        write_file=False,
+    )
+    if not financial_sheets:
+        raise RuntimeError(
+            "Financial analysis produced no sheets — ensure the zip contains "
+            "FINANCIAL_DETAILED_TRANSACTIONS with Timestamp local date and order time columns."
+        )
+
+    marketing_sheets = None
+    if marketing_path and Path(marketing_path).is_file():
+        marketing_sheets = marketing_run(
+            Path(marketing_path),
+            output_dir=download_dir,
+            post_start_date=start_date,
+            post_end_date=end_date,
+            write_file=False,
+        )
+
+    combined = combined_run(
+        financial_sheets=financial_sheets,
+        marketing_sheets=marketing_sheets,
+        output_dir=download_dir,
+    )
+
+    fc = download_dir / "financial_detailed_report.csv"
+    if not fc.is_file():
+        for p in sorted(download_dir.glob("*FINANCIAL*.csv")):
+            fc = p
+            break
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "combined_path": str(combined) if combined else "",
+        "financial_csv": str(fc) if fc.is_file() else "",
+    }
 
 
 def _safe_email(email: str) -> str:
@@ -685,6 +776,113 @@ def _save_marketing_plan(operator_id: str, plan) -> dict[str, Any]:
     return json.loads(plan.model_dump_json())
 
 
+def run_manual_from_financial(
+    operator_id: str,
+    *,
+    financial_zip_path: str | Path,
+    marketing_zip_path: str | Path | None = None,
+    business_name: str | None = None,
+    report_start_date: str | None = None,
+    report_end_date: str | None = None,
+    excluded_dates: list[str] | None = None,
+) -> dict[str, Any]:
+    """Manual Strategist: FINANCIAL zip (+ optional marketing) → reporting combined_analysis + campaigns."""
+    from .plan_builder import build_marketing_plan
+    from .register_reco import build_recommendations_from_financial
+
+    oid = (operator_id or "").strip()
+    if not oid:
+        raise ValueError("operator_id is required")
+    financial_path = Path(financial_zip_path)
+    if not financial_path.is_file():
+        raise FileNotFoundError(f"financial zip not found: {financial_path}")
+
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dirname = _safe_dirname(business_name or oid)
+    operator_dir = OUTPUT_ROOT / dirname / run_timestamp
+    download_dir = operator_dir / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    fin_copy = download_dir / financial_path.name
+    shutil.copy2(financial_path, fin_copy)
+
+    mkt_copy: Path | None = None
+    if marketing_zip_path:
+        mkt_src = Path(marketing_zip_path)
+        if mkt_src.is_file():
+            mkt_copy = download_dir / mkt_src.name
+            shutil.copy2(mkt_src, mkt_copy)
+
+    pipeline = _run_reporting_pipeline(
+        download_dir,
+        financial_path=fin_copy,
+        marketing_path=mkt_copy,
+        start_date=report_start_date,
+        end_date=report_end_date,
+    )
+
+    iso_start = _mmddyyyy_to_iso(pipeline["start_date"]) or report_start_date
+    iso_end = _mmddyyyy_to_iso(pipeline["end_date"]) or report_end_date
+
+    slots_csv = REPORTING_ROOT / "slots.csv"
+    built = build_recommendations_from_financial(
+        fin_copy,
+        slots_csv=slots_csv if slots_csv.is_file() else None,
+        start_date=iso_start,
+        end_date=iso_end,
+        excluded_dates=excluded_dates,
+    )
+    mappings = built.get("campaign_mappings") or []
+    ads_plan = built.get("ads_plan")
+    plan = build_marketing_plan(oid, mappings=mappings, ads_plan=ads_plan)
+
+    combined_path = Path(pipeline["combined_path"]) if pipeline.get("combined_path") else None
+    financial_csv = Path(pipeline["financial_csv"]) if pipeline.get("financial_csv") else None
+
+    combined_workbook: Path | None = None
+    slot_info_path: Path | None = None
+    if combined_path and combined_path.is_file():
+        combined_workbook, slot_info_path = _build_campaign_excel(
+            operator_dir,
+            combined_path,
+            financial_csv,
+        )
+    if not combined_workbook:
+        from .campaign_workbook import write_campaigns_workbook_from_per_store
+
+        per_store = built.get("per_store") or {}
+        store_names = built.get("store_names") or {}
+        combined_workbook, slot_info_path = write_campaigns_workbook_from_per_store(
+            operator_dir,
+            per_store,
+            store_names,
+            ads_min_bid=ADS_MIN_BID,
+            ads_weekly_budget=ADS_WEEKLY_BUDGET,
+        )
+
+    plan_dict = _save_marketing_plan(oid, plan)
+    out = {
+        **plan_dict,
+        "operator_id": oid,
+        "business_name": business_name or oid,
+        "status": "success",
+        "mode": "manual",
+        "input_type": "financial",
+        "output_dir": str(operator_dir),
+        "financial_path": str(fin_copy),
+        "marketing_path": str(mkt_copy) if mkt_copy else None,
+        "date_range": {"start": pipeline["start_date"], "end": pipeline["end_date"]},
+        "campaign_mappings": mappings,
+        "slot_recommendations": built.get("slot_recommendations") or [],
+        "ads_plan": ads_plan,
+        "combined_analysis": str(combined_workbook),
+        "campaigns_xlsx": str(combined_workbook),
+        "slot_info_csv": str(slot_info_path) if slot_info_path else None,
+    }
+    (operator_dir / "result.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out
+
+
 def run_manual_from_register(
     operator_id: str,
     *,
@@ -695,7 +893,7 @@ def run_manual_from_register(
     report_end_date: str | None = None,
     excluded_dates: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build a marketing plan from register and/or FINANCIAL_DETAILED upload (no browser login)."""
+    """Legacy manual path: register upload (prefer ``run_manual_from_financial`` for FINANCIAL zip)."""
     from .campaign_workbook import write_campaigns_workbook_from_per_store
     from .plan_builder import build_marketing_plan
     from .register_reco import build_recommendations_from_register
@@ -766,21 +964,46 @@ def run(
     mode: StrategistMode = "auto",
     operator_ids: list[str] | None = None,
     operator_id: str | None = None,
+    financial_zip_path: str | None = None,
+    marketing_zip_path: str | None = None,
     register_report_path: str | None = None,
     business_name: str | None = None,
+    report_start_date: str | None = None,
+    report_end_date: str | None = None,
+    excluded_dates: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Auto: iterate selected operators, download reports, run analysis, generate campaigns Excel.
-    Manual: single operator + DD register upload → marketing plan (no browser login).
+    Manual: FINANCIAL zip (+ optional marketing) → same reporting analysis + campaign mappings.
+    Legacy manual register upload still supported when ``financial_zip_path`` is omitted.
     """
     if mode == "manual":
-        if not operator_id or not register_report_path:
-            raise ValueError("manual mode requires operator_id and register_report_path")
-        result = run_manual_from_register(
-            operator_id,
-            register_report_path=register_report_path,
-            business_name=business_name,
-        )
+        if not operator_id:
+            raise ValueError("manual mode requires operator_id")
+        if financial_zip_path:
+            result = run_manual_from_financial(
+                operator_id,
+                financial_zip_path=financial_zip_path,
+                marketing_zip_path=marketing_zip_path,
+                business_name=business_name,
+                report_start_date=report_start_date,
+                report_end_date=report_end_date,
+                excluded_dates=excluded_dates,
+            )
+        elif register_report_path:
+            result = run_manual_from_register(
+                operator_id,
+                register_report_path=register_report_path,
+                business_name=business_name,
+                financial_zip_path=financial_zip_path,
+                report_start_date=report_start_date,
+                report_end_date=report_end_date,
+                excluded_dates=excluded_dates,
+            )
+        else:
+            raise ValueError(
+                "manual mode requires financial_zip_path (preferred) or register_report_path"
+            )
         return {
             "status": "success",
             "mode": "manual",
