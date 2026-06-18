@@ -3,7 +3,7 @@
 Optional: Run DoorDash report download using browser-use (AI-driven control).
 Uses an LLM to interpret the page and perform login, navigation, and download.
 
-Set GEMINI_API_KEY in .env to use Google Gemini as the LLM provider.
+Set VLLM_BROWSER_URL in .env to point at the local vLLM server.
 """
 
 import asyncio
@@ -42,16 +42,16 @@ DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _get_llm():
-    """Use Google Gemini API (GEMINI_API_KEY) with gemini-3-flash-preview."""
-    try:
-        from browser_use import ChatGoogle
-    except ImportError:
-        raise SystemExit("Install browser-use: pip install browser-use")
+    """Use local vLLM server (Qwen2.5-VL-7B-AWQ) for browser navigation."""
+    from langchain_openai import ChatOpenAI
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or not api_key.strip():
-        raise SystemExit("Set GEMINI_API_KEY in .env.")
-    return ChatGoogle(model="gemini-3-flash-preview", api_key=api_key)
+    base_url = os.getenv("VLLM_BROWSER_URL", "http://35.224.64.57:8002/v1")
+    return ChatOpenAI(
+        model=os.getenv("VLLM_BROWSER_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct-AWQ"),
+        base_url=base_url,
+        api_key="none",
+        temperature=0.0,
+    )
 
 
 def _get_browser():

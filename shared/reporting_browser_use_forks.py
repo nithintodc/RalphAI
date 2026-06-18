@@ -8,8 +8,8 @@ from typing import Any, TypedDict
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
 
-# Forks that use Gemini (main.py checks GEMINI_API_KEY).
-_GEMINI_FORKS = frozenset(
+# Forks that use local vLLM (main.py checks VLLM_BROWSER_URL).
+_VLLM_FORKS = frozenset(
     {
         "reporting_browser_use",
         "reporting_browser_use_melt",
@@ -20,7 +20,7 @@ _GEMINI_FORKS = frozenset(
 _BROWSER_USE_FORKS = frozenset({"reporting_browser_use_browser"})
 
 ALL_FORK_IDS = tuple(
-    sorted(_GEMINI_FORKS | _BROWSER_USE_FORKS)
+    sorted(_VLLM_FORKS | _BROWSER_USE_FORKS)
 )
 
 
@@ -52,7 +52,7 @@ def is_fork_runnable(fork_id: str) -> bool:
 def _llm_for_fork(fork_id: str) -> tuple[str, str]:
     if fork_id in _BROWSER_USE_FORKS:
         return "browser_use", "BROWSER_USE_API_KEY"
-    return "gemini", "GEMINI_API_KEY"
+    return "vllm", "VLLM_BROWSER_URL"
 
 
 def _display_name(fork_id: str) -> str:
@@ -64,13 +64,13 @@ def _display_name(fork_id: str) -> str:
 
 def _description(fork_id: str, llm: str) -> str:
     if fork_id == "reporting_browser_use":
-        return "Default production fork — Multilogin + Gemini, full download → analysis → campaign pipeline."
+        return "Default production fork — Multilogin + local vLLM, full download → analysis → campaign pipeline."
     if fork_id == "reporting_browser_use_browser":
-        return "Browser Use cloud LLM (BROWSER_USE_API_KEY) instead of Gemini."
+        return "Browser Use cloud LLM (BROWSER_USE_API_KEY) instead of local vLLM."
     if fork_id == "reporting_browser_use_melt":
-        return "Store-ID normalization in analysis/campaign params (Gemini)."
+        return "Store-ID normalization in analysis/campaign params (local vLLM)."
     if fork_id == "reporting_browser_use_savvy":
-        return "Savvy variant — same lineage as melt (Gemini)."
+        return "Savvy variant — same lineage as melt (local vLLM)."
     return f"Reporting browser-use fork ({llm})."
 
 
@@ -100,7 +100,10 @@ def list_fork_metadata() -> list[ForkMeta]:
 
 # Env keys passed through from the server .env (never from the browser).
 SERVER_ENV_KEYS = (
-    "GEMINI_API_KEY",
+    "VLLM_BROWSER_URL",
+    "VLLM_BROWSER_MODEL",
+    "VLLM_ANALYSIS_URL",
+    "VLLM_ANALYSIS_MODEL",
     "BROWSER_USE_API_KEY",
     "MULTILOGIN_USERNAME",
     "MULTILOGIN_PASSWORD",

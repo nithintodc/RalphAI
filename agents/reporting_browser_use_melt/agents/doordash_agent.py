@@ -1106,18 +1106,16 @@ DONE: Use done action. Say: "{campaign_name}" created for store {store_id}.
 
 
 def _get_llm():
-    """Use Google Gemini API (GEMINI_API_KEY) with gemini-3-flash-preview."""
-    try:
-        from browser_use import ChatGoogle
-    except ImportError:
-        raise ImportError("Install browser-use: pip install browser-use")
+    """Use local vLLM server (Qwen2.5-VL-7B-AWQ) for browser navigation."""
+    from langchain_openai import ChatOpenAI
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or not api_key.strip():
-        raise ValueError(
-            "GEMINI_API_KEY is not set. Add it to your .env file."
-        )
-    return ChatGoogle(model="gemini-3-flash-preview", api_key=api_key)
+    base_url = os.getenv("VLLM_BROWSER_URL", "http://35.224.64.57:8002/v1")
+    return ChatOpenAI(
+        model=os.getenv("VLLM_BROWSER_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct-AWQ"),
+        base_url=base_url,
+        api_key="none",
+        temperature=0.0,
+    )
 
 
 def _get_browser(

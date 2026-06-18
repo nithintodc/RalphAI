@@ -272,7 +272,7 @@ async def run_workflow() -> None:
 
     doordash_email = get_required_env("DOORDASH_EMAIL")
     doordash_password = get_required_env("DOORDASH_PASSWORD")
-    get_required_env("GEMINI_API_KEY")
+    get_required_env("VLLM_BROWSER_URL")
 
     report_start_date, report_end_date = get_last_three_months_date_range()
     logger.info("Report date range (last 3 months): %s to %s", report_start_date, report_end_date)
