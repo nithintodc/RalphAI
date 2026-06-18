@@ -127,9 +127,13 @@ def _parse_slot_tags(raw: Any) -> list[int]:
         if not s:
             continue
         try:
-            out.append(int(float(s)))
+            tag = int(float(s))
         except ValueError:
             continue
+        if not (1 <= tag <= 42):
+            logger.warning("_parse_slot_tags: tag %s is outside valid range 1–42, skipping", s)
+            continue
+        out.append(tag)
     return sorted(set(out))
 
 
@@ -182,10 +186,15 @@ def _parse_offer_row(row: dict[str, Any], *, workbook: Path | None = None) -> di
     slot_tags = _parse_slot_tags(_row_val(row, "Slot Tags", "Slots"))
     if not slot_tags:
         return None
+    _raw_sub = _row_val(row, "Minimum Subtotal", "Min subtotal")
+    if _raw_sub is None or str(_raw_sub).strip() in ("", "nan", "None"):
+        logger.error("_parse_offer_row: missing Minimum Subtotal for store %s — rejecting row", store_id)
+        return None
     try:
-        min_sub = int(round(float(_row_val(row, "Minimum Subtotal", "Min subtotal") or 10)))
+        min_sub = int(round(float(str(_raw_sub).strip().replace("$", "").replace(",", ""))))
     except (TypeError, ValueError):
-        min_sub = 10
+        logger.error("_parse_offer_row: unparseable Minimum Subtotal %r for store %s — rejecting row", _raw_sub, store_id)
+        return None
     campaign_name = str(
         _row_val(row, "Campaign Name", "Campaign name")
         or f"TODC-{store_id}-${min_sub}"
@@ -221,7 +230,19 @@ def load_offers_combos_from_path(sheet_path: Path) -> list[dict[str, Any]]:
 
     combos: list[dict[str, Any]] = []
     for row in raw_rows:
-        cleaned = {k: v for k, v in row.items()}
+        # NaN-clean all values (mirrors Excel path; CSV path previously skipped this)
+        cleaned = {k: ("" if (hasattr(v, "__class__") and v.__class__.__name__ == "float" and v != v) else v) for k, v in row.items()}
+        # Normalize store ID: "14351.0" → "14351", "nan" → reject
+        for sid_key in ("Store ID", "Merchant store ID", "Merchant Store ID"):
+            if sid_key in cleaned:
+                raw_sid = str(cleaned[sid_key]).strip()
+                if raw_sid.lower() in ("nan", "none", ""):
+                    cleaned[sid_key] = ""
+                else:
+                    try:
+                        cleaned[sid_key] = str(int(float(raw_sid)))
+                    except (ValueError, TypeError):
+                        pass
         combo = _parse_offer_row(cleaned)
         if combo:
             combos.append(combo)
@@ -253,16 +274,24 @@ def load_ads_rows(operator_id: str) -> tuple[list[dict[str, Any]], Path, Path]:
         slot_tags = _parse_slot_tags(_row_val(row, "Slot Tags", "Slots"))
         if not slot_tags:
             continue
+        _raw_bid = _row_val(row, "Minimum Bid", "Bid strategy", "Bid Strategy")
+        if _raw_bid is None or str(_raw_bid).strip() in ("", "nan", "None"):
+            logger.error("load_ads_rows: missing Minimum Bid for store %s — rejecting row", store_id)
+            continue
         try:
-            bid = float(_row_val(row, "Minimum Bid", "Bid strategy", "Bid Strategy") or 3)
+            bid = float(str(_raw_bid).strip().replace("$", "").replace(",", ""))
         except (TypeError, ValueError):
-            bid = 3.0
+            logger.error("load_ads_rows: unparseable Minimum Bid %r for store %s — rejecting row", _raw_bid, store_id)
+            continue
+        _raw_budget = _row_val(row, "Weekly Budget", "Budget", "weekly_budget", "Weekly budget")
         try:
-            budget = float(
-                _row_val(row, "Weekly Budget", "Budget", "weekly_budget", "Weekly budget") or 0
-            )
+            budget = float(str(_raw_budget).strip().replace("$", "").replace(",", "")) if _raw_budget and str(_raw_budget).strip() not in ("", "nan", "None") else 0.0
         except (TypeError, ValueError):
-            budget = 0.0
+            logger.error("load_ads_rows: unparseable Weekly Budget %r for store %s — rejecting row", _raw_budget, store_id)
+            continue
+        if budget == 0.0:
+            logger.warning("load_ads_rows: budget is 0 for store %s — LLM will NOT pick spend (row rejected)", store_id)
+            continue
         campaign_name = str(
             _row_val(row, "Campaign Name", "Campaign name") or f"TODC-ADS-{store_id}"
         ).strip()

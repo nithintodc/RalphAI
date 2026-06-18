@@ -1505,6 +1505,22 @@ def get_task_description_campaign_for_subtotal_combo(
     campaign_name = str(combo.get("campaign_name", f"TODC-{store_id}-${min_subtotal}")).strip() or f"TODC-{store_id}-${min_subtotal}"
     tags_str = ", ".join(str(t) for t in sorted(slot_tags))
 
+    # Name-first store search (N1 fix: DoorDash search matches names; numeric IDs often fail)
+    store_id_digits = store_id.replace(",", "")
+    try:
+        _n = float(store_id_digits)
+        store_id_digits = str(int(_n)) if _n == int(_n) else store_id_digits
+    except (TypeError, ValueError):
+        pass
+    if store_name:
+        store_search_primary = f'"{store_name}"'
+    else:
+        store_search_primary = (
+            f"the exact location name as shown in the store list "
+            f"(internal id {store_id_digits or store_id} is for your reference only — "
+            f"do not type .0 or search the id first)"
+        )
+
     selected_set = set(slot_tags)
     all_tags = set(range(1, 43))
     unselected_set = all_tags - selected_set
@@ -1564,24 +1580,32 @@ def get_task_description_campaign_for_subtotal_combo(
 ROLE: You are automating campaign creation on DoorDash Merchant Portal. You are already logged in.
 
 {preamble_block}RULES:
-- Do NOT create or download reports.
+- Do NOT go to the login page or create/download reports.
 - Do NOT click "Get started" (that is for BOGO, not discount campaigns).
+- After "Run a campaign", use ONLY "Offer a discount promotion" under "More ways to help you grow" (carousel: click the right arrow twice, then Select). Do not pick "Smart campaign", "Advertise to all customers", or other template cards for this flow.
 - Do NOT click "Create promotion" until step 6 explicitly says to.
 - If a modal fails to open after clicking Edit, wait 3s, scroll to make section visible, click Edit again ONCE.
+- In "Choose stores", search by store NAME. Searching numeric store IDs often shows "No stores found".
 
 CAMPAIGN: {campaign_name} | STORE: {store_id} ({store_name if store_name else "N/A"}) | SUBTOTAL: ${min_subtotal} | TAGS: {tags_str}
 
 STEP 1 — Open campaign builder:
 - Click "Marketing" in the left sidebar. Wait for page to load.
-- Click "Run a campaign". Wait for campaign type cards.
-- Find "Discount for all customers" card, click "Select".
-- Click "Customize your campaign" in the right panel. Wait for form to load.
+- Click "Run a campaign". Wait until you see "Recommended for you" and the "More ways to help you grow" section (carousel of cards).
+- Scroll the main page if needed so "More ways to help you grow" and its carousel arrows are fully visible.
+- In "More ways to help you grow", click the RIGHT carousel side arrow (next slide) EXACTLY TWO TIMES. Wait 1–2s after each click for the slide to change (pagination dots should move; you want the third slide).
+- VERIFY the visible card title is "Offer a discount promotion". If it is not, use the left/right side arrows until that exact card is showing.
+- Click "Select" on the "Offer a discount promotion" card. Do NOT use "Smart campaign", "Advertise to all customers", or other carousel cards for this flow.
+- Click "Customize your campaign" when it appears (right panel or next step). Wait for the full campaign setup form to load, then continue with the steps below.
 
-STEP 2 — Select store:
-- Click Edit (pencil) next to "Stores". Wait for modal.
-- Click "Select All" to deselect all stores.
-- Search "{store_id}" in search bar. If found, select it. If NOT found, search "{store_name}" instead.
-- Select ONLY the one matching store. Click "Save".
+STEP 2 — Select store ("Choose stores" modal):
+- Click Edit (pencil) next to "Stores". Wait for the modal.
+- Click "Select All" to deselect all stores (so you start from none / wrong stores cleared).
+- Clear the search field completely if it shows an old query. Do NOT paste a number with ".0" in it.
+- PRIMARY: Search by STORE NAME. Type this in the search field: {store_search_primary}
+- Wait for results. Select the ONE checkbox that corresponds to this campaign's store for {store_name or store_id_digits or store_id}. If "No stores found", clear search and try a shorter phrase from the name (first 2–4 words), then try again.
+- LAST RESORT ONLY if name search fails: search plain digits with NO decimal point: {store_id_digits or store_id} (never "22978566.0"-style values).
+- Select ONLY that store. Click "Save".
 
 STEP 3 — Set customer incentive:
 - Click Edit (pencil) next to "Customer incentive". Wait for modal.
@@ -1591,6 +1615,11 @@ STEP 3 — Set customer incentive:
 - Wait 2s. VERIFY field shows {min_subtotal} or ${min_subtotal}. If it shows $25 or wrong value, clear and retype.
 - IMPORTANT: Use the click_leftmost_max_discount action to select the lowest maximum discount amount. Do NOT manually click any max discount button.
 - Click "Save".
+
+STEP 3B — Target audience (after Customer incentive, BEFORE Scheduling / slots):
+- Click Edit (pencil) next to "Target audience" on the campaign summary. WAIT for the "Set target audience" modal.
+- Select the **"All customers"** radio button (subtitle: "Everyone within your business' delivery radius"). Do NOT leave "Smart targeting" selected.
+- Click the red **"Save"** button. WAIT until the modal closes and the summary reflects the change (target audience should show All customers, not only Smart targeting).
 
 STEP 4 — Set schedule:
 - Click Edit (pencil) next to "Scheduling". Wait for modal with grid.
@@ -1612,6 +1641,7 @@ STEP 5 — Set campaign name (MUST complete fully before moving to Step 6):
 
 STEP 6 — Final verify and create (do NOT skip):
 - BEFORE clicking "Create promotion", read the campaign summary panel:
+  - Confirm **Target audience** is **All customers** (or equivalent). If it still says Smart targeting only, go back to STEP 3B and fix it.
   - Confirm it shows "${min_subtotal}" (not $25 unless target is $25). If wrong, click Edit next to "Customer incentive", fix it, Save.
   - Confirm campaign name shows "{campaign_name}".
 - Click "Create promotion". Wait for success confirmation.
@@ -2635,6 +2665,7 @@ async def _run_campaign_items(
 
         total = len(items)
         stats = {"successful": 0, "failed": 0, "skipped": 0, "timed_out": 0}
+        aborted = False
         campaign_times: list[float] = []
         phase_start = time.time()
 
@@ -2667,6 +2698,7 @@ async def _run_campaign_items(
                         )
                     )
                     logger.error("Re-login failed after 2 attempts; stopping campaign loop")
+                    aborted = True
                     break
 
             try:
@@ -2725,9 +2757,9 @@ async def _run_campaign_items(
                 eta_str,
             )
 
-            campaign_task = task_builder(item)
             status = "Failed"
             try:
+                campaign_task = task_builder(item)
                 tools = _build_campaign_tools() if use_offer_tools else _build_campaign_tools()
                 campaign_agent = Agent(task=campaign_task, llm=llm, browser=browser, tools=tools)
                 history = await asyncio.wait_for(campaign_agent.run(), timeout=AGENT_CAMPAIGN_TIMEOUT)
@@ -2845,13 +2877,20 @@ async def _run_campaign_items(
                 minutes=total_elapsed / 60,
             )
         )
+        if stats["failed"] == 0 and not aborted:
+            run_status = "success"
+        elif stats["successful"] > 0:
+            run_status = "partial"
+        else:
+            run_status = "failed"
         return {
-            "status": "success",
+            "status": run_status,
             "total": total,
             "successful": stats["successful"],
             "failed": stats["failed"],
             "skipped": stats["skipped"],
             "timed_out": stats["timed_out"],
+            "unattempted": total - stats["successful"] - stats["failed"] - stats["skipped"] - stats["timed_out"],
             "elapsed_seconds": total_elapsed,
             "download_dir": str(download_dir),
         }
