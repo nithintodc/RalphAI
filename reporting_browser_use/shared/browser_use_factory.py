@@ -74,7 +74,10 @@ def create_browser_use_browser(
             **common,
         )
 
-    return Browser(**common)
+    # No system Chrome found (e.g. headless Linux VM) — use Playwright's bundled
+    # Chromium in headless mode so the agent can still run without a display.
+    logger.info("No system Chrome found — launching Playwright Chromium headless")
+    return Browser(headless=True, **common)
 
 
 async def close_browser_use_browser(browser) -> None:
