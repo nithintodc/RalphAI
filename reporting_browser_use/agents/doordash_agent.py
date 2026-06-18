@@ -2647,9 +2647,22 @@ async def _run_campaign_items(
 ) -> dict[str, Any]:
     """Login once, then create campaigns from pre-built row/combo dicts."""
     from browser_use import Agent
+    from agents.campaign_memory import CampaignMemory
 
     if not items:
         return {"status": "success", "total": 0, "successful": 0, "failed": 0, "skipped": 0}
+
+    # Load persistent memory and wrap task_builder to inject per-store hints
+    memory = CampaignMemory.from_run_dir(Path(download_dir))
+    _base_task_builder = task_builder
+
+    def task_builder(item: dict) -> str:  # noqa: F811
+        base = _base_task_builder(item)
+        hints = memory.get_store_hints(str(item.get("store_id", "")))
+        if hints:
+            # Inject after ROLE line, before RULES
+            return base.replace("\nRULES:", f"\n{hints}\n\nRULES:", 1)
+        return base
 
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
@@ -2758,6 +2771,8 @@ async def _run_campaign_items(
             )
 
             status = "Failed"
+            final_text = ""
+            _error_text = ""
             try:
                 campaign_task = task_builder(item)
                 tools = _build_campaign_tools() if use_offer_tools else _build_campaign_tools()
@@ -2804,14 +2819,27 @@ async def _run_campaign_items(
                 status = "Failed"
                 stats["timed_out"] += 1
                 stats["failed"] += 1
+                _error_text = "asyncio.TimeoutError: campaign timed out"
             except Exception as e:
                 status = "Failed"
                 stats["failed"] += 1
+                _error_text = str(e)
                 logger.warning("[%d/%d] %s error: %s", i, total, campaign_name, e)
 
             campaign_elapsed = time.time() - campaign_start
             campaign_times.append(campaign_elapsed)
             item["status"] = status
+
+            # Record outcome in persistent memory
+            memory.record_outcome(
+                store_id=str(item.get("store_id", "")),
+                store_name=str(item.get("store_name", "")),
+                campaign_name=campaign_name,
+                status=status,
+                elapsed_s=campaign_elapsed,
+                final_text=final_text,
+                error_text=_error_text,
+            )
             logger.info("[%d/%d] %s %s (%.0fs)", i, total, status, campaign_name, campaign_elapsed)
 
             if campaigns_workbook:
@@ -2877,6 +2905,8 @@ async def _run_campaign_items(
                 minutes=total_elapsed / 60,
             )
         )
+        memory.save()
+
         if stats["failed"] == 0 and not aborted:
             run_status = "success"
         elif stats["successful"] > 0:
